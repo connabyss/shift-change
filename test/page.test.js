@@ -46,10 +46,11 @@ test("first person: walk, turn, shove your row and ride along, hide in the wardr
     // face north again, then SHIFT + right shoves your row east: you ride along one room
     await page.evaluate(() => { window.__fp.me().a = -Math.PI / 2; });
     const before = await me();
-    await page.keyboard.press("Shift+ArrowRight");
+    await page.keyboard.press("ArrowRight");
     await page.waitForTimeout(700);
     const after = await me();
     assert.equal(await page.evaluate(() => window.__fp.house().shoves), 1);
+    assert.equal(after.a, before.a, "an arrow slides rooms and never turns you");
     assert.ok(Math.abs(Math.abs(after.x - before.x) - 5) < 0.01 || Math.abs(after.x - before.x) > 10, "rode along one room (or wrapped round)");
     // stand next to a wardrobe, facing it, and hide in it (with the shadow sent off to wait in a far corner)
     await page.evaluate(() => {

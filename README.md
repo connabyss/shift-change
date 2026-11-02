@@ -7,15 +7,15 @@ door, before the shadow finds you.
 
 - **Walk** from room to room. A doorway only leads somewhere if the next room has a door there too; otherwise it opens
   onto a blank wall.
-- **Shove** your own row or column of rooms one step (`Shift` + arrow, relative to where you're looking). The room
+- **Shove** your own row or column of rooms one step (an arrow key, relative to where you're looking). The room
   pushed off one end comes back in at the other, and you ride along. You feel it grind past.
 - **Hide** in a wardrobe (`E`). It can't see you in there, unless it watched you climb in.
 - **The shadow** hunts by sight. Lose it and it searches where it last saw you. Shoving is loud: it comes to the noise.
   Sometimes it goes quiet and waits by a doorway near you. Close up, it may freeze for a moment, then lunge.
   Shut it out and it seeps through the walls.
 
-Keys: `W`/`S` or up/down to walk, `A`/`D` or left/right to turn (or click and use the mouse), `E` to hide,
-`Shift` + arrow to shove, `M` for sound. Headphones help: you hear which side it's on.
+Keys: `W`/`S` to walk, `A`/`D` to turn. Click to look with the mouse instead, and then `A`/`D` step sideways.
+`E` to hide, arrow keys to shove (they never turn you), `M` for sound. Headphones help: you hear which side it's on.
 
 ## Play it locally
 

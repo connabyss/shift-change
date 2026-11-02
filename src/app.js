@@ -12,7 +12,7 @@ const MOVE = 2.1, TURN = 2.3, SLIDE_STEP = 0.075, RADIUS = 0.22;
 // Which way you face, as a side of the compass: 0 east, 1 south, 2 west, 3 north.
 export function facing(a) { return ((Math.round(a / (Math.PI / 2)) % 4) + 4) % 4; }
 
-// SHIFT + arrow: shove your own row or column, relative to where you're looking.
+// An arrow key (SHIFT optional): shove your own row or column, relative to where you're looking.
 // up = the way you face, down = behind you, left/right = to your sides.
 export function shoveFor(face, key, room) {
   const turn = { ArrowUp: 0, ArrowRight: 1, ArrowDown: 2, ArrowLeft: 3 }[key];
@@ -76,7 +76,7 @@ function start() {
     map = buildTiles(house, decor);
     slide = null; hidden = false; sawHide = false; hasKey = !house.key; caught = false; escaped = false; seenOnce = false;
     scene = "play";
-    say(n === 1 ? "Find the key. Then the front door.   W/S walk, A/D turn.   E: hide in a wardrobe.   SHIFT + arrow: shove your room."
+    say(n === 1 ? "Find the key. Then the front door.   W/S walk, A/D turn (click to use the mouse).   E: hide.   Arrows: slide your room."
       : `Floor ${n}. It's learning.`);
   }
   function say(t) { hint = t; hintAt = clock; }
@@ -148,7 +148,8 @@ function start() {
     if (e.key === "m" || e.key === "M") { muted = !muted; return; }
     if (scene !== "play") { if (e.key === "Enter" || e.key === " ") next(); return; }
     if (e.key.startsWith("Arrow") || e.key === " " || e.key === "Tab") e.preventDefault();
-    if (e.shiftKey && e.key.startsWith("Arrow")) { shove(shoveFor(facing(me.a), e.key, roomOf(me))); return; }
+    // arrows only ever slide rooms (with or without SHIFT); they never turn you, so they can't fight the mouse
+    if (e.key.startsWith("Arrow")) { if (!e.repeat) shove(shoveFor(facing(me.a), e.key, roomOf(me))); return; }
     if (e.key === "e" || e.key === "E" || e.key === " ") { interact(); return; }
     keys.add(e.key.toLowerCase());
   });
@@ -238,11 +239,16 @@ function start() {
       slideTick();
       // you
       if (!slide && !hidden) {
-        const turn = (keys.has("a") || keys.has("arrowleft") ? -1 : 0) + (keys.has("d") || keys.has("arrowright") ? 1 : 0);
-        const fwd = (keys.has("w") || keys.has("arrowup") ? 1 : 0) - (keys.has("s") || keys.has("arrowdown") ? 1 : 0);
-        me.a += turn * TURN * dt;
-        if (fwd) {
-          tryMove(Math.cos(me.a) * fwd * MOVE * dt, Math.sin(me.a) * fwd * MOVE * dt);
+        // with the mouse, A/D step sideways (the mouse turns you); without it, A/D turn
+        const side = (keys.has("a") ? -1 : 0) + (keys.has("d") ? 1 : 0);
+        const fwd = (keys.has("w") ? 1 : 0) - (keys.has("s") ? 1 : 0);
+        const mouse = document.pointerLockElement === canvas;
+        if (!mouse) me.a += side * TURN * dt;
+        const strafe = mouse ? side : 0;
+        if (fwd || strafe) {
+          const len = Math.hypot(fwd, strafe) || 1;
+          const mx = (Math.cos(me.a) * fwd - Math.sin(me.a) * strafe) / len, my = (Math.sin(me.a) * fwd + Math.cos(me.a) * strafe) / len;
+          tryMove(mx * MOVE * dt, my * MOVE * dt);
           if (clock - lastMyStep > 0.42) { noise(0.04, 0.12, 700); lastMyStep = clock; }
         }
       }
