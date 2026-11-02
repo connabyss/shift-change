@@ -51,8 +51,9 @@ test("first person: walk, turn, shove your row and ride along, hide in the wardr
     const after = await me();
     assert.equal(await page.evaluate(() => window.__fp.house().shoves), 1);
     assert.ok(Math.abs(Math.abs(after.x - before.x) - 5) < 0.01 || Math.abs(after.x - before.x) > 10, "rode along one room (or wrapped round)");
-    // stand next to a wardrobe, facing it, and hide in it
+    // stand next to a wardrobe, facing it, and hide in it (with the shadow sent off to wait in a far corner)
     await page.evaluate(() => {
+      const sh = window.__fp.shadow(); Object.assign(sh, { x: 0.5, y: 0.5, mode: "look", timer: 99, target: null });
       const map = window.__fp.map(), m = window.__fp.me();
       for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) if (map.kind[y][x] === 3) { m.x = x + 1.5; m.y = y + 1.5; m.a = Math.atan2(-1, -1); return; }
     });
