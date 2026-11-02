@@ -8,13 +8,19 @@
 export const N = 1, E = 2, S = 4, W = 8;
 export const DIRS = { N: [0, -1, N, S], E: [1, 0, E, W], S: [0, 1, S, N], W: [-1, 0, W, E] };
 
-export function makeHouse({ rooms, player, hunter, exit }) {
+// key: where the front-door key lies (it rides with its room). No key given: the door is unlocked.
+export function makeHouse({ rooms, player, hunter, exit, key = null }) {
   return {
     w: rooms[0].length, h: rooms.length,
     rooms: rooms.map((row) => [...row]),
     player: { ...player }, hunter: { ...hunter }, exit: { ...exit },
+    key: key && { ...key }, hasKey: !key,
     over: false, escaped: false, caught: false, moves: 0, shoves: 0,
   };
+}
+
+function riders(house) {
+  return [house.player, house.hunter, ...(house.key && !house.hasKey ? [house.key] : [])];
 }
 
 const wrap = (v, n) => ((v % n) + n) % n;
@@ -24,7 +30,7 @@ export function shoveRow(house, y, dir) {
   if (house.over) return false;
   const row = house.rooms[y];
   house.rooms[y] = row.map((_, x) => row[wrap(x - dir, house.w)]);
-  for (const who of [house.player, house.hunter]) if (who.y === y) who.x = wrap(who.x + dir, house.w);
+  for (const who of riders(house)) if (who.y === y) who.x = wrap(who.x + dir, house.w);
   house.shoves += 1;
   check(house);
   return true;
@@ -35,7 +41,7 @@ export function shoveCol(house, x, dir) {
   if (house.over) return false;
   const col = house.rooms.map((row) => row[x]);
   col.forEach((_, y) => { house.rooms[y][x] = col[wrap(y - dir, house.h)]; });
-  for (const who of [house.player, house.hunter]) if (who.x === x) who.y = wrap(who.y + dir, house.h);
+  for (const who of riders(house)) if (who.x === x) who.y = wrap(who.y + dir, house.h);
   house.shoves += 1;
   check(house);
   return true;
@@ -59,6 +65,7 @@ export function walk(house, d) {
   if (house.over) return { kind: "over" };
   const p = house.player;
   if (d === house.exit.side && atExit(house)) {
+    if (!house.hasKey) return { kind: "locked" };
     house.over = true; house.escaped = true;
     return { kind: "escaped" };
   }
@@ -66,7 +73,9 @@ export function walk(house, d) {
   p.x += DIRS[d][0]; p.y += DIRS[d][1];
   house.moves += 1;
   check(house);
-  return { kind: house.caught ? "caught" : "moved" };
+  if (house.caught) return { kind: "caught" };
+  if (!house.hasKey && house.key.x === p.x && house.key.y === p.y) { house.hasKey = true; return { kind: "key" }; }
+  return { kind: "moved" };
 }
 
 // The shortest way from (x, y) to the player through open doors, as a list of sides. null if there's none.
@@ -108,4 +117,29 @@ function check(house) {
   if (house.player.x === house.hunter.x && house.player.y === house.hunter.y) {
     house.over = true; house.caught = true;
   }
+}
+
+// When no door leads to you, the shadow wanders: through a random open door, never straight back if it can help it.
+export function wander(house, rand, last = null) {
+  if (house.over) return { kind: "over" };
+  const back = last && { N: "S", S: "N", E: "W", W: "E" }[last];
+  let ways = ["N", "E", "S", "W"].filter((d) => open(house, house.hunter.x, house.hunter.y, d));
+  if (ways.length > 1 && back) ways = ways.filter((d) => d !== back);
+  if (!ways.length) return { kind: "stuck" };
+  const d = ways[Math.floor(rand() * ways.length)];
+  house.hunter.x += DIRS[d][0]; house.hunter.y += DIRS[d][1];
+  check(house);
+  return { kind: house.caught ? "caught" : "wander", d };
+}
+
+// A shadow doesn't need doors forever. When it has no way to you, it can seep through one wall, toward you.
+export function seep(house) {
+  if (house.over) return { kind: "over" };
+  const h = house.hunter, p = house.player;
+  const dx = Math.sign(p.x - h.x), dy = Math.sign(p.y - h.y);
+  if (!dx && !dy) return { kind: "here" };
+  const d = Math.abs(p.x - h.x) >= Math.abs(p.y - h.y) ? (dx > 0 ? "E" : "W") : (dy > 0 ? "S" : "N");
+  h.x += DIRS[d][0]; h.y += DIRS[d][1];
+  check(house);
+  return { kind: house.caught ? "caught" : "seep", d };
 }

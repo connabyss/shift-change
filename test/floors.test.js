@@ -1,0 +1,46 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { floorSpec, floorHouse, LAST_FLOOR } from "../src/floors.js";
+import { rng } from "../src/rng.js";
+import { E } from "../src/house.js";
+
+test("every room has at least two doors, and the front door's room opens onto it", () => {
+  for (let n = 1; n <= LAST_FLOOR; n++) {
+    const f = floorSpec(n);
+    for (const row of f.rooms) for (const r of row) assert.ok(((r & 1) + ((r >> 1) & 1) + ((r >> 2) & 1) + ((r >> 3) & 1)) >= 2);
+    assert.ok(f.rooms[f.exit.y][f.exit.x] & E);
+    assert.equal(f.exit.x, f.rooms.length - 1);
+  }
+});
+
+test("floors get bigger and the shadow gets faster", () => {
+  assert.equal(floorSpec(1).rooms.length, 4);
+  assert.equal(floorSpec(LAST_FLOOR).rooms.length, 5);
+  assert.ok(floorSpec(LAST_FLOOR).step < floorSpec(1).step);
+  assert.throws(() => floorSpec(LAST_FLOOR + 1));
+});
+
+test("you and the shadow start in different rooms", () => {
+  for (let n = 1; n <= LAST_FLOOR; n++) {
+    const h = floorHouse(n);
+    assert.notDeepEqual(h.player, h.hunter);
+    assert.equal(h.floor, n);
+  }
+});
+
+test("the same floor and seed always builds the same house", () => {
+  assert.deepEqual(floorSpec(3, 42), floorSpec(3, 42));
+  assert.notDeepEqual(floorSpec(3, 42).rooms, floorSpec(3, 43).rooms);
+  const a = rng(5), b = rng(5);
+  for (let i = 0; i < 50; i++) { const x = a(); assert.ok(x >= 0 && x < 1); assert.equal(x, b()); }
+});
+
+test("every floor has a key, away from the front door and the shadow", () => {
+  for (let n = 1; n <= LAST_FLOOR; n++) for (const seed of [1, 2, 3, 9]) {
+    const f = floorSpec(n, seed);
+    assert.ok(f.key);
+    assert.notDeepEqual(f.key, { x: f.exit.x, y: f.exit.y });
+    assert.notDeepEqual(f.key, f.hunter);
+    assert.equal(floorHouse(n, seed).hasKey, false);
+  }
+});

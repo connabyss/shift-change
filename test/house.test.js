@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeHouse, shoveRow, shoveCol, open, walk, path, hunterStep, N, E, S, W } from "../src/house.js";
+import { makeHouse, shoveRow, shoveCol, open, walk, path, hunterStep, wander, seep, N, E, S, W } from "../src/house.js";
 
 const ALL = N | E | S | W;
 // 3 x 3. Middle row is a corridor (E-W doors only). Exit: out the east side of the top-right room.
@@ -97,4 +97,40 @@ test("you escape by walking out the front door, if your room has a door on that 
   assert.deepEqual(g.player, { x: 2, y: 0 });
   assert.equal(walk(g, "E").kind, "escaped");
   assert.equal(g.escaped, true);
+});
+
+test("with no way to you, the shadow wanders through an open door and avoids turning straight back", () => {
+  const h = makeHouse({ rooms: [[E, E | W | S, W], [0, N, 0]], player: { x: 0, y: 1 }, hunter: { x: 1, y: 0 }, exit: { x: 2, y: 0, side: "E" } });
+  const r = wander(h, () => 0.99, "E"); // came in heading east: going back west is the last resort
+  assert.equal(r.kind, "wander");
+  assert.notEqual(r.d, "W");
+  const stuck = makeHouse({ rooms: [[0, 0]], player: { x: 0, y: 0 }, hunter: { x: 1, y: 0 }, exit: { x: 1, y: 0, side: "E" } });
+  assert.equal(wander(stuck, () => 0.5).kind, "stuck");
+});
+
+test("walled off, the shadow seeps through a wall toward you, one room at a time", () => {
+  const h = makeHouse({ rooms: [[0, 0, 0], [0, 0, 0]], player: { x: 2, y: 1 }, hunter: { x: 0, y: 0 }, exit: { x: 2, y: 0, side: "E" } });
+  assert.equal(path(h, h.hunter), null);
+  assert.deepEqual(seep(h), { kind: "seep", d: "E" });
+  assert.deepEqual(h.hunter, { x: 1, y: 0 });
+  seep(h);
+  assert.deepEqual(h.hunter, { x: 2, y: 0 }, "the longer way first");
+  assert.equal(seep(h).kind, "caught");
+});
+
+test("the front door stays locked until you pick up the key, and the key rides with its room", () => {
+  const h = makeHouse({ rooms: [[ALL, ALL, ALL]], player: { x: 1, y: 0 }, hunter: { x: 0, y: 0 }, exit: { x: 2, y: 0, side: "E" }, key: { x: 0, y: 0 } });
+  shoveRow(h, 0, 1); // everyone rides: you to (2,0), the hunter and the key to (1,0)
+  assert.deepEqual(h.key, { x: 1, y: 0 });
+  assert.equal(walk(h, "E").kind, "locked");
+  assert.equal(h.over, false);
+  const k = makeHouse({ rooms: [[ALL, ALL, ALL]], player: { x: 0, y: 0 }, hunter: { x: 0, y: 0 }, exit: { x: 2, y: 0, side: "E" }, key: { x: 1, y: 0 } });
+  k.hunter = { x: 9, y: 9 };
+  assert.equal(walk(k, "E").kind, "key");
+  assert.equal(k.hasKey, true);
+  shoveRow(k, 0, -1); // the key is in your pocket now: it doesn't ride with the room any more
+  assert.deepEqual(k.key, { x: 1, y: 0 });
+  walk(k, "E"); walk(k, "E");
+  assert.deepEqual(k.player, { x: 2, y: 0 });
+  assert.equal(walk(k, "E").kind, "escaped");
 });
