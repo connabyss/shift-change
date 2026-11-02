@@ -52,6 +52,36 @@ export const solid = (map, x, y) => {
   return map.kind[ty][tx] !== FLOOR;
 };
 
+// Move a round body of radius r by (dx, dy), stopping at walls. Catching a doorway's edge doesn't stop you:
+// you slip sideways toward the middle of the gap, so walking through doors feels smooth.
+export function move(map, p, dx, dy, r) {
+  const free = (x, y) => !solid(map, x - r, y - r) && !solid(map, x + r, y - r) && !solid(map, x - r, y + r) && !solid(map, x + r, y + r);
+  const out = { x: p.x, y: p.y };
+  for (const [ax, d] of [["x", dx], ["y", dy]]) {
+    if (!d) continue;
+    const other = ax === "x" ? "y" : "x";
+    const to = { ...out, [ax]: out[ax] + d };
+    if (free(to.x, to.y)) { out[ax] = to[ax]; continue; }
+    // blocked: is the tile straight ahead open? then slide toward the middle of our lane
+    const ahead = { ...out, [ax]: out[ax] + Math.sign(d) * (r + 0.05) };
+    if (solid(map, ahead.x, ahead.y)) continue;
+    const mid = Math.floor(out[other]) + 0.5, gap = mid - out[other];
+    const nudge = Math.sign(gap) * Math.min(Math.abs(gap), Math.abs(d));
+    const slid = { ...out, [other]: out[other] + nudge };
+    if (nudge && free(slid.x, slid.y)) out[other] = slid[other];
+  }
+  return out;
+}
+
+// Which way to go to reach a place: the direction (radians) of the path a few steps ahead,
+// or of a straight line if there's no way through (blocked: true, so slide the rooms).
+export function guide(map, from, to) {
+  const path = tilePath(map, from, to);
+  if (!path) return { angle: Math.atan2(to.y - from.y, to.x - from.x), blocked: true };
+  const step = path[Math.min(2, path.length - 1)] ?? { x: Math.floor(to.x), y: Math.floor(to.y) };
+  return { angle: Math.atan2(step.y + 0.5 - from.y, step.x + 0.5 - from.x), blocked: false, steps: path.length };
+}
+
 // The room a tile position is in.
 export const roomOf = (p) => ({ x: Math.floor(p.x / R), y: Math.floor(p.y / R) });
 // The middle of a room, in tiles.
