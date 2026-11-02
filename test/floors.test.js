@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { floorSpec, floorHouse, LAST_FLOOR, PLAYER_SPEED, shadowPace, headStart } from "../src/floors.js";
+import { floorSpec, floorHouse, LAST_FLOOR, PLAYER_SPEED, shadowPace, headStart, quakeEvery } from "../src/floors.js";
 import { SPEED } from "../src/stalker.js";
 import { rng } from "../src/rng.js";
 import { E } from "../src/house.js";
@@ -52,4 +52,10 @@ test("on floors 1 and 2 you can outrun it even when it hunts, and it gives you a
   assert.ok(SPEED.hunt * shadowPace(LAST_FLOOR) > PLAYER_SPEED, "late floors: you can't just run");
   for (let n = 1; n < LAST_FLOOR; n++) assert.ok(shadowPace(n) <= shadowPace(n + 1) && headStart(n) >= headStart(n + 1));
   assert.ok(headStart(1) >= 20);
+});
+
+test("three short floors, and only the last one moves on its own", () => {
+  assert.equal(LAST_FLOOR, 3);
+  assert.equal(quakeEvery(1), 0); assert.equal(quakeEvery(2), 0);
+  assert.ok(quakeEvery(LAST_FLOOR) > 0);
 });

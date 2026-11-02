@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeHouse, N, E, S, W } from "../src/house.js";
 import { buildTiles, R } from "../src/tiles.js";
-import { makeShadow, think, lurkSpot } from "../src/stalker.js";
+import { makeShadow, think, lurkSpot, cutOff, stun } from "../src/stalker.js";
 import { rng } from "../src/rng.js";
 
 const ALL = N | E | S | W;
@@ -103,4 +103,23 @@ test("on an early floor it moves slower (pace), so a first-timer can outrun a wa
   for (let i = 0; i < 10; i++) { think(a, wa, 0.05, () => 0.5); think(b, wb, 0.05, () => 0.5); }
   const moved = (s) => Math.hypot(s.x - (2 * R + 2.5), s.y - 1.5);
   assert.ok(moved(a) < moved(b) * 0.7, `${moved(a)} vs ${moved(b)}`);
+});
+
+test("a slide that takes away its way to you, or makes it much longer, cuts it off", () => {
+  const steps = (n) => Array.from({ length: n }, () => ({ x: 0, y: 0 }));
+  assert.equal(cutOff(steps(8), null), true, "no way at all");
+  assert.equal(cutOff(steps(8), steps(20)), true, "the long way round");
+  assert.equal(cutOff(steps(8), steps(10)), false, "a little longer is not cut off");
+  assert.equal(cutOff(null, null), false, "it couldn't reach you before either");
+});
+
+test("stunned, it can't see you or catch you; then it comes looking", () => {
+  const map = hall(), sh = makeShadow({ x: 1.5, y: 1.5 }), world = { map, player: { x: 1.9, y: 1.5, hidden: false }, sawHide: false, noise: null };
+  stun(sh, 1);
+  const x0 = sh.x;
+  for (let t = 0; t < 0.9; t += 0.1) assert.deepEqual(think(sh, world, 0.1, rng(1)), [], "right next to you and nothing happens");
+  assert.equal(sh.x, x0);
+  const ev = think(sh, world, 0.3, rng(1));
+  assert.ok(ev.some((e) => e.kind === "recover"));
+  assert.equal(sh.mode, "search");
 });
