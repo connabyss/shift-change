@@ -25,7 +25,7 @@ function serve() {
   });
 }
 
-test("first person: walk, turn, shove your row and ride along, hide in the wardrobe", { skip }, async () => {
+test("first person: walk, change a line of the house's code (your row slides, you ride along), unlock the door, hide", { skip }, async () => {
   const server = await serve(), browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
@@ -52,18 +52,33 @@ test("first person: walk, turn, shove your row and ride along, hide in the wardr
     assert.equal(await page.evaluate(() => window.__fp.awake()), false, "asleep at the start of floor 1");
     const sh1 = await page.evaluate(() => ({ ...window.__fp.shadow() }));
     assert.deepEqual([sh1.x, sh1.y], [sh0.x, sh0.y], "the sleeping shadow hasn't moved");
-    // the arrow at the top points the way to the key
-    assert.equal(await page.evaluate(() => window.__fp.way()?.what), "the key");
-    // face north, press SPACE: the column ahead of you slides toward you (south), and you ride along
-    await page.evaluate(() => { window.__fp.me().a = -Math.PI / 2; });
+    // the arrow at the top points the way to the lock's line of code
+    assert.equal(await page.evaluate(() => window.__fp.way()?.what), "the lock's code");
+    // stand in front of your first room's writing on the wall, facing it: the line shows, E changes its one word
+    await page.evaluate(() => {
+      const map = window.__fp.map(), m = window.__fp.me();
+      const rx = Math.floor(m.x / 5), ry = Math.floor(m.y / 5);
+      for (let y = ry * 5; y < ry * 5 + 5; y++) for (let x = rx * 5; x < rx * 5 + 5; x++) if (map.kind[y][x] === 4) { m.x = x + 0.5; m.y = y + 1.5; m.a = -Math.PI / 2; }
+    });
+    assert.equal(await page.evaluate(() => window.__fp.facingCode()?.c.kind), "shift");
     const before = await me();
-    await page.keyboard.press(" ");
+    await page.keyboard.press("e");
     await page.waitForTimeout(700);
     const after = await me();
-    assert.equal(await page.evaluate(() => window.__fp.house().shoves), 1);
-    assert.equal(after.a, before.a, "sliding never turns you");
-    assert.equal(after.x, before.x);
-    assert.ok(Math.abs((after.y - before.y) - 5) < 0.01 || before.y - after.y > 10, "rode along one room south (or wrapped round)");
+    assert.equal(await page.evaluate(() => window.__fp.house().shoves), 1, "changing the word slid the row");
+    assert.ok(Math.abs((after.x - before.x) - 5) < 0.01 || before.x - after.x > 10, "rode along one room east (or wrapped round)");
+    assert.equal(await page.evaluate(() => window.__fp.facingCode()?.c.dir), -1, "the line now reads west: press again to undo");
+    assert.equal(await page.evaluate(() => window.__fp.mind()?.text), "house.watch(you);", "the house noticed");
+    // the lock: change its word and the front door opens
+    await page.evaluate(() => {
+      const map = window.__fp.map(), m = window.__fp.me(), codes = window.__fp.codes();
+      for (let ry = 0; ry < codes.length; ry++) for (let rx = 0; rx < codes[0].length; rx++) if (codes[ry][rx]?.kind === "lock") { m.x = rx * 5 + 3.5; m.y = ry * 5 + 1.5; m.a = -Math.PI / 2; }
+    });
+    assert.equal(await page.evaluate(() => window.__fp.hasKey()), false);
+    await page.keyboard.press("e");
+    assert.equal(await page.evaluate(() => window.__fp.hasKey()), true, "frontDoor.locked = false");
+    await page.waitForTimeout(400);
+    assert.equal(await page.evaluate(() => window.__fp.way()?.what), "the door");
     // stand next to a wardrobe, facing it, and hide in it (with the shadow sent off to wait in a far corner)
     await page.evaluate(() => {
       const sh = window.__fp.shadow(); Object.assign(sh, { x: 0.5, y: 0.5, mode: "look", timer: 99, target: null });

@@ -1,6 +1,6 @@
 // The first-person view: a small raycaster that draws the house into a low-resolution pixel buffer.
 // Walls get procedural wallpaper, the floor gets planks, and everything fades into the dark past your candle.
-import { WALL, FRONT, WARDROBE } from "./tiles.js";
+import { WALL, FRONT, WARDROBE, CODE, LOCK_LOOK } from "./tiles.js";
 
 export const RW = 320, RH = 200, TEX = 32;
 
@@ -41,6 +41,19 @@ export const DOOR_TEX = makeTex((x, y) => {
   const g = (Math.sin(y * 1.3 + x * 0.1) * 6) | 0;
   return inPanel ? [96 + g, 62 + g, 36] : [76 + g, 48 + g, 28];
 });
+
+// A wall with the house's code chalked on it: indented lines of different lengths, like a program.
+const chalk = (ink) => makeTex((x, y) => {
+  const lines = [[3, 4, 20], [6, 6, 26], [9, 6, 14], [12, 9, 28], [15, 9, 22], [18, 6, 18], [21, 4, 10], [24, 4, 24]];
+  const g = (Math.sin(x * 1.7 + y * 0.9) * 4) | 0;
+  // thin strokes broken into letters, with a space between words now and then
+  for (const [ly, a, b] of lines) if (y === ly && x >= a && x <= b && x % 2 === 0 && ((x * 7 + ly) % 9 !== 0)) return ink;
+  for (const [ly, a, b] of lines) if (y === ly + 1 && x >= a && x <= b && (x * 5 + ly) % 3 === 0 && ((x * 7 + ly) % 9 !== 0)) return ink;
+  if (y > 27) return [40, 34, 30];
+  return [30 + g, 34 + g, 32 + g];
+});
+export const CODE_TEX = chalk([200, 214, 190]);
+export const LOCK_TEX = chalk([230, 110, 90]);
 
 // The shadow: a tall dark shape with two pale eyes. Alpha 0 = see-through.
 export const SHADOW_W = 32, SHADOW_H = 64;
@@ -110,8 +123,9 @@ export function render(view, map, cam, light, sprites, hasKey, time = 0) {
     wx -= Math.floor(wx);
     const tx = Math.min(TEX - 1, Math.floor(wx * TEX));
     const look = mx >= 0 && my >= 0 && mx < map.w && my < map.h ? map.look[my][mx] : 0;
-    const tex = kind === FRONT ? DOOR_TEX : kind === WARDROBE ? WARDROBE_TEX : WALLPAPER[look % WALLPAPER.length];
+    const tex = kind === FRONT ? DOOR_TEX : kind === WARDROBE ? WARDROBE_TEX : kind === CODE ? (look === LOCK_LOOK ? LOCK_TEX : CODE_TEX) : WALLPAPER[look % WALLPAPER.length];
     let b = fall(perp) * (side ? 0.78 : 1);
+    if (kind === CODE) b = Math.max(b, 0.42 + Math.sin(time * 2 + x * 0.02) * 0.06); // chalk catches what light there is
     if (kind === FRONT && hasKey) b = Math.max(b, 0.5); // the front door glows once you have the key
     for (let y = Math.max(0, top); y < Math.min(RH, top + lineH); y++) {
       const ty = Math.min(TEX - 1, Math.floor(((y - top) / lineH) * TEX));

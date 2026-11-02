@@ -46,10 +46,10 @@ test("every floor has a key, away from the front door and the shadow", () => {
   }
 });
 
-test("on floors 1 and 2 you can outrun it even when it hunts, and it gives you a head start", () => {
+test("you can outrun it even when it hunts, and it gives you a head start", () => {
   assert.ok(SPEED.hunt * shadowPace(1) < PLAYER_SPEED);
   assert.ok(SPEED.hunt * shadowPace(2) < PLAYER_SPEED);
-  assert.ok(SPEED.hunt * shadowPace(LAST_FLOOR) > PLAYER_SPEED, "late floors: you can't just run");
+  assert.ok(SPEED.hunt * shadowPace(LAST_FLOOR) < PLAYER_SPEED, "on every floor you can outrun its hunt");
   for (let n = 1; n < LAST_FLOOR; n++) assert.ok(shadowPace(n) <= shadowPace(n + 1) && headStart(n) >= headStart(n + 1));
   assert.ok(headStart(1) >= 10);
 });
@@ -60,10 +60,26 @@ test("three short floors, and only the last one moves on its own", () => {
   assert.ok(quakeEvery(LAST_FLOOR) > 0);
 });
 
-test("floors 1 and 2: you can walk to the key without sliding anything; most of floor 1 is open", async () => {
-  const { makeHouse, path } = await import("../src/house.js");
-  for (const n of [1, 2]) for (let seed = 1; seed <= 60; seed++) {
-    const f = floorSpec(n, seed);
-    assert.ok(path(makeHouse({ ...f, player: f.key }), f.player) !== null, `floor ${n} seed ${seed}`);
+test("floor 1 teaches the hook: the lock is out of reach until you change your first room's line once; floor 2 you can walk to it", async () => {
+  const { makeHouse, path, shoveRow } = await import("../src/house.js");
+  for (let seed = 1; seed <= 60; seed++) {
+    const f = floorSpec(1, seed), h = makeHouse(f);
+    assert.equal(path(h, h.key), null, `floor 1 seed ${seed}: out of reach at first`);
+    assert.deepEqual(f.codes[f.player.y][f.player.x], { kind: "shift", axis: "row", dir: 1 }, "your first room's line: this.row.shift(east)");
+    shoveRow(h, f.player.y, 1);
+    assert.ok(path(h, h.key) !== null, `floor 1 seed ${seed}: in reach after one edit`);
+    const g = floorSpec(2, seed);
+    assert.ok(path(makeHouse({ ...g, player: g.key }), g.player) !== null, `floor 2 seed ${seed}`);
+    assert.equal(g.codes[g.key.y][g.key.x].kind, "lock");
+    assert.ok(g.codes.flat().some((c) => c?.kind === "sleep"), "floor 2 hides a line that puts it to sleep");
+  }
+});
+
+test("the last floor's lock reads you.trapped = true; the earlier ones are the front door's", () => {
+  for (let seed = 1; seed <= 20; seed++) {
+    const last = floorSpec(LAST_FLOOR, seed);
+    assert.equal(last.codes[last.key.y][last.key.x].trap, true);
+    const first = floorSpec(1, seed);
+    assert.ok(!first.codes[first.key.y][first.key.x].trap);
   }
 });
