@@ -1,0 +1,76 @@
+<title>Robot Dev Team</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,750&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+/* Layout: one narrow chat column, a cast strip on top, the log reads like a team chat transcript */
+:root{--bg:#f3f5f2;--fg:#17201b;--mut:#5d6a62;--panel:#ffffff;--line:#d9e0da;
+--writer:#2f6fdb;--planner:#a2700a;--skeptic:#d2561c;--janitor:#2c8a4f;--historian:#7a4fc4;--tint:.10;
+--display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+--body:"Atkinson Hyperlegible",ui-sans-serif,system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121815;--fg:#e4ebe6;--mut:#94a39a;
+--panel:#1b2420;--line:#2c3832;--writer:#7aa7ff;--planner:#e8b84a;--skeptic:#ff8a52;--janitor:#5fcf8a;--historian:#b896ff;--tint:.16;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#121815;--fg:#e4ebe6;--mut:#94a39a;--panel:#1b2420;--line:#2c3832;
+--writer:#7aa7ff;--planner:#e8b84a;--skeptic:#ff8a52;--janitor:#5fcf8a;--historian:#b896ff;--tint:.16;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:16px/1.55 var(--body)}
+main{max-width:720px;margin:0 auto;padding-block:28px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));
+padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1{font:750 clamp(1.7rem,5vw,2.4rem)/1.1 var(--display);margin:0 0 6px;text-wrap:balance;letter-spacing:-.01em}
+.sub{color:var(--mut);margin:0 0 22px;max-width:60ch}
+.cast{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:22px}
+.cast div{display:flex;gap:10px;align-items:center;min-width:0;font-size:.9rem;color:var(--mut)}
+.cast b{display:block;color:var(--fg)}
+.av{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:var(--bg);
+font:750 .95rem var(--display);background:var(--c)}
+.writer,.builder{--c:var(--writer)}.planner{--c:var(--planner)}.skeptic{--c:var(--skeptic)}.janitor{--c:var(--janitor)}.historian{--c:var(--historian)}.playtester{--c:var(--planner)}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 6px}
+button{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:8px;
+padding:6px 12px;cursor:pointer}button:focus-visible{outline:2px solid var(--writer);outline-offset:2px}
+.msg{display:flex;gap:10px;margin:14px 0;transition:opacity .35s,transform .35s}
+.msg.off{opacity:0;transform:translateY(6px)}
+.bub{min-width:0;border-radius:4px 14px 14px 14px;padding:9px 13px;border:1px solid var(--line);
+background:color-mix(in srgb,var(--c) calc(var(--tint)*100%),var(--panel))}
+.who{font:750 .9rem var(--display);color:var(--c)}.who span{color:var(--mut);font:400 .8rem var(--body)}
+.staged{font:400 .72rem var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--mut);
+border:1px dashed var(--line);border-radius:6px;padding:0 6px;margin-left:6px}
+.meta{color:var(--mut);font-size:.8rem;margin-top:4px;overflow-wrap:anywhere}
+code{font:.82em var(--mono)}
+.note{border-top:1px solid var(--line);margin-top:28px;padding-top:14px;font-size:.92rem;color:var(--mut)}
+.note b{color:var(--fg)}.note p{margin:0 0 10px;max-width:65ch}
+@media (prefers-reduced-motion:reduce){.msg{transition:none}}
+</style>
+<main>
+<h1>My dev team is 4 robots</h1>
+<p class="sub">And one of them doesn&#x27;t trust the others. One real shift on a tiny lemonade-stand till, November 2, 2026.</p>
+<div class="cast"><div class="planner"><span class="av">P</span><span><b>The planner</b>Claude</span></div><div class="builder"><span class="av">B</span><span><b>The builder</b>Claude</span></div><div class="skeptic"><span class="av">S</span><span><b>The skeptic</b>Bite</span></div><div class="playtester"><span class="av">P</span><span><b>The playtester</b>Claude, looking at the page</span></div></div>
+<div class="bar"><button id="play" type="button">Play the shift</button><button id="all" type="button">Show it all</button></div>
+<div id="chat"><div class="msg planner"><span class="av">P</span><div class="bub"><div class="who">The planner <span>Claude</span><span class="staged">voiced by Claude</span></div>Game jam! GitHub&#x27;s Game Off, theme SHIFT, due Dec 1. Our pitch: Shift Change. You&#x27;re the night-shift robot. The day shift left sticky notes on every machine: &#x27;fixed the boiler!&#x27; Some of them lie. Pull a lever back to the old way: if the machine still runs fine, the fix did nothing. Stamp it LIAR before the pressure gauge blows.<div class="meta">12:40 PM ET</div></div></div>
+<div class="msg skeptic"><span class="av">S</span><div class="bub"><div class="who">The skeptic <span>Bite</span><span class="staged">voiced by Claude</span></div>So it&#x27;s my job, as a game. I&#x27;m flattered. Also suspicious.<div class="meta">12:40 PM ET</div></div></div>
+<div class="msg planner"><span class="av">P</span><div class="bub"><div class="who">The planner <span>Claude</span></div>Here&#x27;s the plan. 1) the rules of the factory: levers, notes, stamps, pressure 2) the nights: which notes lie, and the floor moves around each night 3) the page: machines you can see, sparks, smoke, screen shake, a big LIAR stamp One step at a time, a test with each, and the skeptic checks every one.<div class="meta">12:40 PM ET</div></div></div>
+<div class="msg builder"><span class="av">B</span><div class="bub"><div class="who">The builder <span>Claude</span></div>Step 1: the rules. Pull a lever on a real fix and the machine breaks, and the gauge climbs fast until you put it back. Pull it on a lie and the machine just keeps running. Wrong stamps add pressure, right ones let off steam. 9 tests.<div class="meta">commit <code>c32ec313</code> “Factory rules: levers, sticky notes, LIAR/TRUE stamps and the pressure gauge
+
+Assisted-by: Claude Code” · 12:40 PM ET</div></div></div>
+<div class="msg skeptic"><span class="av">S</span><div class="bub"><div class="who">The skeptic <span>Bite</span></div>Took your change back out and ran the tests. A test went red. Fine. I believe you. This time.<div class="meta">about <code>c32ec313</code> · Bite said: tests crash without it · 12:40 PM ET</div></div></div>
+<div class="msg builder"><span class="av">B</span><div class="bub"><div class="who">The builder <span>Claude</span></div>Step 2: five nights. Night 1 is three machines and one liar. Every night adds a machine and more liars, and the floor shifts, so the machines stand somewhere new. Seeded, so a night plays the same every time.<div class="meta">commit <code>6e6f3c83</code> “Nights: seeded liars, a shifting floor, and a faster gauge each night
+
+Assisted-by: Claude Code” · 12:40 PM ET</div></div></div>
+<div class="msg skeptic"><span class="av">S</span><div class="bub"><div class="who">The skeptic <span>Bite</span></div>Took your change back out and ran the tests. A test went red. Fine. I believe you. This time.<div class="meta">about <code>6e6f3c83</code> · Bite said: tests crash without it · 12:40 PM ET</div></div></div>
+<div class="msg builder"><span class="av">B</span><div class="bub"><div class="who">The builder <span>Claude</span></div>Step 3: the page. Tap a lever and the machine either clunks and sparks (the fix was real) or keeps humming (it wasn&#x27;t). Tap a note to stamp it. The gauge ticks when it&#x27;s high, and blows the whole floor if it tops out. A browser test plays night 1 from the title screen to clocking out, and it caught a bug: a stamp that ended the night never showed the end card.<div class="meta">commit <code>9e0e4124</code> “The page: a factory you can play, with sparks, smoke, screen shake and a LIAR stamp
+
+Assisted-by: Claude Code” · 12:46 PM ET</div></div></div>
+<div class="msg skeptic"><span class="av">S</span><div class="bub"><div class="who">The skeptic <span>Bite</span></div>Took your change back out and ran the tests. A test went red. Fine. I believe you. This time.<div class="meta">about <code>9e0e4124</code> · Bite said: noticed by your tests · 12:48 PM ET</div></div></div>
+<div class="msg playtester"><span class="av">P</span><div class="bub"><div class="who">The playtester <span>Claude, looking at the page</span><span class="staged">voiced by Claude</span></div>Played night 1 in a browser. First try, the hint bar sat on top of the &#x27;notes to stamp&#x27; counter and the sticky notes covered the top of the machines. Moved the hints to the bottom and the notes up. Clunk, sparks and the LIAR stamp all land. Night 2 blew up on me when I left two machines broken, which is the point.<div class="meta">12:48 PM ET</div></div></div>
+<div class="msg skeptic"><span class="av">S</span><div class="bub"><div class="who">The skeptic <span>Bite</span><span class="staged">voiced by Claude</span></div>A game where the player is me. If they stamp a note without pulling the lever, the end card says &#x27;stamped without testing&#x27;. Good. Shame them gently.<div class="meta">12:48 PM ET</div></div></div>
+<div class="msg builder"><span class="av">B</span><div class="bub"><div class="who">The builder <span>Claude</span></div>README: how to play, the keys, and a plain note that robots built it.<div class="meta">commit <code>4d45bc55</code> “README: how to play, keys, and how it was made
+
+Assisted-by: Claude Code” · 12:48 PM ET</div></div></div>
+<div class="msg skeptic"><span class="av">S</span><div class="bub"><div class="who">The skeptic <span>Bite</span></div>Only looks and words in this one (README.md). Tests can&#x27;t judge how things look, so it gets a pass. Logic still has to prove itself.<div class="meta">about <code>4d45bc55</code> · 12:48 PM ET</div></div></div></div>
+<div class="note"></div>
+</main>
+<script>
+const ms=[...document.querySelectorAll('.msg')];let timers=[];
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+document.getElementById('all').onclick=()=>{timers.forEach(clearTimeout);ms.forEach(m=>m.classList.remove('off'))};
+document.getElementById('play').onclick=()=>{timers.forEach(clearTimeout);ms.forEach(m=>m.classList.add('off'));
+timers=ms.map((m,i)=>setTimeout(()=>{m.classList.remove('off');m.scrollIntoView({block:'nearest',behavior:reduce?'auto':'smooth'})},400+i*1600));};
+</script>
