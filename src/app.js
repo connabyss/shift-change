@@ -216,7 +216,13 @@ function start() {
       text(`${house.shoves} shoves`, W / 2, 340, 16, "#8d8296");
       if (clock - endAt > 1) text(last ? "click for the title" : "click to go on", W / 2, 420, 18, "#cfc3ae");
     } else {
-      text("IT FOUND YOU", W / 2, 300, 52, "#b8b0d8", "IM Fell English SC");
+      const t = clock - endAt, close = Math.max(0, 1 - t / 1.2); // its face, right up against yours, then gone
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = "#e6e2ff";
+      const ew = 40 + close * 120, eh = 10 + close * 22, gap = 120 + close * 200;
+      ctx.beginPath(); ctx.ellipse(W / 2 - gap / 2, 190, ew, eh, 0.12, 0, 7); ctx.ellipse(W / 2 + gap / 2, 190, ew, eh, -0.12, 0, 7); ctx.fill();
+      ctx.globalAlpha = Math.min(1, t / 1.2);
+      text("IT FOUND YOU", W / 2, 320, 52, "#b8b0d8", "IM Fell English SC");
       if (clock - endAt > 1) text("click to try this floor again", W / 2, 400, 18, "#8d8296");
     }
     ctx.globalAlpha = 1;
