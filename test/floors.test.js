@@ -51,11 +51,19 @@ test("on floors 1 and 2 you can outrun it even when it hunts, and it gives you a
   assert.ok(SPEED.hunt * shadowPace(2) < PLAYER_SPEED);
   assert.ok(SPEED.hunt * shadowPace(LAST_FLOOR) > PLAYER_SPEED, "late floors: you can't just run");
   for (let n = 1; n < LAST_FLOOR; n++) assert.ok(shadowPace(n) <= shadowPace(n + 1) && headStart(n) >= headStart(n + 1));
-  assert.ok(headStart(1) >= 20);
+  assert.ok(headStart(1) >= 10);
 });
 
 test("three short floors, and only the last one moves on its own", () => {
   assert.equal(LAST_FLOOR, 3);
   assert.equal(quakeEvery(1), 0); assert.equal(quakeEvery(2), 0);
   assert.ok(quakeEvery(LAST_FLOOR) > 0);
+});
+
+test("floors 1 and 2: you can walk to the key without sliding anything; most of floor 1 is open", async () => {
+  const { makeHouse, path } = await import("../src/house.js");
+  for (const n of [1, 2]) for (let seed = 1; seed <= 60; seed++) {
+    const f = floorSpec(n, seed);
+    assert.ok(path(makeHouse({ ...f, player: f.key }), f.player) !== null, `floor ${n} seed ${seed}`);
+  }
 });

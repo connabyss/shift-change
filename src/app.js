@@ -2,19 +2,17 @@
 import { shoveRow, shoveCol } from "./house.js";
 import { floorHouse, LAST_FLOOR, PLAYER_SPEED, shadowPace, headStart, quakeEvery } from "./floors.js";
 import { rng } from "./rng.js";
-import { buildTiles, solid, roomOf, roomCenter, canSee, tilePath, R, FRONT, WARDROBE } from "./tiles.js";
+import { buildTiles, move, guide, roomOf, roomCenter, canSee, tilePath, R, FRONT, WARDROBE } from "./tiles.js";
 import { makeShadow, think, cutOff, stun } from "./stalker.js";
 import { makeView, render, present, RW, RH } from "./view.js";
 
 export const W = 960, H = 600;
-// While planning a slide, W/A/S/D pick its direction, relative to where you face (same as the arrow names shoveFor takes).
-export const DIR_KEY = { w: "ArrowUp", d: "ArrowRight", s: "ArrowDown", a: "ArrowLeft" };
-const MOVE = PLAYER_SPEED, TURN = 2.3, SLIDE_STEP = 0.075, RADIUS = 0.22;
+const MOVE = PLAYER_SPEED, TURN = 2.3, SLIDE_STEP = 0.075, RADIUS = 0.2;
 
 // Which way you face, as a side of the compass: 0 east, 1 south, 2 west, 3 north.
 export function facing(a) { return ((Math.round(a / (Math.PI / 2)) % 4) + 4) % 4; }
 
-// Plan a shove (hold Q, then W/A/S/D): shove your own row or column, relative to where you're looking.
+// shove your own row or column, relative to where you're looking.
 // up = the way you face, down = behind you, left/right = to your sides.
 export function shoveFor(face, key, room) {
   const turn = { ArrowUp: 0, ArrowRight: 1, ArrowDown: 2, ArrowLeft: 3 }[key];
@@ -62,7 +60,7 @@ function start() {
   // ---------- state ----------
   let scene = "title", floor = 1, seed = 1, house, decor, map, me, sh, slide = null, band = [];
   let clock = 0, hint = "", hintAt = 0, endAt = 0, shake = 0, flash = 0, hidden = false, sawHide = false, hasKey = false;
-  let aim = null, planning = false, nextQuake = Infinity, warned = false, before = null, wakeAt = 0, awake = false, noiseAt = null, lastStep = 0, lastBeat = 0, lastMyStep = 0, seenOnce = false, caught = false, escaped = false;
+  let way = null, wayAt = 0, nextQuake = Infinity, warned = false, before = null, wakeAt = 0, awake = false, noiseAt = null, lastStep = 0, lastBeat = 0, lastMyStep = 0, seenOnce = false, caught = false, escaped = false;
   const keys = new Set();
 
   function begin(n) {
@@ -76,11 +74,11 @@ function start() {
     sh = makeShadow(roomCenter(house.hunter));
     house.hunter = { x: -99, y: -99 }; // the shadow lives in tiles now; the room rules only move rooms
     map = buildTiles(house, decor);
-    wakeAt = clock + headStart(n); awake = false; aim = null; planning = false;
+    wakeAt = clock + headStart(n); awake = false; way = null; wayAt = 0;
     nextQuake = quakeEvery(n) ? clock + headStart(n) + quakeEvery(n) : Infinity; warned = false;
     slide = null; hidden = false; sawHide = false; hasKey = !house.key; caught = false; escaped = false; seenOnce = false;
     scene = "play";
-    say(n === 1 ? "Find the key, then the front door.   Mouse: look.   WASD: walk.   E: hide.   Hold Q or right-click: slide rooms."
+    say(n === 1 ? "Follow the arrow to the key, then the door.   WASD + mouse.   SPACE: slide rooms.   E: hide."
       : n === LAST_FLOOR ? `Floor ${n}, the last. The house moves on its own here.` : `Floor ${n}. It's learning.`);
   }
   function say(t) { hint = t; hintAt = clock; }
@@ -132,14 +130,14 @@ function start() {
   function tryMove(dx, dy) {
     const nx = me.x + dx, ny = me.y + dy;
     const bump = (x, y) => map.kind[Math.floor(y)]?.[Math.floor(x)];
-    for (const [px, py] of [[nx + Math.sign(dx) * RADIUS, me.y], [me.x, ny + Math.sign(dy) * RADIUS]]) {
+    for (const [px, py] of [[nx + Math.sign(dx) * (RADIUS + 0.05), me.y], [me.x, ny + Math.sign(dy) * (RADIUS + 0.05)]]) {
       if (bump(px, py) === FRONT) {
         if (hasKey) { escaped = true; return; }
         if (clock - hintAt > 2) { say("Locked. The key is somewhere in this house."); tone(90, 0.12, "sine", 0.12, 60); }
       }
     }
-    if (!solid(map, nx + Math.sign(dx) * RADIUS, me.y)) me.x = nx;
-    if (!solid(map, me.x, ny + Math.sign(dy) * RADIUS)) me.y = ny;
+    const to = move(map, me, dx, dy, RADIUS);
+    me.x = to.x; me.y = to.y;
   }
 
   function facingTile() {
@@ -164,28 +162,20 @@ function start() {
     if (e.key === "m" || e.key === "M") { muted = !muted; return; }
     if (scene !== "play") { if (e.key === "Enter" || e.key === " ") next(); return; }
     if (e.key.startsWith("Arrow") || e.key === " " || e.key === "Tab") e.preventDefault();
-    // Two hands: WASD + mouse. Hold Q (or the right mouse button) to plan a slide: the map grows,
-    // W/A/S/D pick which way the rooms go (W = the way you face), and letting go slides them.
+    // Two hands: WASD + mouse. SPACE (or right-click) slides the rooms ahead of you toward you. E hides.
     const k = e.key.toLowerCase();
-    if (k === "q") { if (!e.repeat) startPlan(); return; }
-    if (planning && DIR_KEY[k]) { if (aim !== DIR_KEY[k]) { aim = DIR_KEY[k]; tone(330, 0.06, "triangle", 0.03); } return; }
-    if (e.key === "Escape") { planning = false; aim = null; return; }
-    if (k === "e" || e.key === " ") { interact(); return; }
+    if (e.key === " ") { if (!e.repeat) shove(ahead()); return; }
+    if (k === "e") { interact(); return; }
     keys.add(k);
   });
-  window.addEventListener("keyup", (e) => {
-    if (e.key.toLowerCase() === "q") endPlan();
-    keys.delete(e.key.toLowerCase());
-  });
-  window.addEventListener("blur", () => { keys.clear(); planning = false; aim = null; });
-  function startPlan() { if (scene === "play" && !slide && !hidden) { planning = true; aim = null; keys.clear(); } }
-  function endPlan() { if (!planning) return; const s = aimed(); planning = false; aim = null; shove(s); }
-  function aimed() { return planning && aim && scene === "play" && !slide && !hidden ? shoveFor(facing(me.a), aim, roomOf(me)) : null; }
+  window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+  window.addEventListener("blur", () => keys.clear());
+  // The row or column straight ahead of you, sliding toward you (you're in it, so you ride along).
+  function ahead() { return scene === "play" && !slide && !hidden ? shoveFor(facing(me.a), "ArrowDown", roomOf(me)) : null; }
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
-  canvas.addEventListener("pointerup", (e) => { if (e.button === 2) endPlan(); });
   canvas.addEventListener("pointerdown", (e) => {
     if (scene !== "play") { next(); return; }
-    if (e.button === 2) { startPlan(); return; }
+    if (e.button === 2) { shove(ahead()); return; }
     if (document.pointerLockElement !== canvas) canvas.requestPointerLock?.()?.catch?.(() => {});
   });
   document.addEventListener("mousemove", (e) => { if (document.pointerLockElement === canvas && scene === "play" && !hidden) me.a += e.movementX * 0.0035; });
@@ -203,26 +193,26 @@ function start() {
     ctx.fillText(t, x, y);
   }
 
-  // Your map turns with you: the way you face is always up. So an arrow key slides rooms the way it points on the map.
+  // Your map turns with you: the way you face is always up.
   function drawMap() {
-    const s = planning ? 30 : 21, n = house.w, size = n * s, pad = 10;
-    const cx = W - size / 2 - 30, cy = planning ? H / 2 + 10 : H - size / 2 - 34;
+    const s = 22, n = house.w, size = n * s, pad = 10;
+    const cx = W - size / 2 - 30, cy = H - size / 2 - 34;
     const face = facing(me.a), rot = -(face + 1) * Math.PI / 2;
     ctx.save();
     ctx.translate(cx, cy); ctx.rotate(rot); ctx.translate(-size / 2, -size / 2);
     ctx.fillStyle = "rgba(205,190,160,0.86)"; ctx.fillRect(-pad, -pad, size + pad * 2, size + pad * 2);
-    const plan = aimed();
-    if (plan) { // the rooms that will move, lit up, with arrows the way they'll go
-      ctx.fillStyle = "rgba(150,40,20,0.32)";
+    const plan = ahead();
+    if (plan) { // the rooms SPACE would slide, lit up, with arrows the way they'd go
+      ctx.fillStyle = "rgba(150,40,20,0.18)";
       if (plan.axis === "row") ctx.fillRect(0, plan.i * s, size, s); else ctx.fillRect(plan.i * s, 0, s, size);
-      ctx.fillStyle = "rgba(120,20,10,0.85)";
+      ctx.fillStyle = "rgba(120,20,10,0.55)";
       for (let k = 0; k < n; k++) {
         const X = (plan.axis === "row" ? k : plan.i) * s + s / 2, Y = (plan.axis === "row" ? plan.i : k) * s + s / 2;
         const dx = plan.axis === "row" ? plan.dir : 0, dy = plan.axis === "col" ? plan.dir : 0, a = s * 0.22;
         ctx.beginPath(); ctx.moveTo(X + dx * a, Y + dy * a); ctx.lineTo(X - dx * a - dy * a, Y - dy * a + dx * a); ctx.lineTo(X - dx * a + dy * a, Y - dy * a - dx * a); ctx.fill();
       }
     }
-    ctx.strokeStyle = "rgba(60,40,30,0.8)"; ctx.lineWidth = planning ? 2 : 1.4;
+    ctx.strokeStyle = "rgba(60,40,30,0.8)"; ctx.lineWidth = 1.4;
     for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
       const d = house.rooms[y][x], X = x * s, Y = y * s, a = s * 0.3, b = s - a;
       const seg = (x1, y1, x2, y2) => { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); };
@@ -240,7 +230,7 @@ function start() {
       g.addColorStop(0, `rgba(10,5,10,${a})`); g.addColorStop(1, "rgba(10,5,10,0)");
       ctx.fillStyle = g; ctx.fillRect(gx - gr, gy - gr, gr * 2, gr * 2);
     }
-    const px = (me.x / R) * s, py = (me.y / R) * s, r = planning ? 8 : 6;
+    const px = (me.x / R) * s, py = (me.y / R) * s, r = 6;
     ctx.fillStyle = "#3a1e10"; ctx.beginPath();
     ctx.moveTo(px + Math.cos(me.a) * r, py + Math.sin(me.a) * r);
     ctx.lineTo(px + Math.cos(me.a + 2.5) * r * 0.8, py + Math.sin(me.a + 2.5) * r * 0.8);
@@ -249,10 +239,22 @@ function start() {
     // N for north, kept upright, on whichever edge north is now
     const D = size / 2 + pad + 9, nx = cx + Math.sin(rot) * D, ny = cy - Math.cos(rot) * D;
     text("N", nx, ny, 13, "rgba(205,190,160,0.8)", "IM Fell English SC");
-    if (planning) {
-      text(plan ? "let go to slide these rooms" : "W A S D: which way should they slide?", W - 24, cy - size / 2 - pad - 48, 16, "#e8d9a8", "IM Fell English", "right");
-      text(plan ? "you ride along · Esc: never mind" : "W = the way you face", W - 24, cy - size / 2 - pad - 28, 13, "rgba(232,217,168,0.7)", "IM Fell English", "right");
-    } else text("map: up is the way you face", W - 24, cy - size / 2 - pad - 30, 12, "rgba(205,190,160,0.7)", "IM Fell English", "right");
+    text("lit rooms: what SPACE slides", W - 24, cy - size / 2 - pad - 30, 12, "rgba(205,190,160,0.7)", "IM Fell English", "right");
+  }
+
+  // The arrow at the top: which way to the key (then the door), following the halls.
+  function drawGuide() {
+    if (hidden) return;
+    if (!way || clock - wayAt > 0.25) {
+      const k = keyPos(), goal = k ?? { x: house.exit.x * R + R - 1.5, y: house.exit.y * R + R / 2 };
+      way = { ...guide(map, me, goal), what: k ? "the key" : "the door" }; wayAt = clock;
+    }
+    const rel = way.angle - me.a, x = W / 2, y = 44;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rel + Math.PI / 2);
+    ctx.fillStyle = way.blocked ? "rgba(200,90,60,0.9)" : "rgba(232,217,168,0.85)";
+    ctx.beginPath(); ctx.moveTo(0, -14); ctx.lineTo(10, 8); ctx.lineTo(0, 3); ctx.lineTo(-10, 8); ctx.fill();
+    ctx.restore();
+    text(way.blocked ? `no way through to ${way.what}: slide rooms with SPACE` : way.what, x, y + 26, 14, way.blocked ? "rgba(220,120,90,0.9)" : "rgba(217,205,184,0.7)");
   }
 
   function drawTitle() {
@@ -263,7 +265,7 @@ function start() {
     ctx.globalAlpha = 1;
     text("The rooms move. So does it.", W / 2, 360, 22, "#8d8296");
     if (Math.sin(clock * 2.4) > -0.4) text("click, or press Enter, to go inside", W / 2, 450, 18, "#cfc3ae");
-    text("headphones on · left hand on WASD, right hand on the mouse · M: sound", W / 2, 560, 13, "#5d5560");
+    text("headphones on · WASD + mouse · SPACE slides rooms · M: sound", W / 2, 560, 13, "#5d5560");
   }
 
   function drawEnd() {
@@ -390,6 +392,7 @@ function start() {
     text(hint, W / 2, H - 22, 16, "#d9cdb8");
     ctx.globalAlpha = 1;
     drawMap();
+    if (scene === "play") drawGuide();
     if (scene === "end") drawEnd();
     requestAnimationFrame(frame);
   }
@@ -397,5 +400,5 @@ function start() {
   requestAnimationFrame(frame);
 
   // For the page test: read the state, and hold keys like a player.
-  window.__fp = { begin: (n) => begin(n), quakeSoon: () => { nextQuake = clock + 0.1; }, quake: () => nextQuake, aim: () => aim, planning: () => planning, awake: () => awake, scene: () => scene, me: () => me, shadow: () => sh, house: () => house, map: () => map, hidden: () => hidden, hasKey: () => hasKey };
+  window.__fp = { begin: (n) => begin(n), quakeSoon: () => { nextQuake = clock + 0.1; }, quake: () => nextQuake, way: () => way, awake: () => awake, scene: () => scene, me: () => me, shadow: () => sh, house: () => house, map: () => map, hidden: () => hidden, hasKey: () => hasKey };
 }

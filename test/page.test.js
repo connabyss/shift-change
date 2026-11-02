@@ -50,27 +50,20 @@ test("first person: walk, turn, shove your row and ride along, hide in the wardr
     // on floor 1 the shadow sleeps at first: a head start
     const sh0 = await page.evaluate(() => ({ ...window.__fp.shadow() }));
     assert.equal(await page.evaluate(() => window.__fp.awake()), false, "asleep at the start of floor 1");
-    // face north again, hold Q and tap D: nothing moves yet, you don't walk, the map shows the plan.
-    // Let go of Q: your row slides east (to your right), you ride along
-    await page.evaluate(() => { window.__fp.me().a = -Math.PI / 2; });
-    const before = await me();
-    await page.keyboard.down("q");
-    await page.keyboard.down("d"); await page.waitForTimeout(250); await page.keyboard.up("d");
-    assert.equal(await page.evaluate(() => window.__fp.planning()), true);
-    assert.equal(await page.evaluate(() => window.__fp.aim()), "ArrowRight");
-    assert.equal(await page.evaluate(() => window.__fp.house().shoves), 0, "planning only shows what will slide");
-    assert.equal((await me()).x, before.x, "D picks a direction while planning; it doesn't walk you");
     const sh1 = await page.evaluate(() => ({ ...window.__fp.shadow() }));
     assert.deepEqual([sh1.x, sh1.y], [sh0.x, sh0.y], "the sleeping shadow hasn't moved");
-    await page.keyboard.up("q");
+    // the arrow at the top points the way to the key
+    assert.equal(await page.evaluate(() => window.__fp.way()?.what), "the key");
+    // face north, press SPACE: the column ahead of you slides toward you (south), and you ride along
+    await page.evaluate(() => { window.__fp.me().a = -Math.PI / 2; });
+    const before = await me();
+    await page.keyboard.press(" ");
     await page.waitForTimeout(700);
     const after = await me();
     assert.equal(await page.evaluate(() => window.__fp.house().shoves), 1);
     assert.equal(after.a, before.a, "sliding never turns you");
-    // holding Q and letting go without picking a way does nothing
-    await page.keyboard.down("q"); await page.keyboard.up("q"); await page.waitForTimeout(100);
-    assert.equal(await page.evaluate(() => window.__fp.house().shoves), 1);
-    assert.ok(Math.abs(Math.abs(after.x - before.x) - 5) < 0.01 || Math.abs(after.x - before.x) > 10, "rode along one room (or wrapped round)");
+    assert.equal(after.x, before.x);
+    assert.ok(Math.abs((after.y - before.y) - 5) < 0.01 || before.y - after.y > 10, "rode along one room south (or wrapped round)");
     // stand next to a wardrobe, facing it, and hide in it (with the shadow sent off to wait in a far corner)
     await page.evaluate(() => {
       const sh = window.__fp.shadow(); Object.assign(sh, { x: 0.5, y: 0.5, mode: "look", timer: 99, target: null });
