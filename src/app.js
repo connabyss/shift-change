@@ -1,39 +1,25 @@
-// The page: draws the house, takes keys and taps, makes the noises. The rules live in house.js.
-import { shoveRow, shoveCol, walk, path, hunterStep, wander, seep, N, E, S, W as WEST } from "./house.js";
-import { floorHouse, LAST_FLOOR } from "./floors.js";
+// The game: first person inside the shifting house. Rules: house.js (rooms), tiles.js (walls), stalker.js (the shadow).
+import { shoveRow, shoveCol } from "./house.js";
+import { floorHouse, LAST_FLOOR, PLAYER_SPEED, shadowPace, headStart } from "./floors.js";
 import { rng } from "./rng.js";
+import { buildTiles, solid, roomOf, roomCenter, canSee, R, FRONT, WARDROBE } from "./tiles.js";
+import { makeShadow, think } from "./stalker.js";
+import { makeView, render, present, RW, RH } from "./view.js";
 
 export const W = 960, H = 600;
-const SHOVE_TIME = 0.32, WALK_TIME = 0.16;
+const MOVE = PLAYER_SPEED, TURN = 2.3, SLIDE_STEP = 0.075, RADIUS = 0.22;
 
-// Where the grid sits on screen for a house of size n.
-export function grid(n) {
-  const cell = Math.floor(Math.min(470 / n, 112));
-  const g = n * cell;
-  return { cell, ox: Math.round((W - g) / 2), oy: Math.round(78 + (480 - g) / 2), size: g };
-}
+// Which way you face, as a side of the compass: 0 east, 1 south, 2 west, 3 north.
+export function facing(a) { return ((Math.round(a / (Math.PI / 2)) % 4) + 4) % 4; }
 
-// The shove arrows around the outside of the grid: one at each end of every row and column.
-export function arrows(n) {
-  const { cell, ox, oy, size } = grid(n), out = [];
-  for (let i = 0; i < n; i++) {
-    out.push({ axis: "row", i, dir: -1, x: ox - 34, y: oy + i * cell + cell / 2 });
-    out.push({ axis: "row", i, dir: 1, x: ox + size + 40, y: oy + i * cell + cell / 2 });
-    out.push({ axis: "col", i, dir: -1, x: ox + i * cell + cell / 2, y: oy - 30 });
-    out.push({ axis: "col", i, dir: 1, x: ox + i * cell + cell / 2, y: oy + size + 30 });
-  }
-  return out;
-}
-
-// What a tap at p means: a shove arrow, or the room next to you (walk there), or the front door.
-export function hitTest(house, p) {
-  const n = house.w;
-  for (const a of arrows(n)) if (Math.hypot(p.x - a.x, p.y - a.y) < 24) return { kind: "shove", axis: a.axis, i: a.i, dir: a.dir };
-  const { cell, ox, oy } = grid(n);
-  const x = Math.floor((p.x - ox) / cell), y = Math.floor((p.y - oy) / cell);
-  const dx = x - house.player.x, dy = y - house.player.y;
-  if (Math.abs(dx) + Math.abs(dy) === 1) return { kind: "walk", d: dx === 1 ? "E" : dx === -1 ? "W" : dy === 1 ? "S" : "N" };
-  return { kind: "none" };
+// An arrow key (SHIFT optional): shove your own row or column, relative to where you're looking.
+// up = the way you face, down = behind you, left/right = to your sides.
+export function shoveFor(face, key, room) {
+  const turn = { ArrowUp: 0, ArrowRight: 1, ArrowDown: 2, ArrowLeft: 3 }[key];
+  if (turn === undefined) return null;
+  const d = (face + turn) % 4; // 0 E, 1 S, 2 W, 3 N
+  return d === 0 ? { axis: "row", i: room.y, dir: 1 } : d === 2 ? { axis: "row", i: room.y, dir: -1 }
+    : d === 1 ? { axis: "col", i: room.x, dir: 1 } : { axis: "col", i: room.x, dir: -1 };
 }
 
 if (typeof document !== "undefined") start();
@@ -41,9 +27,6 @@ if (typeof document !== "undefined") start();
 function start() {
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d");
-  const dark = document.createElement("canvas");
-  dark.width = W; dark.height = H;
-  const dctx = dark.getContext("2d");
   function fit() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
@@ -53,110 +36,147 @@ function start() {
   }
   window.addEventListener("resize", fit);
   fit();
+  const view = makeView(), img = new ImageData(RW, RH);
 
   // ---------- sound: made on the spot, no files ----------
   let audio = null, muted = false;
-  function sound(kind) {
-    if (muted) return;
-    try { audio ??= new AudioContext(); } catch { return; }
-    const t = audio.currentTime;
-    const tone = (f, d, type = "sine", v = 0.08, f2 = f, at = 0) => {
-      const o = audio.createOscillator(), g = audio.createGain();
-      o.type = type; o.frequency.setValueAtTime(f, t + at); o.frequency.exponentialRampToValueAtTime(f2, t + at + d);
-      g.gain.setValueAtTime(0.0001, t + at); g.gain.exponentialRampToValueAtTime(v, t + at + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + at + d);
-      o.connect(g).connect(audio.destination); o.start(t + at); o.stop(t + at + d + 0.02);
-    };
-    const noise = (d, v, lp, at = 0) => {
-      const b = audio.createBuffer(1, Math.ceil(audio.sampleRate * d), audio.sampleRate), ch = b.getChannelData(0);
-      for (let i = 0; i < ch.length; i++) ch[i] = (Math.random() * 2 - 1) * Math.sin((Math.PI * i) / ch.length);
-      const s = audio.createBufferSource(), f = audio.createBiquadFilter(), g = audio.createGain();
-      f.type = "lowpass"; f.frequency.value = lp; g.gain.value = v;
-      s.buffer = b; s.connect(f).connect(g).connect(audio.destination); s.start(t + at);
-    };
-    if (kind === "shove") { noise(0.34, 0.5, 260); tone(55, 0.3, "sawtooth", 0.05, 40); noise(0.08, 0.6, 500, 0.3); }
-    if (kind === "step") noise(0.05, 0.25, 900);
-    if (kind === "bump") tone(90, 0.1, "sine", 0.1, 60);
-    if (kind === "beat") { tone(60, 0.12, "sine", 0.35, 45); tone(58, 0.12, "sine", 0.25, 44, 0.18); }
-    if (kind === "flicker") { tone(1240, 0.5, "sine", 0.025, 1180); noise(0.12, 0.15, 3000); }
-    if (kind === "near") tone(110, 0.7, "triangle", 0.05, 104);
-    if (kind === "caught") { noise(1.3, 0.8, 900); tone(140, 1.2, "sawtooth", 0.08, 35); }
-    if (kind === "key") [880, 1320].forEach((f, i) => tone(f, 0.4, "triangle", 0.05, f, i * 0.08));
-    if (kind === "out") [392, 494, 587].forEach((f, i) => tone(f, 0.9, "triangle", 0.05, f, i * 0.12));
+  function ac() { if (muted) return null; try { audio ??= new AudioContext(); } catch { return null; } return audio; }
+  function tone(f, d, type = "sine", v = 0.08, f2 = f, at = 0, pan = 0) {
+    const a = ac(); if (!a) return;
+    const t = a.currentTime + at, o = a.createOscillator(), g = a.createGain(), p = a.createStereoPanner();
+    o.type = type; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f2, t + d);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    p.pan.value = pan; o.connect(g).connect(p).connect(a.destination); o.start(t); o.stop(t + d + 0.02);
+  }
+  function noise(d, v, lp, at = 0, pan = 0) {
+    const a = ac(); if (!a) return;
+    const b = a.createBuffer(1, Math.ceil(a.sampleRate * d), a.sampleRate), ch = b.getChannelData(0);
+    for (let i = 0; i < ch.length; i++) ch[i] = (Math.random() * 2 - 1) * Math.sin((Math.PI * i) / ch.length);
+    const s = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain(), p = a.createStereoPanner();
+    f.type = "lowpass"; f.frequency.value = lp; g.gain.value = v; p.pan.value = pan;
+    s.buffer = b; s.connect(f).connect(g).connect(p).connect(a.destination); s.start(a.currentTime + at);
   }
 
-  // ---------- game state ----------
-  let scene = "title", house = null, floor = 1, seed = 1, decor = null;
-  let clock = 0, stepAcc = 0, lastWander = null, lost = 0, hint = "", hintAt = 0, endAt = 0;
-  let seenSeep = false, heard = false, slide = null, walkAnim = null, shake = 0, flickerAt = 4, flicker = 0, lastBeat = 0, wanderRand = rng(1);
-  const view = { p: { x: 0, y: 0 }, h: { x: 0, y: 0 } };
+  // ---------- state ----------
+  let scene = "title", floor = 1, seed = 1, house, decor, map, me, sh, slide = null, band = [];
+  let clock = 0, hint = "", hintAt = 0, endAt = 0, shake = 0, flash = 0, hidden = false, sawHide = false, hasKey = false;
+  let aim = null, wakeAt = 0, awake = false, noiseAt = null, lastStep = 0, lastBeat = 0, lastMyStep = 0, seenOnce = false, caught = false, escaped = false;
+  const keys = new Set();
 
   function begin(n) {
     floor = n;
     house = floorHouse(n, seed);
     const r = rng(seed * 31 + n);
     decor = house.rooms.map((row) => row.map(() => Math.floor(r() * 7)));
-    view.p = { ...house.player }; view.h = { ...house.hunter };
-    slide = null; walkAnim = null; stepAcc = -2.5; lastWander = null; lost = 0; flickerAt = clock + 2.5; wanderRand = rng(seed + n * 101);
+    decor[house.player.y][house.player.x] = 3; // a wardrobe right where you start, so you learn to hide
+    const start = roomCenter(house.player);
+    me = { x: start.x, y: start.y + 0.6, a: -Math.PI / 2 };
+    sh = makeShadow(roomCenter(house.hunter));
+    house.hunter = { x: -99, y: -99 }; // the shadow lives in tiles now; the room rules only move rooms
+    map = buildTiles(house, decor);
+    wakeAt = clock + headStart(n); awake = false; aim = null;
+    slide = null; hidden = false; sawHide = false; hasKey = !house.key; caught = false; escaped = false; seenOnce = false;
     scene = "play";
-    say(n === 1 ? "Find the key, then the front door.   Walk: arrows/WASD.   Shove your row: SHIFT + arrow.   Or tap."
-      : `Floor ${n}. It's quicker now.`);
+    say(n === 1 ? "Find the key, then the front door.   Mouse: look.   W/S walk, A/D step.   E: hide.   Hold an arrow: slide rooms."
+      : `Floor ${n}. It's learning.`);
   }
   function say(t) { hint = t; hintAt = clock; }
 
-  function shove(axis, i, dir) {
-    if (scene !== "play" || house.over || slide || walkAnim) return;
-    (axis === "row" ? shoveRow : shoveCol)(house, i, dir);
+  function keyPos() { return house.key && !hasKey ? roomCenter(house.key) : null; }
+
+  function shove(s) {
+    if (scene !== "play" || slide || hidden || !s) return;
+    house.player = roomOf(me);
+    (s.axis === "row" ? shoveRow : shoveCol)(house, s.i, s.dir);
     const wrap = (v, n) => ((v % n) + n) % n;
-    if (axis === "row") { const row = decor[i]; decor[i] = row.map((_, x) => row[wrap(x - dir, house.w)]); }
-    else { const col = decor.map((r) => r[i]); col.forEach((_, y) => { decor[y][i] = col[wrap(y - dir, house.h)]; }); }
-    slide = { axis, i, dir, t0: clock };
-    heard = true; // shoving is loud: the shadow takes a step as soon as the rooms settle
-    view.p = { ...house.player }; view.h = { ...house.hunter };
-    shake = Math.max(shake, 6);
-    sound("shove");
-    if (floor === 1 && house.shoves === 1) say("The house moved, and you with it. But shoving is loud. It heard that.");
+    if (s.axis === "row") { const row = decor[s.i]; decor[s.i] = row.map((_, x) => row[wrap(x - s.dir, house.w)]); }
+    else { const col = decor.map((rr) => rr[s.i]); col.forEach((_, y) => { decor[y][s.i] = col[wrap(y - s.dir, house.h)]; }); }
+    // who rides along: anyone whose room is in the shoved band
+    const inBand = (p) => (s.axis === "row" ? roomOf(p).y : roomOf(p).x) === s.i;
+    band = [me, sh].filter(inBand);
+    slide = { ...s, left: R, next: clock + SLIDE_STEP };
+    map = buildTiles(house, decor, slide);
+    noiseAt = { x: me.x, y: me.y };
+    shake = 5; noise(0.9, 0.6, 220); tone(48, 0.9, "sawtooth", 0.05, 36);
+    if (floor === 1 && house.shoves === 1) say("The whole row of rooms moved, with you in it. That was loud. It heard.");
   }
 
-  function step(d) {
-    if (scene !== "play" || house.over || slide || walkAnim) return;
-    const from = { ...house.player };
-    const r = walk(house, d);
-    if (r.kind === "wall") { sound("bump"); shake = Math.max(shake, 2); return; }
-    if (r.kind === "locked") { sound("bump"); shake = Math.max(shake, 3); say("Locked. The key is in here somewhere. Look for the glint."); return; }
-    if (r.kind === "key") { sound("key"); say("You have the key. Now the front door, the glow on the right wall."); }
-    sound("step");
-    walkAnim = { from, t0: clock, out: r.kind === "escaped" };
+  function slideTick() {
+    if (!slide || clock < slide.next) return;
+    slide.left -= 1; slide.next = clock + SLIDE_STEP;
+    const mw = house.w * R, mh = house.h * R;
+    for (const p of band) {
+      if (slide.axis === "row") p.x = ((p.x + slide.dir) % mw + mw) % mw;
+      else p.y = ((p.y + slide.dir) % mh + mh) % mh;
+    }
+    noise(0.07, 0.35, 400);
+    map = buildTiles(house, decor, slide.left ? slide : null);
+    if (!slide.left) { slide = null; shake = 8; noise(0.15, 0.8, 300); }
+  }
+
+  function tryMove(dx, dy) {
+    const nx = me.x + dx, ny = me.y + dy;
+    const bump = (x, y) => map.kind[Math.floor(y)]?.[Math.floor(x)];
+    for (const [px, py] of [[nx + Math.sign(dx) * RADIUS, me.y], [me.x, ny + Math.sign(dy) * RADIUS]]) {
+      if (bump(px, py) === FRONT) {
+        if (hasKey) { escaped = true; return; }
+        if (clock - hintAt > 2) { say("Locked. The key is somewhere in this house."); tone(90, 0.12, "sine", 0.12, 60); }
+      }
+    }
+    if (!solid(map, nx + Math.sign(dx) * RADIUS, me.y)) me.x = nx;
+    if (!solid(map, me.x, ny + Math.sign(dy) * RADIUS)) me.y = ny;
+  }
+
+  function facingTile() {
+    const fx = me.x + Math.cos(me.a) * 0.9, fy = me.y + Math.sin(me.a) * 0.9;
+    return map.kind[Math.floor(fy)]?.[Math.floor(fx)];
+  }
+
+  function interact() {
+    if (scene !== "play" || slide) return;
+    if (hidden) { hidden = false; sawHide = false; me.a += Math.PI; tone(180, 0.2, "triangle", 0.05, 120); say("You step out."); return; }
+    if (facingTile() === WARDROBE) {
+      hidden = true;
+      sawHide = canSee(map, sh, me, 9);
+      me.a += Math.PI; // inside, you turn round and watch the room through the crack
+      noise(0.25, 0.4, 700);
+      say(sawHide ? "It saw you get in." : "Hold your breath. Press E to come out.");
+    }
   }
 
   // ---------- input ----------
-  const KEYS = { ArrowUp: "N", ArrowRight: "E", ArrowDown: "S", ArrowLeft: "W", w: "N", d: "E", s: "S", a: "W", W: "N", D: "E", S: "S", A: "W" };
   window.addEventListener("keydown", (e) => {
     if (e.key === "m" || e.key === "M") { muted = !muted; return; }
-    if (scene !== "play") { if (e.key === "Enter" || e.key === " ") tapAnywhere(); return; }
-    const d = KEYS[e.key];
-    if (!d) return;
-    e.preventDefault();
-    if (e.shiftKey) {
-      const p = house.player;
-      if (d === "E" || d === "W") shove("row", p.y, d === "E" ? 1 : -1);
-      else shove("col", p.x, d === "S" ? 1 : -1);
-    } else step(d);
+    if (scene !== "play") { if (e.key === "Enter" || e.key === " ") next(); return; }
+    if (e.key.startsWith("Arrow") || e.key === " " || e.key === "Tab") e.preventDefault();
+    // arrows only ever slide rooms (with or without SHIFT); they never turn you, so they can't fight the mouse
+    // hold an arrow to see which rooms will slide (the map lights them up), let go to slide them
+    if (e.key.startsWith("Arrow")) {
+      if (!e.repeat && !slide && !hidden) { aim = e.key; tone(330, 0.06, "triangle", 0.03); }
+      return;
+    }
+    if (e.key === "Escape") { aim = null; return; }
+    if (e.key === "e" || e.key === "E" || e.key === " ") { interact(); return; }
+    keys.add(e.key.toLowerCase());
   });
-  function tapAnywhere() {
-    if (scene === "title") { sound("step"); begin(1); return; }
-    if (scene === "end" && clock - endAt > 0.8) {
-      if (house.escaped && floor === LAST_FLOOR) { scene = "title"; seed += 1; return; }
-      begin(house.escaped ? floor + 1 : floor);
+  window.addEventListener("keyup", (e) => {
+    if (e.key === aim) { const s = aimed(); aim = null; shove(s); }
+    keys.delete(e.key.toLowerCase());
+  });
+  window.addEventListener("blur", () => { keys.clear(); aim = null; });
+  function aimed() { return aim && scene === "play" && !slide && !hidden ? shoveFor(facing(me.a), aim, roomOf(me)) : null; }
+  canvas.addEventListener("pointerdown", (e) => {
+    if (scene !== "play") { next(); return; }
+    if (document.pointerLockElement !== canvas) canvas.requestPointerLock?.()?.catch?.(() => {});
+  });
+  document.addEventListener("mousemove", (e) => { if (document.pointerLockElement === canvas && scene === "play" && !hidden) me.a += e.movementX * 0.0035; });
+  function next() {
+    if (scene === "title") { ac(); begin(1); canvas.requestPointerLock?.()?.catch?.(() => {}); return; }
+    if (scene === "end" && clock - endAt > 1) {
+      if (escaped && floor === LAST_FLOOR) { scene = "title"; seed += 1; return; }
+      begin(escaped ? floor + 1 : floor);
     }
   }
-  canvas.addEventListener("pointerdown", (e) => {
-    if (scene !== "play") { tapAnywhere(); return; }
-    const r = canvas.getBoundingClientRect();
-    const hit = hitTest(house, { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H });
-    if (hit.kind === "shove") shove(hit.axis, hit.i, hit.dir);
-    if (hit.kind === "walk") step(hit.d);
-  });
 
   // ---------- drawing ----------
   function text(t, x, y, size, color, font = "IM Fell English", align = "center") {
@@ -164,211 +184,80 @@ function start() {
     ctx.fillText(t, x, y);
   }
 
-  function drawRoom(doors, kind, x, y, cell) {
-    const wall = Math.max(6, cell * 0.08), gap = cell * 0.36;
-    ctx.fillStyle = (kind % 2) ? "#3a2e26" : "#34291f";
-    ctx.fillRect(x, y, cell, cell);
-    ctx.strokeStyle = "rgba(0,0,0,0.25)"; ctx.lineWidth = 1;
-    for (let i = 1; i < 6; i++) { ctx.beginPath(); ctx.moveTo(x, y + (i * cell) / 6); ctx.lineTo(x + cell, y + (i * cell) / 6); ctx.stroke(); }
-    furniture(kind, x + cell / 2, y + cell / 2, cell);
-    ctx.fillStyle = "#1a1411";
-    const side = (isOpen, x1, y1, w1, h1, horiz) => {
-      if (!isOpen) { ctx.fillRect(x1, y1, w1, h1); return; }
-      const a = ((horiz ? w1 : h1) - gap) / 2;
-      if (horiz) { ctx.fillRect(x1, y1, a, h1); ctx.fillRect(x1 + a + gap, y1, a, h1); }
-      else { ctx.fillRect(x1, y1, w1, a); ctx.fillRect(x1, y1 + a + gap, w1, a); }
-    };
-    side(doors & N, x, y, cell, wall, true);
-    side(doors & S, x, y + cell - wall, cell, wall, true);
-    side(doors & WEST, x, y, wall, cell, false);
-    side(doors & E, x + cell - wall, y, wall, cell, false);
-  }
-
-  function furniture(kind, cx, cy, cell) {
-    ctx.save(); ctx.translate(cx, cy); ctx.scale(cell / 100, cell / 100);
-    if (kind === 0) { ctx.fillStyle = "#5a2a2a"; ctx.fillRect(-26, -18, 52, 36); ctx.fillStyle = "#6e3a32"; ctx.fillRect(-20, -12, 40, 24); } // rug
-    if (kind === 1) { ctx.fillStyle = "#4a3426"; ctx.fillRect(-18, -12, 36, 24); } // table
-    if (kind === 2) { ctx.fillStyle = "#5b5148"; ctx.fillRect(-16, -26, 32, 48); ctx.fillStyle = "#d8cfc0"; ctx.fillRect(-14, -24, 28, 12); } // bed
-    if (kind === 3) { ctx.fillStyle = "#3b2a1e"; ctx.fillRect(-6, -30, 12, 34); ctx.fillStyle = "#c9b27a"; ctx.beginPath(); ctx.arc(0, -22, 5, 0, 7); ctx.fill(); } // clock
-    if (kind === 4) { ctx.strokeStyle = "#6b5a46"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, 16, 0, 7); ctx.stroke(); } // round rug
-    if (kind === 5) { ctx.fillStyle = "#2c2a26"; ctx.fillRect(-24, -6, 48, 12); ctx.fillStyle = "#4b4136"; for (let i = -20; i < 20; i += 8) ctx.fillRect(i, -4, 5, 8); } // books
-    ctx.restore();
-  }
-
-  const cellOf = (v, cell, ox, oy) => ({ x: ox + v.x * cell + cell / 2, y: oy + v.y * cell + cell / 2 });
-
-  // How far a room has still to slide this shove, in cells (0 when no shove is running).
-  function slideOff(axis, i) {
-    if (!slide || slide.axis !== axis || slide.i !== i) return 0;
-    const k = Math.min(1, (clock - slide.t0) / SHOVE_TIME);
-    return -slide.dir * (1 - k) ** 3;
-  }
-  const offsetFor = (v) => ({ x: v.x + slideOff("row", v.y), y: v.y + slideOff("col", v.x) });
-
-  // Each room, drawn where it is mid-slide, plus its wrapped copy coming in from the far end.
-  function eachRoom(fn) {
-    const n = house.w, { cell, ox, oy, size } = grid(n);
-    ctx.save(); ctx.beginPath(); ctx.rect(ox, oy, size, size); ctx.clip();
-    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-      const o = offsetFor({ x, y });
-      for (const wx of [-n, 0, n]) for (const wy of [-n, 0, n]) {
-        if ((wx && o.x === x) || (wy && o.y === y)) continue;
-        fn(house.rooms[y][x], decor[y][x], ox + (o.x + wx) * cell, oy + (o.y + wy) * cell, cell);
+  // Your map turns with you: the way you face is always up. So an arrow key slides rooms the way it points on the map.
+  function drawMap() {
+    const s = aim ? 30 : 21, n = house.w, size = n * s, pad = 10;
+    const cx = W - size / 2 - 30, cy = aim ? H / 2 + 10 : H - size / 2 - 34;
+    const face = facing(me.a), rot = -(face + 1) * Math.PI / 2;
+    ctx.save();
+    ctx.translate(cx, cy); ctx.rotate(rot); ctx.translate(-size / 2, -size / 2);
+    ctx.fillStyle = "rgba(205,190,160,0.86)"; ctx.fillRect(-pad, -pad, size + pad * 2, size + pad * 2);
+    const plan = aimed();
+    if (plan) { // the rooms that will move, lit up, with arrows the way they'll go
+      ctx.fillStyle = "rgba(150,40,20,0.32)";
+      if (plan.axis === "row") ctx.fillRect(0, plan.i * s, size, s); else ctx.fillRect(plan.i * s, 0, s, size);
+      ctx.fillStyle = "rgba(120,20,10,0.85)";
+      for (let k = 0; k < n; k++) {
+        const X = (plan.axis === "row" ? k : plan.i) * s + s / 2, Y = (plan.axis === "row" ? plan.i : k) * s + s / 2;
+        const dx = plan.axis === "row" ? plan.dir : 0, dy = plan.axis === "col" ? plan.dir : 0, a = s * 0.22;
+        ctx.beginPath(); ctx.moveTo(X + dx * a, Y + dy * a); ctx.lineTo(X - dx * a - dy * a, Y - dy * a + dx * a); ctx.lineTo(X - dx * a + dy * a, Y - dy * a - dx * a); ctx.fill();
       }
     }
-    ctx.restore();
-  }
-
-  function drawHouse() {
-    eachRoom(drawRoom);
-    const { cell, ox, oy, size } = grid(house.w);
-    ctx.strokeStyle = "#0e0a08"; ctx.lineWidth = 10; ctx.strokeRect(ox - 5, oy - 5, size + 10, size + 10);
-    const ex = ox + size + 2, ey = oy + house.exit.y * cell + cell * 0.32;
-    ctx.fillStyle = "#6b4a2a"; ctx.fillRect(ex - 6, ey, 12, cell * 0.36);
-    ctx.fillStyle = `rgba(255,200,120,${0.5 + Math.sin(clock * 2) * 0.2})`; ctx.fillRect(ex + 6, ey, 4, cell * 0.36);
-  }
-
-  function personAt() {
-    const { cell, ox, oy } = grid(house.w);
-    let v = offsetFor(view.p);
-    if (walkAnim) {
-      const k = Math.min(1, (clock - walkAnim.t0) / WALK_TIME);
-      v = walkAnim.out
-        ? { x: house.player.x + 0.7 * k, y: house.player.y }
-        : { x: walkAnim.from.x + (house.player.x - walkAnim.from.x) * k, y: walkAnim.from.y + (house.player.y - walkAnim.from.y) * k };
-    }
-    return cellOf(v, cell, ox, oy);
-  }
-
-  function drawPerson(p) {
-    const { cell } = grid(house.w);
-    ctx.save(); ctx.translate(p.x, p.y); ctx.scale(cell / 100, cell / 100);
-    ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.beginPath(); ctx.ellipse(0, 16, 12, 5, 0, 0, 7); ctx.fill();
-    ctx.fillStyle = "#cfc6b8"; ctx.beginPath(); ctx.ellipse(0, 4, 9, 13, 0, 0, 7); ctx.fill();
-    ctx.fillStyle = "#e9dfcf"; ctx.beginPath(); ctx.arc(0, -12, 7, 0, 7); ctx.fill();
-    ctx.fillStyle = "#e8d9a8"; ctx.fillRect(9, -6, 3, 9);
-    const fl = 1 + Math.sin(clock * 23) * 0.2 + Math.sin(clock * 7) * 0.15;
-    ctx.fillStyle = "#ffcf6a"; ctx.beginPath(); ctx.ellipse(10.5, -10, 2.4 * fl, 4.5 * fl, 0, 0, 7); ctx.fill();
-    ctx.restore();
-  }
-
-  function drawShadow(alpha) {
-    if (alpha <= 0.01) return;
-    const { cell, ox, oy } = grid(house.w);
-    const p = cellOf(offsetFor(view.h), cell, ox, oy);
-    ctx.save(); ctx.translate(p.x + Math.sin(clock * 9) * 1.5, p.y); ctx.scale(cell / 100, cell / 100); ctx.globalAlpha = alpha;
-    const g = ctx.createRadialGradient(0, -6, 2, 0, -6, 40);
-    g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(0.6, "rgba(5,3,8,0.85)"); g.addColorStop(1, "rgba(5,3,8,0)");
-    ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(0, -6, 26, 40, 0, 0, 7); ctx.fill();
-    for (let i = 0; i < 5; i++) {
-      ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.beginPath();
-      ctx.ellipse(-16 + i * 8 + Math.sin(clock * 5 + i) * 3, 26 + Math.sin(clock * 4 + i * 2) * 4, 4, 10, 0, 0, 7); ctx.fill();
-    }
-    ctx.fillStyle = "#e6e2ff"; ctx.beginPath(); ctx.ellipse(-7, -20, 2.6, 1.6, 0, 0, 7); ctx.ellipse(7, -20, 2.6, 1.6, 0, 0, 7); ctx.fill();
-    ctx.restore();
-  }
-
-  function drawDarkness(p, lift) {
-    dctx.globalCompositeOperation = "source-over";
-    dctx.clearRect(0, 0, W, H);
-    dctx.fillStyle = `rgba(4,3,6,${0.94 - lift * 0.75})`;
-    dctx.fillRect(0, 0, W, H);
-    dctx.globalCompositeOperation = "destination-out";
-    const { cell, ox, oy, size } = grid(house.w);
-    const r = cell * (1.25 + Math.sin(clock * 11) * 0.03);
-    const g = dctx.createRadialGradient(p.x, p.y, r * 0.2, p.x, p.y, r);
-    g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(0.7, "rgba(0,0,0,0.75)"); g.addColorStop(1, "rgba(0,0,0,0)");
-    dctx.fillStyle = g; dctx.beginPath(); dctx.arc(p.x, p.y, r, 0, 7); dctx.fill();
-    const ex = ox + size, ey = oy + house.exit.y * cell + cell / 2;
-    const g2 = dctx.createRadialGradient(ex, ey, 2, ex, ey, cell * 0.55);
-    g2.addColorStop(0, "rgba(0,0,0,0.8)"); g2.addColorStop(1, "rgba(0,0,0,0)");
-    dctx.fillStyle = g2; dctx.beginPath(); dctx.arc(ex, ey, cell * 0.55, 0, 7); dctx.fill();
-    ctx.drawImage(dark, 0, 0, W, H);
-  }
-
-  // The layout you remember: faint chalk lines for every wall, so you can plan in the dark.
-  function drawMemory() {
-    ctx.strokeStyle = "rgba(190,180,215,0.22)"; ctx.lineWidth = 2; ctx.lineCap = "round";
-    eachRoom((d, _k, X, Y, cell) => {
-      const a = cell * 0.32, b = cell - a, m = 5;
+    ctx.strokeStyle = "rgba(60,40,30,0.8)"; ctx.lineWidth = aim ? 2 : 1.4;
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      const d = house.rooms[y][x], X = x * s, Y = y * s, a = s * 0.3, b = s - a;
       const seg = (x1, y1, x2, y2) => { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); };
-      const wall = (has, x1, y1, x2, y2, horiz) => {
-        if (!has) { seg(x1, y1, x2, y2); return; }
-        if (horiz) { seg(x1, y1, x1 + a, y1); seg(x1 + b, y1, x2, y2); } else { seg(x1, y1, x1, y1 + a); seg(x1, y1 + b, x2, y2); }
-      };
-      wall(d & N, X + m, Y + m, X + cell - m, Y + m, true);
-      wall(d & S, X + m, Y + cell - m, X + cell - m, Y + cell - m, true);
-      wall(d & WEST, X + m, Y + m, X + m, Y + cell - m, false);
-      wall(d & E, X + cell - m, Y + m, X + cell - m, Y + cell - m, false);
-    });
-  }
-
-  function drawKey() {
-    if (house.hasKey || !house.key) return;
-    const { cell, ox, oy } = grid(house.w);
-    const p = cellOf(offsetFor(house.key), cell, ox, oy), a = 0.55 + Math.sin(clock * 3) * 0.3;
-    const g = ctx.createRadialGradient(p.x, p.y, 1, p.x, p.y, cell * 0.25);
-    g.addColorStop(0, `rgba(255,214,120,${a})`); g.addColorStop(1, "rgba(255,214,120,0)");
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, cell * 0.25, 0, 7); ctx.fill();
-    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(-0.6); ctx.scale(cell / 100, cell / 100);
-    ctx.strokeStyle = `rgba(240,200,110,${0.6 + a * 0.4})`; ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.arc(-8, 0, 5, 0, 7); ctx.moveTo(-3, 0); ctx.lineTo(12, 0); ctx.moveTo(8, 0); ctx.lineTo(8, 5); ctx.moveTo(12, 0); ctx.lineTo(12, 5); ctx.stroke();
+      const wall = (has, x1, y1, x2, y2, horiz) => { if (!has) seg(x1, y1, x2, y2); else if (horiz) { seg(x1, y1, x1 + a, y1); seg(x1 + b, y1, x2, y2); } else { seg(x1, y1, x1, y1 + a); seg(x1, y1 + b, x2, y2); } };
+      wall(d & 1, X + 1, Y + 1, X + s - 1, Y + 1, true); wall(d & 4, X + 1, Y + s - 1, X + s - 1, Y + s - 1, true);
+      wall(d & 8, X + 1, Y + 1, X + 1, Y + s - 1, false); wall(d & 2, X + s - 1, Y + 1, X + s - 1, Y + s - 1, false);
+    }
+    ctx.fillStyle = hasKey ? "#c8501e" : "#7a2a1a"; ctx.fillRect(size - 1, house.exit.y * s + 3, 4, s - 6); // the front door
+    const px = (me.x / R) * s, py = (me.y / R) * s, r = aim ? 8 : 6;
+    ctx.fillStyle = "#3a1e10"; ctx.beginPath();
+    ctx.moveTo(px + Math.cos(me.a) * r, py + Math.sin(me.a) * r);
+    ctx.lineTo(px + Math.cos(me.a + 2.5) * r * 0.8, py + Math.sin(me.a + 2.5) * r * 0.8);
+    ctx.lineTo(px + Math.cos(me.a - 2.5) * r * 0.8, py + Math.sin(me.a - 2.5) * r * 0.8); ctx.fill();
     ctx.restore();
-  }
-
-  function drawArrows() {
-    for (const a of arrows(house.w)) {
-      const mine = (a.axis === "row" && a.i === house.player.y) || (a.axis === "col" && a.i === house.player.x);
-      ctx.save(); ctx.translate(a.x, a.y);
-      ctx.rotate(a.axis === "row" ? (a.dir === 1 ? 0 : Math.PI) : (a.dir === 1 ? Math.PI / 2 : -Math.PI / 2));
-      ctx.fillStyle = mine ? "rgba(240,200,140,0.85)" : "rgba(200,190,220,0.3)";
-      ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-7, -10); ctx.lineTo(-7, 10); ctx.closePath(); ctx.fill();
-      ctx.restore();
-    }
-  }
-
-  function drawHud(near) {
-    text(`FLOOR ${floor}`, 34, 52, 26, "#d9cdb8", "IM Fell English SC", "left");
-    text(`of ${LAST_FLOOR}`, 36, 78, 14, "#8d8296", "IM Fell English", "left");
-    text(house.hasKey ? "key: yes" : "key: not yet", 36, 104, 14, house.hasKey ? "#e8c878" : "#6d6476", "IM Fell English", "left");
-    ctx.globalAlpha = Math.min(1, (clock - hintAt) * 3);
-    text(hint, W / 2, 22, 15, "#cfc3ae");
-    ctx.globalAlpha = 1;
-    if (near > 0) {
-      const pulse = (Math.sin(clock * 8) * 0.5 + 0.5) * near;
-      const g = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.8);
-      g.addColorStop(0, "rgba(80,0,0,0)"); g.addColorStop(1, `rgba(90,0,0,${0.55 * pulse})`);
-      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-    }
+    // N for north, kept upright, on whichever edge north is now
+    const D = size / 2 + pad + 9, nx = cx + Math.sin(rot) * D, ny = cy - Math.cos(rot) * D;
+    text("N", nx, ny, 13, "rgba(205,190,160,0.8)", "IM Fell English SC");
+    if (aim) {
+      if (plan) { text("let go to slide these rooms", W - 24, cy - size / 2 - pad - 48, 16, "#e8d9a8", "IM Fell English", "right");
+        text("you ride along · Esc: never mind", W - 24, cy - size / 2 - pad - 28, 13, "rgba(232,217,168,0.7)", "IM Fell English", "right"); }
+    } else text("map: up is the way you face", W - 24, cy - size / 2 - pad - 30, 12, "rgba(205,190,160,0.7)", "IM Fell English", "right");
   }
 
   function drawTitle() {
     ctx.fillStyle = "#0b0909"; ctx.fillRect(0, 0, W, H);
     ctx.globalAlpha = Math.sin(clock * 3.1) * Math.sin(clock * 7.3) > 0.85 ? 0.4 : 1;
-    text("THE SHIFTING", W / 2, 210, 64, "#d9cdb8", "IM Fell English SC");
-    text("HOUSE", W / 2, 290, 92, "#b9a37a", "IM Fell English SC");
+    text("THE SHIFTING", W / 2, 200, 64, "#d9cdb8", "IM Fell English SC");
+    text("HOUSE", W / 2, 280, 92, "#b9a37a", "IM Fell English SC");
     ctx.globalAlpha = 1;
-    text("The rooms move. So does it.", W / 2, 370, 22, "#8d8296");
-    if (Math.sin(clock * 2.4) > -0.4) text("tap, or press Enter, to go inside", W / 2, 460, 18, "#cfc3ae");
-    text("M: sound on/off   ·   best with sound", W / 2, 560, 13, "#5d5560");
+    text("The rooms move. So does it.", W / 2, 360, 22, "#8d8296");
+    if (Math.sin(clock * 2.4) > -0.4) text("click, or press Enter, to go inside", W / 2, 450, 18, "#cfc3ae");
+    text("headphones on · M: sound on/off · click the house to look around with the mouse", W / 2, 560, 13, "#5d5560");
   }
 
   function drawEnd() {
-    const k = Math.min(1, (clock - endAt) / 0.6);
-    ctx.fillStyle = house.escaped ? `rgba(20,16,12,${0.8 * k})` : `rgba(0,0,0,${0.92 * k})`;
+    const k = Math.min(1, (clock - endAt) / 0.8);
+    ctx.fillStyle = escaped ? `rgba(20,16,12,${0.85 * k})` : "#000"; // caught: the dark is instant
     ctx.fillRect(0, 0, W, H);
     ctx.globalAlpha = k;
-    if (house.escaped) {
-      const lastFloor = floor === LAST_FLOOR;
-      text(lastFloor ? "YOU GOT OUT" : "YOU FOUND THE DOOR", W / 2, 230, 48, "#e8d9a8", "IM Fell English SC");
-      text(lastFloor ? "The house is quiet now. For now." : "But it opens onto another floor.", W / 2, 290, 20, "#a99e8a");
-      text(`${house.moves} steps · ${house.shoves} shoves`, W / 2, 340, 16, "#8d8296");
-      if (clock - endAt > 0.8) text(lastFloor ? "tap for the title" : "tap to go on", W / 2, 420, 18, "#cfc3ae");
+    if (escaped) {
+      const last = floor === LAST_FLOOR;
+      text(last ? "YOU GOT OUT" : "THE DOOR OPENS", W / 2, 230, 48, "#e8d9a8", "IM Fell English SC");
+      text(last ? "Behind you, the house goes quiet. For now." : "...onto another floor of the same house.", W / 2, 290, 20, "#a99e8a");
+      text(`${house.shoves} shoves`, W / 2, 340, 16, "#8d8296");
+      if (clock - endAt > 1) text(last ? "click for the title" : "click to go on", W / 2, 420, 18, "#cfc3ae");
     } else {
+      const t = clock - endAt, close = Math.max(0, 1 - t / 1.2); // its face, right up against yours, then gone
+      ctx.globalAlpha = 1;
       ctx.fillStyle = "#e6e2ff";
-      ctx.beginPath(); ctx.ellipse(W / 2 - 60, 220, 16, 7, 0, 0, 7); ctx.ellipse(W / 2 + 60, 220, 16, 7, 0, 0, 7); ctx.fill();
-      text("IT FOUND YOU", W / 2, 320, 48, "#b8b0d8", "IM Fell English SC");
-      if (clock - endAt > 0.8) text("tap to try this floor again", W / 2, 410, 18, "#8d8296");
+      const ew = 18 + close * 60, eh = 3 + close * 7, gap = 70 + close * 130, j = () => (Math.random() - 0.5) * 4 * close;
+      ctx.beginPath(); ctx.ellipse(W / 2 - gap / 2 + j(), 200 + j(), ew, eh, 0.05, 0, 7); ctx.ellipse(W / 2 + gap / 2 + j(), 200 + j(), ew, eh, -0.05, 0, 7); ctx.fill();
+      ctx.globalAlpha = Math.min(1, t / 1.2);
+      text("IT FOUND YOU", W / 2, 320, 52, "#b8b0d8", "IM Fell English SC");
+      if (clock - endAt > 1) text("click to try this floor again", W / 2, 400, 18, "#8d8296");
     }
     ctx.globalAlpha = 1;
   }
@@ -378,58 +267,99 @@ function start() {
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now; clock += dt;
-    ctx.save();
-    if (shake > 0.2) { ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake); shake *= 0.85; }
-    if (scene === "title") drawTitle();
-    else {
-      if (slide && clock - slide.t0 >= SHOVE_TIME) slide = null;
-      if (walkAnim && clock - walkAnim.t0 >= WALK_TIME * (walkAnim.out ? 3 : 1)) { view.p = { ...house.player }; walkAnim = null; }
-      let near = 0;
-      if (scene === "play" && !house.over) {
-        stepAcc += dt;
-        if (heard && !slide) { heard = false; stepAcc += house.step * 0.5; } // shoving is loud: it comes sooner
-        if (stepAcc >= house.step && !slide) {
-          stepAcc = 0;
-          const way = path(house, house.hunter);
-          lost = way ? 0 : lost + 1;
-          // walled off: it wanders a little, then seeps through the wall toward you
-          const r = way ? hunterStep(house) : lost % 3 ? wander(house, wanderRand, lastWander) : seep(house);
-          if (r.kind === "seep") { sound("near"); if (floor === 1 && !seenSeep) { seenSeep = true; say("It doesn't need doors. It's just slower without them."); } }
-          lastWander = r.d ?? lastWander;
-          view.h = { ...house.hunter };
-          if (way && way.length <= 3) sound("near");
+    if (scene === "title") { drawTitle(); requestAnimationFrame(frame); return; }
+    if (scene === "play") {
+      slideTick();
+      // you
+      if (!slide && !hidden) {
+        // with the mouse, A/D step sideways (the mouse turns you); without it, A/D turn
+        const side = (keys.has("a") ? -1 : 0) + (keys.has("d") ? 1 : 0);
+        const fwd = (keys.has("w") ? 1 : 0) - (keys.has("s") ? 1 : 0);
+        const mouse = document.pointerLockElement === canvas;
+        if (!mouse) me.a += side * TURN * dt;
+        const strafe = mouse ? side : 0;
+        if (fwd || strafe) {
+          const len = Math.hypot(fwd, strafe) || 1;
+          const mx = (Math.cos(me.a) * fwd - Math.sin(me.a) * strafe) / len, my = (Math.sin(me.a) * fwd + Math.cos(me.a) * strafe) / len;
+          tryMove(mx * MOVE * dt, my * MOVE * dt);
+          if (clock - lastMyStep > 0.42) { noise(0.04, 0.12, 700); lastMyStep = clock; }
         }
-        const way = path(house, house.hunter);
-        if (way && way.length <= 2) near = (3 - way.length) / 2;
-        if (near > 0 && clock - lastBeat > 0.9 - near * 0.4) { sound("beat"); lastBeat = clock; }
-        if (clock > flickerAt) { flicker = 1; sound("flicker"); flickerAt = clock + 4 + Math.random() * 5; }
       }
-      if (house.over && scene === "play" && !walkAnim) {
+      const k = keyPos();
+      if (k && Math.hypot(k.x - me.x, k.y - me.y) < 0.8) {
+        hasKey = true; tone(880, 0.5, "triangle", 0.06); tone(1320, 0.6, "triangle", 0.05, 1320, 0.08);
+        say("The key. Now the front door, on the east side. It's marked on your map.");
+      }
+      // the shadow
+      if (!awake && (clock >= wakeAt || hasKey)) {
+        awake = true; tone(52, 2.2, "sawtooth", 0.06, 40); noise(1.4, 0.25, 260);
+        say(floor === 1 ? "Somewhere in the house, something wakes up." : "It's moving.");
+      }
+      const events = slide || !awake ? [] : think(sh, { map, player: { x: me.x, y: me.y, hidden }, sawHide, noise: noiseAt, pace: shadowPace(floor) }, dt, Math.random);
+      if (!slide) noiseAt = null; // a shove's noise waits until the rooms stop, then it hears it
+      const dx = sh.x - me.x, dy = sh.y - me.y, dist = Math.hypot(dx, dy);
+      const rel = Math.atan2(dy, dx) - me.a, pan = Math.max(-1, Math.min(1, Math.sin(rel)));
+      for (const e of events) {
+        if (e.kind === "spotted") {
+          flash = 0.5; shake = 6; noise(0.5, 0.5, 2400); tone(220, 1.2, "sawtooth", 0.05, 207);
+          if (!seenOnce) { seenOnce = true; say("RUN. Or hide. It can't see you in a wardrobe... if it didn't watch you climb in."); }
+        }
+        if (e.kind === "lunge") { tone(90, 0.6, "sawtooth", 0.12, 400); noise(0.4, 0.8, 3000); shake = 10; }
+        if (e.kind === "lost" && floor === 1) say("It lost you. It will look where it last saw you.");
+        if (e.kind === "heard") tone(70, 0.8, "sine", 0.05, 60, 0, pan);
+        if (e.kind === "seep") { say("It's coming through the wall."); noise(1.2, 0.3, 500, 0, pan); }
+        if (e.kind === "caught") caught = true;
+      }
+      if (!sh.silent && SPEEDY(sh) && clock - lastStep > (sh.mode === "hunt" || sh.mode === "lunge" ? 0.28 : 0.6)) {
+        lastStep = clock; noise(0.06, Math.min(0.5, 2.2 / (1 + dist)), 500, 0, pan);
+      }
+      if (dist < 7 && clock - lastBeat > 0.35 + dist * 0.09) { lastBeat = clock; tone(60, 0.12, "sine", 0.4 - dist * 0.04, 45); tone(58, 0.12, "sine", 0.3 - dist * 0.03, 44, 0.16); }
+      if (caught || escaped) {
         scene = "end"; endAt = clock;
-        if (house.escaped) sound("out"); else { sound("caught"); shake = 30; }
+        if (caught) { noise(1.6, 0.9, 1200); tone(150, 1.4, "sawtooth", 0.1, 30); flash = 1; shake = 30; }
+        else [392, 494, 587].forEach((f, i) => tone(f, 1, "triangle", 0.05, f, i * 0.12));
       }
-      flicker = Math.max(0, flicker - dt * 3);
-      const lit = flicker > 0 ? (Math.sin(clock * 60) > 0 ? flicker : flicker * 0.3) : 0;
-      ctx.fillStyle = "#08070a"; ctx.fillRect(0, 0, W, H);
-      drawHouse();
-      const me = personAt();
-      const dist = Math.abs(house.hunter.x - house.player.x) + Math.abs(house.hunter.y - house.player.y);
-      const seen = Math.max(lit, dist <= 1 ? 0.95 : 0, scene === "end" && house.caught ? 1 : 0);
-      drawShadow(seen);
-      drawPerson(me);
-      drawDarkness(me, lit);
-      drawMemory();
-      drawShadow(Math.max(lit * 0.9, dist <= 1 ? 0.6 : 0)); // close by or in a flicker, you see it through the dark
-      drawKey();
-      drawArrows();
-      drawHud(near);
-      if (scene === "end") drawEnd();
     }
+
+    // draw the world
+    ctx.save();
+    if (shake > 0.3) { ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake); shake *= 0.86; }
+    const flick = 1 + Math.sin(clock * 17) * 0.04 + Math.sin(clock * 5.3) * 0.05;
+    const dist = Math.hypot(sh.x - me.x, sh.y - me.y);
+    const dread = Math.max(0, 1 - dist / 6); // your candle gutters when it's near
+    const light = (hidden ? 0.75 : 1.05) * flick * (1 - dread * 0.45 * (Math.sin(clock * 31) > 0 ? 1 : 0.3));
+    const sprites = [{ x: sh.x, y: sh.y, kind: "shadow" }];
+    const k = keyPos();
+    if (k) sprites.push({ x: k.x, y: k.y, kind: "key", glow: 0.35 + Math.sin(clock * 3) * 0.2 });
+    render(view, map, me, light, sprites, hasKey, clock);
+    present(view, img, ctx, 0, 0, W, H);
     ctx.restore();
+
+    // wardrobe: you see the room through a crack between the doors
+    if (hidden) {
+      ctx.fillStyle = "#050404";
+      ctx.fillRect(0, 0, W / 2 - 14, H); ctx.fillRect(W / 2 + 14, 0, W / 2, H);
+      ctx.fillStyle = "rgba(40,24,16,0.9)"; ctx.fillRect(W / 2 - 16, 0, 4, H); ctx.fillRect(W / 2 + 12, 0, 4, H);
+    }
+    // vignette, darker as it gets closer
+    const g = ctx.createRadialGradient(W / 2, H / 2, H * 0.25, W / 2, H / 2, H * 0.85);
+    g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, `rgba(${Math.round(30 * dread)},0,0,${0.75 + dread * 0.2})`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    if (flash > 0) { ctx.fillStyle = `rgba(220,215,255,${flash * 0.5})`; ctx.fillRect(0, 0, W, H); flash = Math.max(0, flash - dt * 2.5); }
+
+    // hud
+    text(`FLOOR ${floor} of ${LAST_FLOOR}`, 26, 28, 18, "rgba(217,205,184,0.75)", "IM Fell English SC", "left");
+    text(hasKey ? "key: yes" : "key: not yet", 26, 52, 15, hasKey ? "#e8c878" : "rgba(170,160,180,0.6)", "IM Fell English", "left");
+    ctx.globalAlpha = Math.min(1, (clock - hintAt) * 3) * (clock - hintAt < 9 ? 1 : Math.max(0.35, 1 - (clock - hintAt - 9) / 3));
+    text(hint, W / 2, H - 22, 16, "#d9cdb8");
+    ctx.globalAlpha = 1;
+    drawMap();
+    if (scene === "end") drawEnd();
     requestAnimationFrame(frame);
   }
+  const SPEEDY = (s) => s.mode !== "look" && s.mode !== "lurk" && s.mode !== "pause";
   requestAnimationFrame(frame);
 
-  // For the page test: read the state like a player would see it.
-  window.__house = { scene: () => scene, house: () => house, floor: () => floor, grid, arrows };
+  // For the page test: read the state, and hold keys like a player.
+  window.__fp = { aim: () => aim, awake: () => awake, scene: () => scene, me: () => me, shadow: () => sh, house: () => house, map: () => map, hidden: () => hidden, hasKey: () => hasKey };
 }

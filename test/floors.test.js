@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { floorSpec, floorHouse, LAST_FLOOR } from "../src/floors.js";
+import { floorSpec, floorHouse, LAST_FLOOR, PLAYER_SPEED, shadowPace, headStart } from "../src/floors.js";
+import { SPEED } from "../src/stalker.js";
 import { rng } from "../src/rng.js";
 import { E } from "../src/house.js";
 
@@ -43,4 +44,12 @@ test("every floor has a key, away from the front door and the shadow", () => {
     assert.notDeepEqual(f.key, f.hunter);
     assert.equal(floorHouse(n, seed).hasKey, false);
   }
+});
+
+test("on floors 1 and 2 you can outrun it even when it hunts, and it gives you a head start", () => {
+  assert.ok(SPEED.hunt * shadowPace(1) < PLAYER_SPEED);
+  assert.ok(SPEED.hunt * shadowPace(2) < PLAYER_SPEED);
+  assert.ok(SPEED.hunt * shadowPace(LAST_FLOOR) > PLAYER_SPEED, "late floors: you can't just run");
+  for (let n = 1; n < LAST_FLOOR; n++) assert.ok(shadowPace(n) <= shadowPace(n + 1) && headStart(n) >= headStart(n + 1));
+  assert.ok(headStart(1) >= 20);
 });

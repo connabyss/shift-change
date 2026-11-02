@@ -1,4 +1,4 @@
-// The game in a real (headless) browser: go inside, shove a row, walk, and let the shadow move.
+// The game in a real (headless) browser: go inside, walk, turn, shove your row, hide in the wardrobe.
 // Needs Playwright with Chromium. Without it these tests are skipped, and say so.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -25,7 +25,7 @@ function serve() {
   });
 }
 
-test("go inside, shove your row with SHIFT, walk, and the shadow comes looking", { skip }, async () => {
+test("first person: walk, turn, shove your row and ride along, hide in the wardrobe", { skip }, async () => {
   const server = await serve(), browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
@@ -33,31 +33,47 @@ test("go inside, shove your row with SHIFT, walk, and the shadow comes looking",
     page.on("pageerror", (e) => errors.push(String(e)));
     await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
-    await page.waitForFunction(() => window.__house);
-    const get = () => page.evaluate(() => ({ scene: window.__house.scene(), ...window.__house.house() }));
-    assert.equal((await get()).scene, "title");
+    await page.waitForFunction(() => window.__fp);
     await page.keyboard.press("Enter");
-    let h = await get();
-    assert.equal(h.scene, "play");
-    const start = h.player, hunter0 = h.hunter;
-    await page.keyboard.press("Shift+ArrowRight");
-    h = await get();
-    assert.equal(h.shoves, 1);
-    assert.deepEqual(h.player, { x: start.x + 1, y: start.y }, "you ride along with your row");
-    await page.waitForTimeout(400);
-    // tap the arrow that shoves your column up
-    const a = await page.evaluate(() => window.__house.arrows(4).find((a) => a.axis === "col" && a.i === window.__house.house().player.x && a.dir === -1));
-    await page.mouse.click(a.x, a.y);
-    h = await get();
-    assert.equal(h.shoves, 2);
-    assert.equal(h.player.y, start.y - 1);
-    let moved = false;
-    for (let i = 0; i < 40 && !moved; i++) {
-      await page.waitForTimeout(200);
-      h = await get();
-      moved = h.over || h.hunter.x !== hunter0.x || h.hunter.y !== hunter0.y;
-    }
-    assert.ok(moved, "the shadow came looking within 8 seconds");
+    assert.equal(await page.evaluate(() => window.__fp.scene()), "play");
+    const me = () => page.evaluate(() => ({ ...window.__fp.me() }));
+    const a0 = await me();
+    await page.keyboard.down("w"); await page.waitForTimeout(300); await page.keyboard.up("w");
+    const a1 = await me();
+    assert.ok(a1.y < a0.y, "walked forward (north)");
+    // with the mouse (pointer locked), D steps sideways to your right; without it, D turns you right
+    const locked = await page.evaluate(() => document.pointerLockElement !== null);
+    await page.keyboard.down("d"); await page.waitForTimeout(300); await page.keyboard.up("d");
+    const a2 = await me();
+    if (locked) { assert.ok(a2.x > a1.x, "stepped right (east)"); assert.equal(a2.a, a1.a); }
+    else assert.ok(a2.a > a1.a, "turned right");
+    // on floor 1 the shadow sleeps at first: a head start
+    const sh0 = await page.evaluate(() => ({ ...window.__fp.shadow() }));
+    assert.equal(await page.evaluate(() => window.__fp.awake()), false, "asleep at the start of floor 1");
+    // face north again, hold right: nothing moves yet, the map shows the plan. Let go: your row slides east, you ride along
+    await page.evaluate(() => { window.__fp.me().a = -Math.PI / 2; });
+    const before = await me();
+    await page.keyboard.down("ArrowRight"); await page.waitForTimeout(250);
+    assert.equal(await page.evaluate(() => window.__fp.aim()), "ArrowRight");
+    assert.equal(await page.evaluate(() => window.__fp.house().shoves), 0, "holding an arrow only shows what will slide");
+    const sh1 = await page.evaluate(() => ({ ...window.__fp.shadow() }));
+    assert.deepEqual([sh1.x, sh1.y], [sh0.x, sh0.y], "the sleeping shadow hasn't moved");
+    await page.keyboard.up("ArrowRight");
+    await page.waitForTimeout(700);
+    const after = await me();
+    assert.equal(await page.evaluate(() => window.__fp.house().shoves), 1);
+    assert.equal(after.a, before.a, "an arrow slides rooms and never turns you");
+    assert.ok(Math.abs(Math.abs(after.x - before.x) - 5) < 0.01 || Math.abs(after.x - before.x) > 10, "rode along one room (or wrapped round)");
+    // stand next to a wardrobe, facing it, and hide in it (with the shadow sent off to wait in a far corner)
+    await page.evaluate(() => {
+      const sh = window.__fp.shadow(); Object.assign(sh, { x: 0.5, y: 0.5, mode: "look", timer: 99, target: null });
+      const map = window.__fp.map(), m = window.__fp.me();
+      for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) if (map.kind[y][x] === 3) { m.x = x + 1.5; m.y = y + 1.5; m.a = Math.atan2(-1, -1); return; }
+    });
+    await page.keyboard.press("e");
+    assert.equal(await page.evaluate(() => window.__fp.hidden()), true);
+    await page.keyboard.press("e");
+    assert.equal(await page.evaluate(() => window.__fp.hidden()), false);
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });
