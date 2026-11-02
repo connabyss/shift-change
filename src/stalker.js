@@ -48,6 +48,8 @@ export function think(sh, world, dt, rand) {
     go(sh, "search", world.noise);
   }
 
+  if (!sh.target && sh.mode === "wander") nextMove(sh, world, rand, events); // nowhere to go: pick somewhere
+
   // timed modes
   if (sh.timer > 0) {
     sh.timer -= dt;
@@ -60,7 +62,7 @@ export function think(sh, world, dt, rand) {
 
   // move
   if (sh.target && SPEED[sh.mode] > 0) {
-    const speed = SPEED[sh.mode] * dt;
+    const speed = SPEED[sh.mode] * (world.pace ?? 1) * dt; // pace: slower on the first floors
     sh.pathAge += dt;
     if (!sh.path || sh.pathAge > 0.35) { sh.path = tilePath(map, sh, sh.target); sh.pathAge = 0; }
     if (sh.path === null) {

@@ -86,3 +86,21 @@ test("a lurking spot is a doorway near you, out of your sight", () => {
   const d = Math.hypot(spot.x - 2.5, spot.y - 1.5);
   assert.ok(d > 3 && d < 8);
 });
+
+test("with nowhere to go yet, it picks somewhere and starts moving", () => {
+  const map = hall(), sh = makeShadow({ x: 2 * R + 2.5, y: 1.5 });
+  think(sh, { map, player: { x: 1.5, y: 1.5, hidden: true }, sawHide: false }, 0.05, () => 0.5);
+  assert.ok(sh.target, "it has somewhere to go");
+  const before = { x: sh.x, y: sh.y };
+  for (let i = 0; i < 20; i++) think(sh, { map, player: { x: 1.5, y: 1.5, hidden: true }, sawHide: false }, 0.05, () => 0.5);
+  assert.notDeepEqual({ x: sh.x, y: sh.y }, before);
+});
+
+test("on an early floor it moves slower (pace), so a first-timer can outrun a wander", () => {
+  const a = makeShadow({ x: 2 * R + 2.5, y: 1.5 }), b = makeShadow({ x: 2 * R + 2.5, y: 1.5 });
+  const world = (pace) => ({ map: hall(), player: { x: 1.5, y: 1.5, hidden: true }, sawHide: false, pace });
+  const wa = world(0.5), wb = world(1);
+  for (let i = 0; i < 10; i++) { think(a, wa, 0.05, () => 0.5); think(b, wb, 0.05, () => 0.5); }
+  const moved = (s) => Math.hypot(s.x - (2 * R + 2.5), s.y - 1.5);
+  assert.ok(moved(a) < moved(b) * 0.7, `${moved(a)} vs ${moved(b)}`);
+});

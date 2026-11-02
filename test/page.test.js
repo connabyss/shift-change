@@ -1,4 +1,4 @@
-// The game in a real (headless) browser: go inside, shove a row, walk, and let the shadow move.
+// The game in a real (headless) browser: go inside, walk, turn, shove your row, hide in the wardrobe.
 // Needs Playwright with Chromium. Without it these tests are skipped, and say so.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -25,7 +25,7 @@ function serve() {
   });
 }
 
-test("go inside, shove your row with SHIFT, walk, and the shadow comes looking", { skip }, async () => {
+test("first person: walk, turn, shove your row and ride along, hide in the wardrobe", { skip }, async () => {
   const server = await serve(), browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
@@ -33,31 +33,33 @@ test("go inside, shove your row with SHIFT, walk, and the shadow comes looking",
     page.on("pageerror", (e) => errors.push(String(e)));
     await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
-    await page.waitForFunction(() => window.__house);
-    const get = () => page.evaluate(() => ({ scene: window.__house.scene(), ...window.__house.house() }));
-    assert.equal((await get()).scene, "title");
+    await page.waitForFunction(() => window.__fp);
     await page.keyboard.press("Enter");
-    let h = await get();
-    assert.equal(h.scene, "play");
-    const start = h.player, hunter0 = h.hunter;
+    assert.equal(await page.evaluate(() => window.__fp.scene()), "play");
+    const me = () => page.evaluate(() => ({ ...window.__fp.me() }));
+    const a0 = await me();
+    await page.keyboard.down("w"); await page.waitForTimeout(300); await page.keyboard.up("w");
+    const a1 = await me();
+    assert.ok(a1.y < a0.y, "walked forward (north)");
+    await page.keyboard.down("d"); await page.waitForTimeout(300); await page.keyboard.up("d");
+    assert.ok((await me()).a > a1.a, "turned right");
+    // face north again, then SHIFT + right shoves your row east: you ride along one room
+    await page.evaluate(() => { window.__fp.me().a = -Math.PI / 2; });
+    const before = await me();
     await page.keyboard.press("Shift+ArrowRight");
-    h = await get();
-    assert.equal(h.shoves, 1);
-    assert.deepEqual(h.player, { x: start.x + 1, y: start.y }, "you ride along with your row");
-    await page.waitForTimeout(400);
-    // tap the arrow that shoves your column up
-    const a = await page.evaluate(() => window.__house.arrows(4).find((a) => a.axis === "col" && a.i === window.__house.house().player.x && a.dir === -1));
-    await page.mouse.click(a.x, a.y);
-    h = await get();
-    assert.equal(h.shoves, 2);
-    assert.equal(h.player.y, start.y - 1);
-    let moved = false;
-    for (let i = 0; i < 40 && !moved; i++) {
-      await page.waitForTimeout(200);
-      h = await get();
-      moved = h.over || h.hunter.x !== hunter0.x || h.hunter.y !== hunter0.y;
-    }
-    assert.ok(moved, "the shadow came looking within 8 seconds");
+    await page.waitForTimeout(700);
+    const after = await me();
+    assert.equal(await page.evaluate(() => window.__fp.house().shoves), 1);
+    assert.ok(Math.abs(Math.abs(after.x - before.x) - 5) < 0.01 || Math.abs(after.x - before.x) > 10, "rode along one room (or wrapped round)");
+    // stand next to a wardrobe, facing it, and hide in it
+    await page.evaluate(() => {
+      const map = window.__fp.map(), m = window.__fp.me();
+      for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) if (map.kind[y][x] === 3) { m.x = x + 1.5; m.y = y + 1.5; m.a = Math.atan2(-1, -1); return; }
+    });
+    await page.keyboard.press("e");
+    assert.equal(await page.evaluate(() => window.__fp.hidden()), true);
+    await page.keyboard.press("e");
+    assert.equal(await page.evaluate(() => window.__fp.hidden()), false);
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });

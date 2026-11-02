@@ -2,16 +2,20 @@
 
 Our entry for [GitHub Game Off 2026](https://itch.io/jam/game-off-2026). The theme is **SHIFT**.
 
-You're in a dark house where the rooms move. Find the key, then get out the front door, before the shadow finds you.
+You're inside a dark house, first person, with a candle, and the rooms move. Find the key, then get out the front
+door, before the shadow finds you.
 
-- **Walk** from room to room, but only where two doors line up.
-- **Shove** a whole row or column of rooms one step. The room pushed off one end comes back in at the other, and
-  anyone inside rides along: you, the key, and the shadow.
-- Shoving is loud. The shadow hears it and comes sooner. Shut it out and it seeps through the walls, slowly.
-- You only see the shadow when it's close, or when the lights flicker.
+- **Walk** from room to room. A doorway only leads somewhere if the next room has a door there too; otherwise it opens
+  onto a blank wall.
+- **Shove** your own row or column of rooms one step (`Shift` + arrow, relative to where you're looking). The room
+  pushed off one end comes back in at the other, and you ride along. You feel it grind past.
+- **Hide** in a wardrobe (`E`). It can't see you in there, unless it watched you climb in.
+- **The shadow** hunts by sight. Lose it and it searches where it last saw you. Shoving is loud: it comes to the noise.
+  Sometimes it goes quiet and waits by a doorway near you. Close up, it may freeze for a moment, then lunge.
+  Shut it out and it seeps through the walls.
 
-Keys: arrows or WASD to walk, `Shift` + arrow to shove your own row or column, `M` for sound. On a phone or with a
-mouse: tap the room next to you to walk, tap the arrows around the house to shove.
+Keys: `W`/`S` or up/down to walk, `A`/`D` or left/right to turn (or click and use the mouse), `E` to hide,
+`Shift` + arrow to shove, `M` for sound. Headphones help: you hear which side it's on.
 
 ## Play it locally
 
