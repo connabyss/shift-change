@@ -3,7 +3,7 @@ import { shoveRow, shoveCol } from "./house.js";
 import { floorHouse, LAST_FLOOR, PLAYER_SPEED, shadowPace, headStart, quakeEvery } from "./floors.js";
 import { rng } from "./rng.js";
 import { buildTiles, move, guide, roomOf, roomCenter, canSee, tilePath, R, FRONT, WARDROBE } from "./tiles.js";
-import { makeShadow, think, cutOff, stun } from "./stalker.js";
+import { makeShadow, think, cutOff, stun, thought } from "./stalker.js";
 import { makeView, render, present, RW, RH } from "./view.js";
 
 export const W = 960, H = 600;
@@ -60,7 +60,7 @@ function start() {
   // ---------- state ----------
   let scene = "title", floor = 1, seed = 1, house, decor, map, me, sh, slide = null, band = [];
   let clock = 0, hint = "", hintAt = 0, endAt = 0, shake = 0, flash = 0, hidden = false, sawHide = false, hasKey = false;
-  let way = null, wayAt = 0, nextQuake = Infinity, warned = false, before = null, wakeAt = 0, awake = false, noiseAt = null, lastStep = 0, lastBeat = 0, lastMyStep = 0, seenOnce = false, caught = false, escaped = false;
+  let mind = null, minds = 0, way = null, wayAt = 0, nextQuake = Infinity, warned = false, before = null, wakeAt = 0, awake = false, noiseAt = null, lastStep = 0, lastBeat = 0, lastMyStep = 0, seenOnce = false, caught = false, escaped = false;
   const keys = new Set();
 
   function begin(n) {
@@ -74,7 +74,7 @@ function start() {
     sh = makeShadow(roomCenter(house.hunter));
     house.hunter = { x: -99, y: -99 }; // the shadow lives in tiles now; the room rules only move rooms
     map = buildTiles(house, decor);
-    wakeAt = clock + headStart(n); awake = false; way = null; wayAt = 0;
+    wakeAt = clock + headStart(n); awake = false; way = null; wayAt = 0; mind = null;
     nextQuake = quakeEvery(n) ? clock + headStart(n) + quakeEvery(n) : Infinity; warned = false;
     slide = null; hidden = false; sawHide = false; hasKey = !house.key; caught = false; escaped = false; seenOnce = false;
     scene = "play";
@@ -82,6 +82,22 @@ function start() {
       : n === LAST_FLOOR ? `Floor ${n}, the last. The house moves on its own here.` : `Floor ${n}. It's learning.`);
   }
   function say(t) { hint = t; hintAt = clock; }
+  // the shadow's mind changes: show its line of code
+  function think$(kind) { const t = thought(kind, minds); if (t) { mind = { text: t, at: clock }; minds++; } }
+  // It types itself in, flickers, and fades. A wrong character now and then.
+  function drawMind() {
+    if (!mind) return;
+    const age = clock - mind.at; if (age > 4.5) return;
+    const shown = Math.min(mind.text.length, Math.floor(age * 38));
+    let t = mind.text.slice(0, shown);
+    if (Math.random() < 0.12 && t.length) { const i = Math.floor(Math.random() * t.length); t = t.slice(0, i) + "▓#%&"[Math.floor(Math.random() * 4)] + t.slice(i + 1); }
+    const alpha = (age < 3.5 ? 1 : 1 - (age - 3.5)) * (Math.random() < 0.06 ? 0.3 : 0.85);
+    ctx.globalAlpha = Math.max(0, alpha);
+    ctx.font = '19px "VT323", "Courier New", monospace'; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(170,40,30,0.5)"; ctx.fillText("> " + t, 27, 91); // a red ghost, a pixel off
+    ctx.fillStyle = "#c9d6c0"; ctx.fillText("> " + t + (shown < mind.text.length || Math.sin(clock * 9) > 0 ? "▌" : ""), 26, 90);
+    ctx.globalAlpha = 1;
+  }
 
   function keyPos() { return house.key && !hasKey ? roomCenter(house.key) : null; }
 
@@ -119,7 +135,7 @@ function start() {
     if (!slide.left) {
       slide = null; shake = 8; noise(0.15, 0.8, 300);
       if (before && cutOff(before, tilePath(map, sh, me))) { // you cut it off: it shrieks and loses its way
-        stun(sh, 4); noiseAt = null; flash = 0.3;
+        stun(sh, 4); noiseAt = null; flash = 0.3; think$("cut");
         tone(900, 0.9, "sawtooth", 0.05, 300); noise(0.8, 0.4, 3500);
         say("You cut it off. It's lost... for now.");
       }
@@ -330,12 +346,13 @@ function start() {
       }
       if (!awake && (clock >= wakeAt || hasKey)) {
         awake = true; tone(52, 2.2, "sawtooth", 0.06, 40); noise(1.4, 0.25, 260);
-        say(floor === 1 ? "Somewhere in the house, something wakes up." : "It's moving.");
+        say(floor === 1 ? "Somewhere in the house, something wakes up." : "It's moving."); think$("wake");
       }
       const events = slide || !awake ? [] : think(sh, { map, player: { x: me.x, y: me.y, hidden }, sawHide, noise: noiseAt, pace: shadowPace(floor) }, dt, Math.random);
       if (!slide) noiseAt = null; // a shove's noise waits until the rooms stop, then it hears it
       const dx = sh.x - me.x, dy = sh.y - me.y, dist = Math.hypot(dx, dy);
       const rel = Math.atan2(dy, dx) - me.a, pan = Math.max(-1, Math.min(1, Math.sin(rel)));
+      for (const e of events) think$(e.kind === "spotted" && sh.mode === "pause" ? "freeze" : e.kind);
       for (const e of events) {
         if (e.kind === "spotted") {
           flash = 0.5; shake = 6; noise(0.5, 0.5, 2400); tone(220, 1.2, "sawtooth", 0.05, 207);
@@ -393,6 +410,7 @@ function start() {
     ctx.globalAlpha = 1;
     drawMap();
     if (scene === "play") drawGuide();
+    drawMind();
     if (scene === "end") drawEnd();
     requestAnimationFrame(frame);
   }
@@ -400,5 +418,5 @@ function start() {
   requestAnimationFrame(frame);
 
   // For the page test: read the state, and hold keys like a player.
-  window.__fp = { begin: (n) => begin(n), quakeSoon: () => { nextQuake = clock + 0.1; }, quake: () => nextQuake, way: () => way, awake: () => awake, scene: () => scene, me: () => me, shadow: () => sh, house: () => house, map: () => map, hidden: () => hidden, hasKey: () => hasKey };
+  window.__fp = { mind: () => mind, begin: (n) => begin(n), quakeSoon: () => { nextQuake = clock + 0.1; }, quake: () => nextQuake, way: () => way, awake: () => awake, scene: () => scene, me: () => me, shadow: () => sh, house: () => house, map: () => map, hidden: () => hidden, hasKey: () => hasKey };
 }

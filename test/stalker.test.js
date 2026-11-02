@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeHouse, N, E, S, W } from "../src/house.js";
 import { buildTiles, R } from "../src/tiles.js";
-import { makeShadow, think, lurkSpot, cutOff, stun } from "../src/stalker.js";
+import { makeShadow, think, lurkSpot, cutOff, stun, thought } from "../src/stalker.js";
 import { rng } from "../src/rng.js";
 
 const ALL = N | E | S | W;
@@ -122,4 +122,22 @@ test("stunned, it can't see you or catch you; then it comes looking", () => {
   const ev = think(sh, world, 0.3, rng(1));
   assert.ok(ev.some((e) => e.kind === "recover"));
   assert.equal(sh.mode, "search");
+});
+
+test("every change of mind it reports has a line of its own code to show, short enough to read at a glance", () => {
+  for (const k of ["wake", "spotted", "freeze", "lunge", "lost", "heard", "sneak", "lurk", "wander", "seep", "cut", "recover", "caught"]) {
+    for (const n of [0, 1]) { const t = thought(k, n); assert.ok(t && t.length <= 40, `${k}: ${t}`); }
+  }
+  assert.notEqual(thought("spotted", 0), thought("spotted", 1), "it doesn't repeat itself every time");
+  assert.equal(thought("nonsense"), null);
+});
+
+test("when it goes to wait silently by a door, it says so (an event the game can show)", () => {
+  const map = hall(), world = { map, player: { x: 7.5, y: 2.5, hidden: true }, sawHide: false, noise: null };
+  let saw = false;
+  for (let seed = 1; seed < 40 && !saw; seed++) {
+    const sh = makeShadow({ x: 12.5, y: 2.5 }); sh.mode = "look"; sh.timer = 0.01;
+    saw = think(sh, world, 0.05, rng(seed)).some((e) => e.kind === "sneak");
+  }
+  assert.ok(saw);
 });

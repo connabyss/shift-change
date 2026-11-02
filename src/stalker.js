@@ -116,10 +116,32 @@ function nextMove(sh, world, rand, events) {
   const r = rand();
   if (r < 0.35) {
     const spot = lurkSpot(world.map, world.player, rand);
-    if (spot) { go(sh, "sneak", spot); return; }
+    if (spot) { go(sh, "sneak", spot); events.push({ kind: "sneak" }); return; }
   }
   if (r < 0.75) { go(sh, "wander", roomCenter(roomOf(world.player))); return; } // it has a feeling where you are
   const w = world.map.w / R, h = world.map.h / R;
   go(sh, "wander", roomCenter({ x: Math.floor(rand() * w), y: Math.floor(rand() * h) }));
   events.push({ kind: "wander" });
+}
+
+// What it's thinking, as a line of its own code. Shown on screen when it changes its mind:
+// atmosphere you can read, never something you need to read to play.
+const THOUGHTS = {
+  wake: ["wake();", "while (you.inside) {"],
+  spotted: ["if (seesYou()) hunt(you);", "target = you;"],
+  freeze: ["freeze(); // let it look at me", "wait(0.7); // ...then"],
+  lunge: ["lunge(you);", "speed = MAX;"],
+  lost: ["lost(you);  search(lastSeen);", "where(you) == undefined"],
+  heard: ["heard(noise) → go(there);", "listen(); // the walls moved"],
+  sneak: ["silent = true;  go(door_near_you);", "sneak(); // don't make a sound"],
+  lurk: ["wait(by_the_door);", "stay(still); // it will come to me"],
+  wander: ["wander();  // you are here somewhere", "sniff(rooms);"],
+  seep: ["path == null → through(walls);", "walls.ignore();"],
+  cut: ["ERROR: path_to_you == null", "where(you) → ???"],
+  recover: ["path_to_you = find();", "retry(you);"],
+  caught: ["found(you);", "return you;"],
+};
+export function thought(kind, n = 0) {
+  const lines = THOUGHTS[kind];
+  return lines ? lines[n % lines.length] : null;
 }
