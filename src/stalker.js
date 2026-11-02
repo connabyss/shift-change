@@ -2,7 +2,7 @@
 // sometimes waits silently by a doorway near you, and sometimes freezes before it lunges.
 import { canSee, tilePath, roomOf, roomCenter, R, FLOOR } from "./tiles.js";
 
-export const SPEED = { wander: 1.0, search: 1.7, sneak: 1.4, hunt: 2.6, lunge: 4.4, pause: 0, lurk: 0, look: 0, seep: 0.7 };
+export const SPEED = { wander: 1.0, search: 1.7, sneak: 1.4, hunt: 2.6, lunge: 4.4, pause: 0, lurk: 0, look: 0, stunned: 0, seep: 0.7 };
 export const SIGHT = 9;
 
 export function makeShadow(p) {
@@ -28,9 +28,24 @@ export function lurkSpot(map, player, rand) {
   return spots.length ? spots[Math.floor(rand() * spots.length)] : null;
 }
 
+// Did a slide cut it off from you? Its way to you is gone, or got much longer.
+// before/after: tilePath results (an array of steps, or null for no way at all).
+export function cutOff(before, after) {
+  if (!before) return false; // it couldn't reach you anyway
+  return after === null || after.length >= before.length + 6;
+}
+
+// You cut it off: it shrieks and stands confused for a few seconds, then comes looking.
+export function stun(sh, secs = 4) { go(sh, "stunned", null, secs); }
+
 // One tick. world: { map, player: {x, y, hidden}, sawHide, noise: {x, y} | null }. Returns what happened.
 export function think(sh, world, dt, rand) {
   const { map, player } = world, events = [];
+  if (sh.mode === "stunned") { // it can't see, hear or catch you; when it wakes it heads for you
+    sh.timer -= dt;
+    if (sh.timer <= 0) { go(sh, "search", player); events.push({ kind: "recover" }); }
+    return events;
+  }
   const seesYou = (!player.hidden || world.sawHide) && canSee(map, sh, player, SIGHT);
   if (seesYou) {
     sh.lastSeen = { x: player.x, y: player.y };

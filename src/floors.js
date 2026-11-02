@@ -2,7 +2,7 @@
 import { rng } from "./rng.js";
 import { makeHouse, N, E, S, W } from "./house.js";
 
-export const LAST_FLOOR = 5;
+export const LAST_FLOOR = 3; // short: a jam player finishes in about ten minutes
 
 // Room shapes, by their doors. No dead-end closets: every room has at least two ways in.
 const SHAPES = [N | S, E | W, N | E, E | S, S | W, W | N, N | E | S, E | S | W, S | W | N, W | N | E, N | E | S | W];
@@ -31,9 +31,12 @@ export function floorSpec(n, seed = 1) {
 // Your walking speed, in tiles a second. The shadow's pace multiplies its speeds (stalker.js SPEED).
 export const PLAYER_SPEED = 2.1;
 // Floors 1 and 2: even hunting, it is slower than you, so running away works while you learn.
-export function shadowPace(n) { return n === 1 ? 0.62 : n === 2 ? 0.74 : 0.85 + 0.07 * (n - 3); }
+export function shadowPace(n) { return n === 1 ? 0.62 : n === 2 ? 0.74 : 0.9; }
 // Seconds before it starts to move. On floor 1 it sleeps until you take the key, or for 25 seconds.
 export function headStart(n) { return n === 1 ? 25 : n === 2 ? 10 : 5; }
+
+// The last floor moves on its own: every this many seconds a row or column slides, with a rumble first.
+export function quakeEvery(n) { return n === LAST_FLOOR ? 20 : 0; }
 
 export function floorHouse(n, seed) {
   const spec = floorSpec(n, seed);

@@ -50,19 +50,26 @@ test("first person: walk, turn, shove your row and ride along, hide in the wardr
     // on floor 1 the shadow sleeps at first: a head start
     const sh0 = await page.evaluate(() => ({ ...window.__fp.shadow() }));
     assert.equal(await page.evaluate(() => window.__fp.awake()), false, "asleep at the start of floor 1");
-    // face north again, hold right: nothing moves yet, the map shows the plan. Let go: your row slides east, you ride along
+    // face north again, hold Q and tap D: nothing moves yet, you don't walk, the map shows the plan.
+    // Let go of Q: your row slides east (to your right), you ride along
     await page.evaluate(() => { window.__fp.me().a = -Math.PI / 2; });
     const before = await me();
-    await page.keyboard.down("ArrowRight"); await page.waitForTimeout(250);
+    await page.keyboard.down("q");
+    await page.keyboard.down("d"); await page.waitForTimeout(250); await page.keyboard.up("d");
+    assert.equal(await page.evaluate(() => window.__fp.planning()), true);
     assert.equal(await page.evaluate(() => window.__fp.aim()), "ArrowRight");
-    assert.equal(await page.evaluate(() => window.__fp.house().shoves), 0, "holding an arrow only shows what will slide");
+    assert.equal(await page.evaluate(() => window.__fp.house().shoves), 0, "planning only shows what will slide");
+    assert.equal((await me()).x, before.x, "D picks a direction while planning; it doesn't walk you");
     const sh1 = await page.evaluate(() => ({ ...window.__fp.shadow() }));
     assert.deepEqual([sh1.x, sh1.y], [sh0.x, sh0.y], "the sleeping shadow hasn't moved");
-    await page.keyboard.up("ArrowRight");
+    await page.keyboard.up("q");
     await page.waitForTimeout(700);
     const after = await me();
     assert.equal(await page.evaluate(() => window.__fp.house().shoves), 1);
-    assert.equal(after.a, before.a, "an arrow slides rooms and never turns you");
+    assert.equal(after.a, before.a, "sliding never turns you");
+    // holding Q and letting go without picking a way does nothing
+    await page.keyboard.down("q"); await page.keyboard.up("q"); await page.waitForTimeout(100);
+    assert.equal(await page.evaluate(() => window.__fp.house().shoves), 1);
     assert.ok(Math.abs(Math.abs(after.x - before.x) - 5) < 0.01 || Math.abs(after.x - before.x) > 10, "rode along one room (or wrapped round)");
     // stand next to a wardrobe, facing it, and hide in it (with the shadow sent off to wait in a far corner)
     await page.evaluate(() => {
@@ -74,6 +81,10 @@ test("first person: walk, turn, shove your row and ride along, hide in the wardr
     assert.equal(await page.evaluate(() => window.__fp.hidden()), true);
     await page.keyboard.press("e");
     assert.equal(await page.evaluate(() => window.__fp.hidden()), false);
+    // the last floor moves on its own
+    await page.evaluate(() => { window.__fp.begin(3); window.__fp.quakeSoon(); });
+    await page.waitForTimeout(900);
+    assert.equal(await page.evaluate(() => window.__fp.house().shoves), 1, "the house slid a row or column by itself");
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });
