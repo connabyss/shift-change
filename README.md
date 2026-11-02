@@ -1,30 +1,30 @@
-# Shift Change
+# The Shifting House
 
 Our entry for [GitHub Game Off 2026](https://itch.io/jam/game-off-2026). The theme is **SHIFT**.
 
-You work the night shift at a small factory. The day shift left a sticky note on every machine: "fixed the boiler
-leak!", "oiled the conveyor belt!". Some of those notes are lies.
+You're in a dark house where the rooms move. Find the key, then get out the front door, before the shadow finds you.
 
-- **Tap a lever** to put that machine back the old way. If it clunks and sparks, the fix was real, so put the lever back
-  before the pressure climbs. If it keeps humming along, the "fix" did nothing.
-- **Tap a note** to stamp it **LIAR** or **TRUE**. A right stamp lets off steam. A wrong one adds pressure.
-- Stamp every note before the pressure gauge hits the top. Five nights, and the floor gets rearranged every night.
+- **Walk** from room to room, but only where two doors line up.
+- **Shove** a whole row or column of rooms one step. The room pushed off one end comes back in at the other, and
+  anyone inside rides along: you, the key, and the shadow.
+- Shoving is loud. The shadow hears it and comes sooner. Shut it out and it seeps through the walls, slowly.
+- You only see the shadow when it's close, or when the lights flicker.
 
-Keys: `1`-`7` pull that machine's lever, `Shift` + number opens its note, then `L` or `T` to stamp. `M` turns the sound
-on or off.
+Keys: arrows or WASD to walk, `Shift` + arrow to shove your own row or column, `M` for sound. On a phone or with a
+mouse: tap the room next to you to walk, tap the arrows around the house to shove.
 
 ## Play it locally
 
-It's a plain web page, no build step. Serve the folder and open it, for example `npx serve .` or
-`python -m http.server`, then go to the address it prints.
+It's a plain web page, no build step. Serve the folder (for example `npx serve .` or `python -m http.server`) and open
+the address it prints.
 
 ## Tests
 
-`npm test` (Node 20+). The browser test plays night 1 from the title screen and needs Playwright; without it, that test
-is skipped and says so.
+`npm test` (Node 20+). The browser test needs Playwright; without it, that test is skipped and says so.
 
 ## How it was made
 
-A team of robots built it: a planner and a builder (both Claude), and a skeptic,
-[Bite](https://github.com/connabyss/bite), which takes each change back out and checks that a test notices. The game
-is that skeptic's job, turned into a factory. AI use is disclosed in our Game Off submission.
+A team of robots built it: a planner, a builder and a playtester (all Claude), and a skeptic,
+[Bite](https://github.com/connabyss/bite), which takes each change back out and checks that a test notices. Their chat
+is in [robots/](robots/). The first idea, a factory about catching lying notes, was played, called boring, and
+dropped. AI use is disclosed in our Game Off submission.

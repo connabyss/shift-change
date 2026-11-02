@@ -1,38 +1,38 @@
-// The page: draws the factory, takes taps and keys, and makes noise. The rules live in factory.js.
-import { makeNight, pullLever, stamp, tick, report, brokenCount, PRESSURE_MAX } from "./factory.js";
-import { nightSpec, LAST_NIGHT } from "./nights.js";
+// The page: draws the house, takes keys and taps, makes the noises. The rules live in house.js.
+import { shoveRow, shoveCol, walk, path, hunterStep, wander, seep, N, E, S, W as WEST } from "./house.js";
+import { floorHouse, LAST_FLOOR } from "./floors.js";
+import { rng } from "./rng.js";
 
 export const W = 960, H = 600;
-const FLOOR = { x: 60, y: 120, w: 840, h: 470 };
+const SHOVE_TIME = 0.32, WALK_TIME = 0.16;
 
-// Where a machine and its parts sit on screen. Shared by drawing and tapping, so they can't disagree.
-export function layout(m) {
-  const cx = FLOOR.x + m.x * FLOOR.w, cy = FLOOR.y + m.y * FLOOR.h;
-  return {
-    cx, cy,
-    body: { x: cx - 70, y: cy - 20, w: 130, h: 85 },
-    machine: { x: cx - 70, y: cy - 56, w: 130, h: 121 }, // the body plus the moving part on top: tap anywhere on it
-    lever: { x: cx + 60, y: cy - 30, w: 40, h: 100 },
-    note: { x: cx - 78, y: cy - 124, w: 120, h: 58 },
-    liar: { x: cx - 80, y: cy - 60, w: 76, h: 40 },
-    truth: { x: cx + 4, y: cy - 60, w: 76, h: 40 },
-  };
+// Where the grid sits on screen for a house of size n.
+export function grid(n) {
+  const cell = Math.floor(Math.min(470 / n, 112));
+  const g = n * cell;
+  return { cell, ox: Math.round((W - g) / 2), oy: Math.round(78 + (480 - g) / 2), size: g };
 }
 
-const inside = (p, r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+// The shove arrows around the outside of the grid: one at each end of every row and column.
+export function arrows(n) {
+  const { cell, ox, oy, size } = grid(n), out = [];
+  for (let i = 0; i < n; i++) {
+    out.push({ axis: "row", i, dir: -1, x: ox - 34, y: oy + i * cell + cell / 2 });
+    out.push({ axis: "row", i, dir: 1, x: ox + size + 40, y: oy + i * cell + cell / 2 });
+    out.push({ axis: "col", i, dir: -1, x: ox + i * cell + cell / 2, y: oy - 30 });
+    out.push({ axis: "col", i, dir: 1, x: ox + i * cell + cell / 2, y: oy + size + 30 });
+  }
+  return out;
+}
 
-// What a tap at p means, given which note's stamp menu is open.
-export function hitTest(state, p, menu) {
-  if (menu) {
-    const m = state.machines.find((x) => x.id === menu), L = layout(m);
-    if (inside(p, L.liar)) return { kind: "stamp", id: menu, verdict: "LIAR" };
-    if (inside(p, L.truth)) return { kind: "stamp", id: menu, verdict: "TRUE" };
-  }
-  for (const m of state.machines) {
-    const L = layout(m);
-    if (inside(p, L.note) && !m.stamp) return { kind: "note", id: m.id };
-    if (inside(p, L.lever) || inside(p, L.machine)) return { kind: "lever", id: m.id };
-  }
+// What a tap at p means: a shove arrow, or the room next to you (walk there), or the front door.
+export function hitTest(house, p) {
+  const n = house.w;
+  for (const a of arrows(n)) if (Math.hypot(p.x - a.x, p.y - a.y) < 24) return { kind: "shove", axis: a.axis, i: a.i, dir: a.dir };
+  const { cell, ox, oy } = grid(n);
+  const x = Math.floor((p.x - ox) / cell), y = Math.floor((p.y - oy) / cell);
+  const dx = x - house.player.x, dy = y - house.player.y;
+  if (Math.abs(dx) + Math.abs(dy) === 1) return { kind: "walk", d: dx === 1 ? "E" : dx === -1 ? "W" : dy === 1 ? "S" : "N" };
   return { kind: "none" };
 }
 
@@ -41,422 +41,395 @@ if (typeof document !== "undefined") start();
 function start() {
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d");
-  let scale = 1;
+  const dark = document.createElement("canvas");
+  dark.width = W; dark.height = H;
+  const dctx = dark.getContext("2d");
   function fit() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    scale = Math.min(window.innerWidth / W, window.innerHeight / H);
-    canvas.style.width = `${W * scale}px`;
-    canvas.style.height = `${H * scale}px`;
-    canvas.width = Math.round(W * scale * dpr);
-    canvas.height = Math.round(H * scale * dpr);
+    const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+    canvas.style.width = `${W * scale}px`; canvas.style.height = `${H * scale}px`;
+    canvas.width = Math.round(W * scale * dpr); canvas.height = Math.round(H * scale * dpr);
     ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
   }
   window.addEventListener("resize", fit);
   fit();
 
-  // ---------- sound: tiny bleeps made on the spot, no files ----------
+  // ---------- sound: made on the spot, no files ----------
   let audio = null, muted = false;
   function sound(kind) {
     if (muted) return;
     try { audio ??= new AudioContext(); } catch { return; }
     const t = audio.currentTime;
-    const tone = (f, d, type = "square", v = 0.08, f2 = f) => {
+    const tone = (f, d, type = "sine", v = 0.08, f2 = f, at = 0) => {
       const o = audio.createOscillator(), g = audio.createGain();
-      o.type = type; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f2, t + d);
-      g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-      o.connect(g).connect(audio.destination); o.start(t); o.stop(t + d);
+      o.type = type; o.frequency.setValueAtTime(f, t + at); o.frequency.exponentialRampToValueAtTime(f2, t + at + d);
+      g.gain.setValueAtTime(0.0001, t + at); g.gain.exponentialRampToValueAtTime(v, t + at + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + at + d);
+      o.connect(g).connect(audio.destination); o.start(t + at); o.stop(t + at + d + 0.02);
     };
-    const noise = (d, v = 0.25, lp = 900) => {
-      const b = audio.createBuffer(1, audio.sampleRate * d, audio.sampleRate), ch = b.getChannelData(0);
-      for (let i = 0; i < ch.length; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / ch.length) ** 2;
+    const noise = (d, v, lp, at = 0) => {
+      const b = audio.createBuffer(1, Math.ceil(audio.sampleRate * d), audio.sampleRate), ch = b.getChannelData(0);
+      for (let i = 0; i < ch.length; i++) ch[i] = (Math.random() * 2 - 1) * Math.sin((Math.PI * i) / ch.length);
       const s = audio.createBufferSource(), f = audio.createBiquadFilter(), g = audio.createGain();
       f.type = "lowpass"; f.frequency.value = lp; g.gain.value = v;
-      s.buffer = b; s.connect(f).connect(g).connect(audio.destination); s.start(t);
+      s.buffer = b; s.connect(f).connect(g).connect(audio.destination); s.start(t + at);
     };
-    if (kind === "lever") tone(140, 0.12, "square", 0.06, 70);
-    if (kind === "broke") { noise(0.5, 0.3, 1400); tone(220, 0.4, "sawtooth", 0.06, 55); }
-    if (kind === "fine") { tone(660, 0.08, "triangle", 0.07); setTimeout(() => sound("ding2"), 90); }
-    if (kind === "ding2") tone(990, 0.12, "triangle", 0.07);
-    if (kind === "stamp") { noise(0.12, 0.5, 400); tone(90, 0.15, "sine", 0.2, 40); }
-    if (kind === "wrong") tone(160, 0.5, "sawtooth", 0.08, 80);
-    if (kind === "tick") tone(1800, 0.03, "square", 0.03);
-    if (kind === "boom") { noise(1.6, 0.6, 600); tone(80, 1.2, "sine", 0.3, 25); }
-    if (kind === "win") [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => tone(f, 0.18, "triangle", 0.07), i * 110));
+    if (kind === "shove") { noise(0.34, 0.5, 260); tone(55, 0.3, "sawtooth", 0.05, 40); noise(0.08, 0.6, 500, 0.3); }
+    if (kind === "step") noise(0.05, 0.25, 900);
+    if (kind === "bump") tone(90, 0.1, "sine", 0.1, 60);
+    if (kind === "beat") { tone(60, 0.12, "sine", 0.35, 45); tone(58, 0.12, "sine", 0.25, 44, 0.18); }
+    if (kind === "flicker") { tone(1240, 0.5, "sine", 0.025, 1180); noise(0.12, 0.15, 3000); }
+    if (kind === "near") tone(110, 0.7, "triangle", 0.05, 104);
+    if (kind === "caught") { noise(1.3, 0.8, 900); tone(140, 1.2, "sawtooth", 0.08, 35); }
+    if (kind === "key") [880, 1320].forEach((f, i) => tone(f, 0.4, "triangle", 0.05, f, i * 0.08));
+    if (kind === "out") [392, 494, 587].forEach((f, i) => tone(f, 0.9, "triangle", 0.05, f, i * 0.12));
   }
 
   // ---------- game state ----------
-  let scene = "title", night = 1, state = null, menu = null, hint = "", hintFor = 0, endShown = 0;
-  let shake = 0, flash = 0, clock = 0, lastTick = 0;
-  const parts = [], words = [], lever = {}, stampAnim = {}, wobble = {};
+  let scene = "title", house = null, floor = 1, seed = 1, decor = null;
+  let clock = 0, stepAcc = 0, lastWander = null, lost = 0, hint = "", hintAt = 0, endAt = 0;
+  let seenSeep = false, heard = false, slide = null, walkAnim = null, shake = 0, flickerAt = 4, flicker = 0, lastBeat = 0, wanderRand = rng(1);
+  const view = { p: { x: 0, y: 0 }, h: { x: 0, y: 0 } };
 
   function begin(n) {
-    night = n;
-    state = makeNight(nightSpec(n));
-    menu = null; parts.length = 0; words.length = 0;
-    for (const m of state.machines) { lever[m.id] = 0; wobble[m.id] = 0; delete stampAnim[m.id]; }
+    floor = n;
+    house = floorHouse(n, seed);
+    const r = rng(seed * 31 + n);
+    decor = house.rooms.map((row) => row.map(() => Math.floor(r() * 7)));
+    view.p = { ...house.player }; view.h = { ...house.hunter };
+    slide = null; walkAnim = null; stepAcc = -2.5; lastWander = null; lost = 0; flickerAt = clock + 2.5; wanderRand = rng(seed + n * 101);
     scene = "play";
-    say(n === 1
-      ? "The day shift left notes. Tap a LEVER to put that machine back the old way."
-      : `Night ${n}: ${state.machines.length} machines. Some of these notes are lying.`);
+    say(n === 1 ? "Find the key, then the front door.   Walk: arrows/WASD.   Shove your row: SHIFT + arrow.   Or tap."
+      : `Floor ${n}. It's quicker now.`);
   }
-  function say(text) { hint = text; hintFor = clock; }
+  function say(t) { hint = t; hintAt = clock; }
 
-  function act(hit) {
-    if (scene !== "play" || state.over) return;
-    if (hit.kind === "none") { menu = null; return; }
-    const m = state.machines.find((x) => x.id === hit.id), L = layout(m);
-    if (hit.kind === "note") { menu = menu === m.id ? null : m.id; sound("lever"); return; }
-    if (hit.kind === "lever") {
-      menu = null;
-      const r = pullLever(state, m.id);
-      sound("lever");
-      if (r.kind === "broke") {
-        sound("broke"); shake = Math.max(shake, 14); wobble[m.id] = 1;
-        burst(L.cx, L.cy + 10, 26, "spark"); burst(L.cx, L.cy - 10, 10, "smoke");
-        pop(L.cx, L.cy - 100, "CLUNK!", "#ff6b4a");
-        say(night === 1 ? "It broke! So the fix was REAL. Pull the lever back, quick, then tap the note and stamp TRUE."
-          : `${m.name} broke the old way. That fix was real. Put it back!`);
-      } else if (r.kind === "fine") {
-        sound("fine");
-        burst(L.cx, L.cy - 10, 8, "puff");
-        pop(L.cx, L.cy - 100, "still runs fine...", "#9be37a");
-        say(night === 1 ? "Still running fine the old way. So the \"fix\" did nothing. Tap the note and stamp it LIAR."
-          : `${m.name} runs fine without the fix. Hmm.`);
-      } else if (r.kind === "fixed") {
-        burst(L.cx, L.cy, 8, "puff");
-        say(night === 1 && !m.stamp ? `Phew. Now tap the ${m.name.toLowerCase()}'s note and stamp it TRUE.` : "Back the new way. Phew.");
-      }
-      return;
-    }
-    if (hit.kind === "stamp") {
-      menu = null;
-      const r = stamp(state, m.id, hit.verdict);
-      if (r.kind === "already") return;
-      stampAnim[m.id] = clock;
-      sound("stamp"); shake = Math.max(shake, 9);
-      if (r.kind === "right") {
-        pop(L.cx, L.cy - 110, hit.verdict === "LIAR" ? "CAUGHT!" : "TRUE.", hit.verdict === "LIAR" ? "#ff4a3d" : "#7ee081");
-        if (hit.verdict === "LIAR") burst(L.note.x + 60, L.note.y + 30, 18, "paper");
-        const left = state.machines.filter((x) => !x.stamp).length;
-        if (left && night === 1) say(`Good. ${left} note${left > 1 ? "s" : ""} to go. Test before you stamp.`);
-      } else {
-        sound("wrong"); shake = Math.max(shake, 16); flash = 0.35;
-        pop(L.cx, L.cy - 110, "WRONG! +pressure", "#ffb02e");
-        say(m.lies ? `That note was a lie, and you believed it.` : `That fix was real. You called the day shift a liar.`);
-      }
-    }
+  function shove(axis, i, dir) {
+    if (scene !== "play" || house.over || slide || walkAnim) return;
+    (axis === "row" ? shoveRow : shoveCol)(house, i, dir);
+    const wrap = (v, n) => ((v % n) + n) % n;
+    if (axis === "row") { const row = decor[i]; decor[i] = row.map((_, x) => row[wrap(x - dir, house.w)]); }
+    else { const col = decor.map((r) => r[i]); col.forEach((_, y) => { decor[y][i] = col[wrap(y - dir, house.h)]; }); }
+    slide = { axis, i, dir, t0: clock };
+    heard = true; // shoving is loud: the shadow takes a step as soon as the rooms settle
+    view.p = { ...house.player }; view.h = { ...house.hunter };
+    shake = Math.max(shake, 6);
+    sound("shove");
+    if (floor === 1 && house.shoves === 1) say("The house moved, and you with it. But shoving is loud. It heard that.");
   }
 
-  function burst(x, y, n, kind) {
-    for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2, s = kind === "spark" ? 120 + Math.random() * 260 : 20 + Math.random() * 60;
-      parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - (kind === "spark" ? 80 : 30), life: 1,
-        max: kind === "spark" ? 0.5 + Math.random() * 0.4 : 1 + Math.random(), kind, r: Math.random() });
-    }
+  function step(d) {
+    if (scene !== "play" || house.over || slide || walkAnim) return;
+    const from = { ...house.player };
+    const r = walk(house, d);
+    if (r.kind === "wall") { sound("bump"); shake = Math.max(shake, 2); return; }
+    if (r.kind === "locked") { sound("bump"); shake = Math.max(shake, 3); say("Locked. The key is in here somewhere. Look for the glint."); return; }
+    if (r.kind === "key") { sound("key"); say("You have the key. Now the front door, the glow on the right wall."); }
+    sound("step");
+    walkAnim = { from, t0: clock, out: r.kind === "escaped" };
   }
-  function pop(x, y, text, color) { words.push({ x, y, text, color, t: clock }); }
 
   // ---------- input ----------
-  function toGame(e) {
-    const r = canvas.getBoundingClientRect();
-    return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
-  }
-  canvas.addEventListener("pointerdown", (e) => {
-    const p = toGame(e);
-    if (scene === "title") { sound("lever"); begin(1); return; }
-    if (scene === "end") {
-      if (clock - endShown < 0.6) return;
-      if (state.won && night === LAST_NIGHT) { scene = "title"; return; }
-      begin(state.won ? night + 1 : night);
-      return;
-    }
-    act(hitTest(state, p, menu));
-  });
+  const KEYS = { ArrowUp: "N", ArrowRight: "E", ArrowDown: "S", ArrowLeft: "W", w: "N", d: "E", s: "S", a: "W", W: "N", D: "E", S: "S", A: "W" };
   window.addEventListener("keydown", (e) => {
     if (e.key === "m" || e.key === "M") { muted = !muted; return; }
-    if (scene !== "play") { if (e.key === "Enter" || e.key === " ") canvas.dispatchEvent(new PointerEvent("pointerdown")); return; }
-    const n = Number(e.code.replace("Digit", "")) - 1;
-    const m = state.machines[n];
-    if (m && e.shiftKey) { menu = m.id; return; } // SHIFT + number: open that machine's note
-    if (m) { act({ kind: "lever", id: m.id }); return; }
-    if (menu && (e.key === "l" || e.key === "L")) act({ kind: "stamp", id: menu, verdict: "LIAR" });
-    if (menu && (e.key === "t" || e.key === "T")) act({ kind: "stamp", id: menu, verdict: "TRUE" });
-    if (e.key === "Escape") menu = null;
+    if (scene !== "play") { if (e.key === "Enter" || e.key === " ") tapAnywhere(); return; }
+    const d = KEYS[e.key];
+    if (!d) return;
+    e.preventDefault();
+    if (e.shiftKey) {
+      const p = house.player;
+      if (d === "E" || d === "W") shove("row", p.y, d === "E" ? 1 : -1);
+      else shove("col", p.x, d === "S" ? 1 : -1);
+    } else step(d);
+  });
+  function tapAnywhere() {
+    if (scene === "title") { sound("step"); begin(1); return; }
+    if (scene === "end" && clock - endAt > 0.8) {
+      if (house.escaped && floor === LAST_FLOOR) { scene = "title"; seed += 1; return; }
+      begin(house.escaped ? floor + 1 : floor);
+    }
+  }
+  canvas.addEventListener("pointerdown", (e) => {
+    if (scene !== "play") { tapAnywhere(); return; }
+    const r = canvas.getBoundingClientRect();
+    const hit = hitTest(house, { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H });
+    if (hit.kind === "shove") shove(hit.axis, hit.i, hit.dir);
+    if (hit.kind === "walk") step(hit.d);
   });
 
   // ---------- drawing ----------
-  function rect(r, fill) { ctx.fillStyle = fill; ctx.fillRect(r.x, r.y, r.w, r.h); }
-  function text(t, x, y, size, color, font = "Martian Mono", align = "center") {
-    ctx.font = `${size}px "${font}", monospace`; ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = "middle";
+  function text(t, x, y, size, color, font = "IM Fell English", align = "center") {
+    ctx.font = `${size}px "${font}", Georgia, serif`; ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = "middle";
     ctx.fillText(t, x, y);
   }
 
-  function drawFloor() {
-    const g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, "#1d1814"); g.addColorStop(1, "#2a221b");
-    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-    ctx.strokeStyle = "rgba(255,220,170,0.05)"; ctx.lineWidth = 1;
-    for (let x = 0; x <= W; x += 48) { ctx.beginPath(); ctx.moveTo(x, 106); ctx.lineTo(x, H); ctx.stroke(); }
-    for (let y = 106; y <= H; y += 48) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
-    // hazard stripe along the top
-    for (let x = -40; x < W + 40; x += 40) {
-      ctx.fillStyle = "#e0a526"; ctx.beginPath();
-      ctx.moveTo(x, 96); ctx.lineTo(x + 20, 96); ctx.lineTo(x + 40, 106); ctx.lineTo(x + 20, 106); ctx.fill();
-    }
-    ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(0, 0, W, 96);
+  function drawRoom(doors, kind, x, y, cell) {
+    const wall = Math.max(6, cell * 0.08), gap = cell * 0.36;
+    ctx.fillStyle = (kind % 2) ? "#3a2e26" : "#34291f";
+    ctx.fillRect(x, y, cell, cell);
+    ctx.strokeStyle = "rgba(0,0,0,0.25)"; ctx.lineWidth = 1;
+    for (let i = 1; i < 6; i++) { ctx.beginPath(); ctx.moveTo(x, y + (i * cell) / 6); ctx.lineTo(x + cell, y + (i * cell) / 6); ctx.stroke(); }
+    furniture(kind, x + cell / 2, y + cell / 2, cell);
+    ctx.fillStyle = "#1a1411";
+    const side = (isOpen, x1, y1, w1, h1, horiz) => {
+      if (!isOpen) { ctx.fillRect(x1, y1, w1, h1); return; }
+      const a = ((horiz ? w1 : h1) - gap) / 2;
+      if (horiz) { ctx.fillRect(x1, y1, a, h1); ctx.fillRect(x1 + a + gap, y1, a, h1); }
+      else { ctx.fillRect(x1, y1, w1, a); ctx.fillRect(x1, y1 + a + gap, w1, a); }
+    };
+    side(doors & N, x, y, cell, wall, true);
+    side(doors & S, x, y + cell - wall, cell, wall, true);
+    side(doors & WEST, x, y, wall, cell, false);
+    side(doors & E, x + cell - wall, y, wall, cell, false);
   }
 
-  function drawMachine(m) {
-    const L = layout(m), broken = m.broken, t = clock;
-    const jx = broken ? (Math.random() - 0.5) * 5 : 0, jy = broken ? (Math.random() - 0.5) * 4 : 0;
-    ctx.save(); ctx.translate(jx, jy);
-    const b = L.body;
-    ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.beginPath(); ctx.ellipse(L.cx - 5, b.y + b.h + 6, 78, 10, 0, 0, 7); ctx.fill();
-    // base
-    ctx.fillStyle = broken ? "#5a3a33" : "#4a5560"; roundRect(b.x, b.y + 40, b.w, b.h - 40, 6); ctx.fill();
-    ctx.fillStyle = broken ? "#6e463c" : "#5d6b78"; roundRect(b.x + 4, b.y + 44, b.w - 8, 10, 3); ctx.fill();
-    // status lamp
-    const on = broken ? Math.sin(t * 18) > 0 : true;
-    ctx.fillStyle = broken ? (on ? "#ff3b2f" : "#5a1a16") : m.lever === "old" ? "#9be37a" : "#ffd36b";
-    ctx.beginPath(); ctx.arc(b.x + 14, b.y + 68, 6, 0, 7); ctx.fill();
-    if (broken && on) { ctx.fillStyle = "rgba(255,60,40,0.25)"; ctx.beginPath(); ctx.arc(b.x + 14, b.y + 68, 16, 0, 7); ctx.fill(); }
-    text(m.name.toUpperCase(), L.cx - 5, b.y + 68, 10, "#d9d0c0");
-    const run = broken ? 0 : 1;
-    drawKind(m.id, L.cx - 5, b.y + 20, t, run, broken);
+  function furniture(kind, cx, cy, cell) {
+    ctx.save(); ctx.translate(cx, cy); ctx.scale(cell / 100, cell / 100);
+    if (kind === 0) { ctx.fillStyle = "#5a2a2a"; ctx.fillRect(-26, -18, 52, 36); ctx.fillStyle = "#6e3a32"; ctx.fillRect(-20, -12, 40, 24); } // rug
+    if (kind === 1) { ctx.fillStyle = "#4a3426"; ctx.fillRect(-18, -12, 36, 24); } // table
+    if (kind === 2) { ctx.fillStyle = "#5b5148"; ctx.fillRect(-16, -26, 32, 48); ctx.fillStyle = "#d8cfc0"; ctx.fillRect(-14, -24, 28, 12); } // bed
+    if (kind === 3) { ctx.fillStyle = "#3b2a1e"; ctx.fillRect(-6, -30, 12, 34); ctx.fillStyle = "#c9b27a"; ctx.beginPath(); ctx.arc(0, -22, 5, 0, 7); ctx.fill(); } // clock
+    if (kind === 4) { ctx.strokeStyle = "#6b5a46"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, 16, 0, 7); ctx.stroke(); } // round rug
+    if (kind === 5) { ctx.fillStyle = "#2c2a26"; ctx.fillRect(-24, -6, 48, 12); ctx.fillStyle = "#4b4136"; for (let i = -20; i < 20; i += 8) ctx.fillRect(i, -4, 5, 8); } // books
     ctx.restore();
-    drawLever(m, L);
-    drawNote(m, L);
-    // number key, small, under the machine
-    text(String(state.machines.indexOf(m) + 1), b.x + b.w - 8, b.y + b.h + 12, 10, "rgba(255,240,220,0.35)");
   }
 
-  function drawKind(id, x, y, t, run, broken) {
-    ctx.lineWidth = 3; ctx.strokeStyle = "#2a2f35";
-    const metal = broken ? "#8a6a60" : "#9fb0bf", dark = "#36404a";
-    if (id === "boiler") {
-      ctx.fillStyle = metal; roundRect(x - 34, y - 26, 68, 48, 18); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = dark; ctx.fillRect(x + 14, y - 52, 12, 28);
-      if (run && Math.random() < 0.15) parts.push({ x: x + 20, y: y - 52, vx: (Math.random() - 0.5) * 10, vy: -40, life: 1, max: 1.2, kind: "puff", r: Math.random() });
-      if (broken && Math.random() < 0.4) parts.push({ x: x + 20, y: y - 52, vx: (Math.random() - 0.5) * 30, vy: -60, life: 1, max: 1.6, kind: "smoke", r: Math.random() });
-    } else if (id === "belt") {
-      ctx.fillStyle = dark; roundRect(x - 50, y + 4, 100, 16, 8); ctx.fill();
-      for (let i = 0; i < 5; i++) { ctx.fillStyle = "#777"; ctx.beginPath(); ctx.arc(x - 40 + i * 20, y + 12, 5, 0, 7); ctx.fill(); }
-      const off = run ? (t * 30) % 34 : 6;
-      for (let i = 0; i < 3; i++) {
-        const bx = x - 50 + ((i * 34 + off) % 100);
-        ctx.fillStyle = "#c8955a"; ctx.fillRect(bx, y - 12 - (broken && i === 1 ? 14 : 0), 18, 16);
+  const cellOf = (v, cell, ox, oy) => ({ x: ox + v.x * cell + cell / 2, y: oy + v.y * cell + cell / 2 });
+
+  // How far a room has still to slide this shove, in cells (0 when no shove is running).
+  function slideOff(axis, i) {
+    if (!slide || slide.axis !== axis || slide.i !== i) return 0;
+    const k = Math.min(1, (clock - slide.t0) / SHOVE_TIME);
+    return -slide.dir * (1 - k) ** 3;
+  }
+  const offsetFor = (v) => ({ x: v.x + slideOff("row", v.y), y: v.y + slideOff("col", v.x) });
+
+  // Each room, drawn where it is mid-slide, plus its wrapped copy coming in from the far end.
+  function eachRoom(fn) {
+    const n = house.w, { cell, ox, oy, size } = grid(n);
+    ctx.save(); ctx.beginPath(); ctx.rect(ox, oy, size, size); ctx.clip();
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      const o = offsetFor({ x, y });
+      for (const wx of [-n, 0, n]) for (const wy of [-n, 0, n]) {
+        if ((wx && o.x === x) || (wy && o.y === y)) continue;
+        fn(house.rooms[y][x], decor[y][x], ox + (o.x + wx) * cell, oy + (o.y + wy) * cell, cell);
       }
-    } else if (id === "press") {
-      ctx.fillStyle = dark; ctx.fillRect(x - 40, y - 46, 10, 68); ctx.fillRect(x + 30, y - 46, 10, 68); ctx.fillRect(x - 40, y - 50, 80, 10);
-      const drop = run ? (Math.sin(t * 4) * 0.5 + 0.5) * 30 : 30;
-      ctx.fillStyle = metal; ctx.fillRect(x - 24, y - 40 + drop, 48, 14);
-      ctx.fillStyle = "#7a8a99"; ctx.fillRect(x - 3, y - 40, 6, drop);
-    } else if (id === "fan") {
-      ctx.fillStyle = dark; ctx.beginPath(); ctx.arc(x, y - 6, 30, 0, 7); ctx.fill();
-      const a = run ? t * 12 : 0.4 + Math.sin(t * 30) * 0.15;
-      ctx.fillStyle = metal;
-      for (let i = 0; i < 4; i++) {
-        ctx.save(); ctx.translate(x, y - 6); ctx.rotate(a + i * Math.PI / 2);
-        ctx.beginPath(); ctx.ellipse(14, 0, 14, 6, 0, 0, 7); ctx.fill(); ctx.restore();
-      }
-    } else if (id === "bell") {
-      const sw = run ? Math.sin(t * 3) * 0.25 : 0.6;
-      ctx.save(); ctx.translate(x, y - 44); ctx.rotate(sw);
-      ctx.fillStyle = "#d7a94a"; ctx.beginPath(); ctx.moveTo(-6, 0); ctx.lineTo(6, 0); ctx.lineTo(22, 40); ctx.lineTo(-22, 40); ctx.closePath(); ctx.fill();
-      ctx.restore(); ctx.fillStyle = dark; ctx.fillRect(x - 30, y - 50, 60, 6);
-    } else if (id === "kettle") {
-      ctx.fillStyle = broken ? "#8a6a60" : "#c46a4a"; ctx.beginPath(); ctx.ellipse(x, y, 30, 22, 0, 0, 7); ctx.fill();
-      ctx.fillRect(x + 22, y - 12, 22, 6);
-      if (run && Math.random() < 0.2) parts.push({ x: x + 46, y: y - 12, vx: 20, vy: -30, life: 1, max: 1, kind: "puff", r: Math.random() });
-    } else if (id === "pump") {
-      ctx.fillStyle = metal; ctx.fillRect(x - 16, y - 30, 32, 52);
-      const up = run ? Math.sin(t * 5) * 12 : 12;
-      ctx.strokeStyle = dark; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(x, y - 30); ctx.lineTo(x + 34, y - 44 + up); ctx.stroke();
-      ctx.fillStyle = "#4aa3d8"; if (run) ctx.fillRect(x + 18, y + 4, 8, 18 * (Math.sin(t * 5) * 0.5 + 0.5));
-    } else if (id === "crane") {
-      ctx.fillStyle = dark; ctx.fillRect(x - 40, y - 50, 8, 72); ctx.fillRect(x - 40, y - 50, 80, 8);
-      const drop = run ? 14 + Math.sin(t * 2) * 12 : 34;
-      ctx.strokeStyle = "#aaa"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x + 24, y - 42); ctx.lineTo(x + 24, y - 42 + drop); ctx.stroke();
-      ctx.fillStyle = metal; ctx.fillRect(x + 14, y - 42 + drop, 20, 8);
-      const open = broken ? 10 : 4;
-      ctx.fillRect(x + 12 - open, y - 34 + drop, 5, 12); ctx.fillRect(x + 31 + open, y - 34 + drop, 5, 12);
     }
-    if (broken && Math.random() < 0.25) {
-      for (let i = 0; i < 3; i++) parts.push({ x: x + (Math.random() - 0.5) * 60, y: y + (Math.random() - 0.5) * 30,
-        vx: (Math.random() - 0.5) * 300, vy: -Math.random() * 200, life: 1, max: 0.4, kind: "spark", r: Math.random() });
-    }
+    ctx.restore();
   }
 
-  function drawLever(m, L) {
-    const target = m.lever === "old" ? 1 : 0;
-    lever[m.id] += (target - lever[m.id]) * 0.3;
-    const r = L.lever, px = r.x + r.w / 2, py = r.y + r.h - 22;
-    ctx.fillStyle = "#2b3138"; roundRect(r.x + 6, py - 6, r.w - 12, 30, 4); ctx.fill();
-    const a = -Math.PI / 2 - 0.6 + lever[m.id] * 1.2 + (lever[m.id] > 0.5 ? 0.8 : 0) * lever[m.id];
-    const hx = px + Math.cos(a) * 52, hy = py + Math.sin(a) * 52;
-    ctx.strokeStyle = "#b9c2cb"; ctx.lineWidth = 5; ctx.lineCap = "round";
-    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(hx, hy); ctx.stroke();
-    ctx.fillStyle = "#e0402f"; ctx.beginPath(); ctx.arc(hx, hy, 9, 0, 7); ctx.fill();
-    text(m.lever === "old" ? "OLD" : "NEW", px, py + 14, 9, m.lever === "old" ? "#ffb02e" : "#c9d4de");
+  function drawHouse() {
+    eachRoom(drawRoom);
+    const { cell, ox, oy, size } = grid(house.w);
+    ctx.strokeStyle = "#0e0a08"; ctx.lineWidth = 10; ctx.strokeRect(ox - 5, oy - 5, size + 10, size + 10);
+    const ex = ox + size + 2, ey = oy + house.exit.y * cell + cell * 0.32;
+    ctx.fillStyle = "#6b4a2a"; ctx.fillRect(ex - 6, ey, 12, cell * 0.36);
+    ctx.fillStyle = `rgba(255,200,120,${0.5 + Math.sin(clock * 2) * 0.2})`; ctx.fillRect(ex + 6, ey, 4, cell * 0.36);
   }
 
-  function drawNote(m, L) {
-    const n = L.note, tilt = ((m.id.charCodeAt(0) % 5) - 2) * 0.03;
-    ctx.save(); ctx.translate(n.x + n.w / 2, n.y + n.h / 2); ctx.rotate(tilt);
-    const hover = menu === m.id;
-    ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fillRect(-n.w / 2 + 3, -n.h / 2 + 4, n.w, n.h);
-    ctx.fillStyle = hover ? "#fff59a" : "#f7e36a"; ctx.fillRect(-n.w / 2, -n.h / 2, n.w, n.h);
-    ctx.fillStyle = "rgba(0,0,0,0.08)"; ctx.fillRect(-n.w / 2, -n.h / 2, n.w, 9);
-    const words = m.note.split(" ");
-    const mid = Math.ceil(words.length / 2);
-    text(words.slice(0, mid).join(" "), 0, -9, 12, "#2a2550", "Permanent Marker");
-    text(words.slice(mid).join(" "), 0, 7, 12, "#2a2550", "Permanent Marker");
-    text("- day shift", n.w / 2 - 32, 22, 8, "#6a6390", "Martian Mono");
-    if (m.stamp) {
-      const age = clock - (stampAnim[m.id] ?? -9), k = Math.max(1, 2.4 - age * 9);
-      ctx.save(); ctx.rotate(-0.22); ctx.scale(k, k);
-      const c = m.stamp === "LIAR" ? "#d8231a" : "#1e8a3a";
-      ctx.globalAlpha = Math.min(1, age * 8);
-      ctx.strokeStyle = c; ctx.lineWidth = 3; ctx.strokeRect(-44, -15, 88, 30);
-      text(m.stamp, 0, 1, 20, c, "Rubik Mono One");
+  function personAt() {
+    const { cell, ox, oy } = grid(house.w);
+    let v = offsetFor(view.p);
+    if (walkAnim) {
+      const k = Math.min(1, (clock - walkAnim.t0) / WALK_TIME);
+      v = walkAnim.out
+        ? { x: house.player.x + 0.7 * k, y: house.player.y }
+        : { x: walkAnim.from.x + (house.player.x - walkAnim.from.x) * k, y: walkAnim.from.y + (house.player.y - walkAnim.from.y) * k };
+    }
+    return cellOf(v, cell, ox, oy);
+  }
+
+  function drawPerson(p) {
+    const { cell } = grid(house.w);
+    ctx.save(); ctx.translate(p.x, p.y); ctx.scale(cell / 100, cell / 100);
+    ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.beginPath(); ctx.ellipse(0, 16, 12, 5, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = "#cfc6b8"; ctx.beginPath(); ctx.ellipse(0, 4, 9, 13, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = "#e9dfcf"; ctx.beginPath(); ctx.arc(0, -12, 7, 0, 7); ctx.fill();
+    ctx.fillStyle = "#e8d9a8"; ctx.fillRect(9, -6, 3, 9);
+    const fl = 1 + Math.sin(clock * 23) * 0.2 + Math.sin(clock * 7) * 0.15;
+    ctx.fillStyle = "#ffcf6a"; ctx.beginPath(); ctx.ellipse(10.5, -10, 2.4 * fl, 4.5 * fl, 0, 0, 7); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawShadow(alpha) {
+    if (alpha <= 0.01) return;
+    const { cell, ox, oy } = grid(house.w);
+    const p = cellOf(offsetFor(view.h), cell, ox, oy);
+    ctx.save(); ctx.translate(p.x + Math.sin(clock * 9) * 1.5, p.y); ctx.scale(cell / 100, cell / 100); ctx.globalAlpha = alpha;
+    const g = ctx.createRadialGradient(0, -6, 2, 0, -6, 40);
+    g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(0.6, "rgba(5,3,8,0.85)"); g.addColorStop(1, "rgba(5,3,8,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(0, -6, 26, 40, 0, 0, 7); ctx.fill();
+    for (let i = 0; i < 5; i++) {
+      ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.beginPath();
+      ctx.ellipse(-16 + i * 8 + Math.sin(clock * 5 + i) * 3, 26 + Math.sin(clock * 4 + i * 2) * 4, 4, 10, 0, 0, 7); ctx.fill();
+    }
+    ctx.fillStyle = "#e6e2ff"; ctx.beginPath(); ctx.ellipse(-7, -20, 2.6, 1.6, 0, 0, 7); ctx.ellipse(7, -20, 2.6, 1.6, 0, 0, 7); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawDarkness(p, lift) {
+    dctx.globalCompositeOperation = "source-over";
+    dctx.clearRect(0, 0, W, H);
+    dctx.fillStyle = `rgba(4,3,6,${0.94 - lift * 0.75})`;
+    dctx.fillRect(0, 0, W, H);
+    dctx.globalCompositeOperation = "destination-out";
+    const { cell, ox, oy, size } = grid(house.w);
+    const r = cell * (1.25 + Math.sin(clock * 11) * 0.03);
+    const g = dctx.createRadialGradient(p.x, p.y, r * 0.2, p.x, p.y, r);
+    g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(0.7, "rgba(0,0,0,0.75)"); g.addColorStop(1, "rgba(0,0,0,0)");
+    dctx.fillStyle = g; dctx.beginPath(); dctx.arc(p.x, p.y, r, 0, 7); dctx.fill();
+    const ex = ox + size, ey = oy + house.exit.y * cell + cell / 2;
+    const g2 = dctx.createRadialGradient(ex, ey, 2, ex, ey, cell * 0.55);
+    g2.addColorStop(0, "rgba(0,0,0,0.8)"); g2.addColorStop(1, "rgba(0,0,0,0)");
+    dctx.fillStyle = g2; dctx.beginPath(); dctx.arc(ex, ey, cell * 0.55, 0, 7); dctx.fill();
+    ctx.drawImage(dark, 0, 0, W, H);
+  }
+
+  // The layout you remember: faint chalk lines for every wall, so you can plan in the dark.
+  function drawMemory() {
+    ctx.strokeStyle = "rgba(190,180,215,0.22)"; ctx.lineWidth = 2; ctx.lineCap = "round";
+    eachRoom((d, _k, X, Y, cell) => {
+      const a = cell * 0.32, b = cell - a, m = 5;
+      const seg = (x1, y1, x2, y2) => { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); };
+      const wall = (has, x1, y1, x2, y2, horiz) => {
+        if (!has) { seg(x1, y1, x2, y2); return; }
+        if (horiz) { seg(x1, y1, x1 + a, y1); seg(x1 + b, y1, x2, y2); } else { seg(x1, y1, x1, y1 + a); seg(x1, y1 + b, x2, y2); }
+      };
+      wall(d & N, X + m, Y + m, X + cell - m, Y + m, true);
+      wall(d & S, X + m, Y + cell - m, X + cell - m, Y + cell - m, true);
+      wall(d & WEST, X + m, Y + m, X + m, Y + cell - m, false);
+      wall(d & E, X + cell - m, Y + m, X + cell - m, Y + cell - m, false);
+    });
+  }
+
+  function drawKey() {
+    if (house.hasKey || !house.key) return;
+    const { cell, ox, oy } = grid(house.w);
+    const p = cellOf(offsetFor(house.key), cell, ox, oy), a = 0.55 + Math.sin(clock * 3) * 0.3;
+    const g = ctx.createRadialGradient(p.x, p.y, 1, p.x, p.y, cell * 0.25);
+    g.addColorStop(0, `rgba(255,214,120,${a})`); g.addColorStop(1, "rgba(255,214,120,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, cell * 0.25, 0, 7); ctx.fill();
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(-0.6); ctx.scale(cell / 100, cell / 100);
+    ctx.strokeStyle = `rgba(240,200,110,${0.6 + a * 0.4})`; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(-8, 0, 5, 0, 7); ctx.moveTo(-3, 0); ctx.lineTo(12, 0); ctx.moveTo(8, 0); ctx.lineTo(8, 5); ctx.moveTo(12, 0); ctx.lineTo(12, 5); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawArrows() {
+    for (const a of arrows(house.w)) {
+      const mine = (a.axis === "row" && a.i === house.player.y) || (a.axis === "col" && a.i === house.player.x);
+      ctx.save(); ctx.translate(a.x, a.y);
+      ctx.rotate(a.axis === "row" ? (a.dir === 1 ? 0 : Math.PI) : (a.dir === 1 ? Math.PI / 2 : -Math.PI / 2));
+      ctx.fillStyle = mine ? "rgba(240,200,140,0.85)" : "rgba(200,190,220,0.3)";
+      ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-7, -10); ctx.lineTo(-7, 10); ctx.closePath(); ctx.fill();
       ctx.restore();
     }
-    ctx.restore();
   }
 
-  function drawMenu() {
-    if (!menu) return;
-    const L = layout(state.machines.find((x) => x.id === menu));
-    button(L.liar, "LIAR", "#d8231a");
-    button(L.truth, "TRUE", "#1e8a3a");
-  }
-
-  function button(r, label, color) {
-    ctx.fillStyle = "rgba(0,0,0,0.5)"; roundRect(r.x + 2, r.y + 3, r.w, r.h, 6); ctx.fill();
-    ctx.fillStyle = color; roundRect(r.x, r.y, r.w, r.h, 6); ctx.fill();
-    text(label, r.x + r.w / 2, r.y + r.h / 2 + 1, 13, "#fff", "Rubik Mono One");
-  }
-
-  function roundRect(x, y, w, h, r) {
-    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
-  }
-
-  function drawGauge() {
-    const x = 880, y = 60, r = 42, p = state.pressure / PRESSURE_MAX;
-    ctx.fillStyle = "#2b2622"; ctx.beginPath(); ctx.arc(x, y, r + 6, 0, 7); ctx.fill();
-    ctx.fillStyle = "#efe6d4"; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
-    const a0 = Math.PI * 0.75, a1 = Math.PI * 2.25;
-    ctx.lineWidth = 7;
-    ctx.strokeStyle = "#7ac06a"; ctx.beginPath(); ctx.arc(x, y, r - 8, a0, a0 + (a1 - a0) * 0.6); ctx.stroke();
-    ctx.strokeStyle = "#f0a52a"; ctx.beginPath(); ctx.arc(x, y, r - 8, a0 + (a1 - a0) * 0.6, a0 + (a1 - a0) * 0.82); ctx.stroke();
-    ctx.strokeStyle = "#d8231a"; ctx.beginPath(); ctx.arc(x, y, r - 8, a0 + (a1 - a0) * 0.82, a1); ctx.stroke();
-    const shiver = p > 0.75 ? (Math.random() - 0.5) * 0.08 : 0;
-    const a = a0 + (a1 - a0) * p + shiver;
-    ctx.strokeStyle = "#222"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * (r - 6), y + Math.sin(a) * (r - 6)); ctx.stroke();
-    ctx.fillStyle = "#222"; ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fill();
-    text("PRESSURE", x, y + 28, 8, "#5a4f44");
-    if (p > 0.75 && Math.sin(clock * 14) > 0) text("!", x - r - 18, y, 28, "#ff3b2f", "Rubik Mono One");
-  }
-
-  function drawHud() {
-    text(`NIGHT ${night}`, 30, 38, 26, "#f1e6d2", "Rubik Mono One", "left");
-    text(`of ${LAST_NIGHT}`, 32, 66, 11, "#a89a86", "Martian Mono", "left");
-    const left = state.machines.filter((m) => !m.stamp).length;
-    text(`${left} note${left === 1 ? "" : "s"} to stamp`, 32, 88, 11, "#a89a86", "Martian Mono", "left");
-    text("SHIFT CHANGE", 480, 36, 14, "rgba(241,230,210,0.35)", "Rubik Mono One");
-    // hint bar
-    const age = clock - hintFor;
-    ctx.globalAlpha = Math.min(1, age * 4);
-    ctx.fillStyle = "rgba(10,8,6,0.82)"; roundRect(20, 560, 920, 32, 8); ctx.fill();
-    text(hint, 480, 576, 12, "#f6ead2");
+  function drawHud(near) {
+    text(`FLOOR ${floor}`, 34, 52, 26, "#d9cdb8", "IM Fell English SC", "left");
+    text(`of ${LAST_FLOOR}`, 36, 78, 14, "#8d8296", "IM Fell English", "left");
+    text(house.hasKey ? "key: yes" : "key: not yet", 36, 104, 14, house.hasKey ? "#e8c878" : "#6d6476", "IM Fell English", "left");
+    ctx.globalAlpha = Math.min(1, (clock - hintAt) * 3);
+    text(hint, W / 2, 22, 15, "#cfc3ae");
     ctx.globalAlpha = 1;
-  }
-
-  function drawParts(dt) {
-    for (let i = parts.length - 1; i >= 0; i--) {
-      const p = parts[i];
-      p.life -= dt / p.max;
-      if (p.life <= 0) { parts.splice(i, 1); continue; }
-      p.x += p.vx * dt; p.y += p.vy * dt;
-      if (p.kind === "spark") { p.vy += 600 * dt; ctx.fillStyle = `rgba(255,${180 + p.r * 70 | 0},80,${p.life})`; ctx.fillRect(p.x, p.y, 3, 3); }
-      else if (p.kind === "paper") { p.vy += 300 * dt; ctx.fillStyle = `rgba(247,227,106,${p.life})`; ctx.fillRect(p.x, p.y, 6, 4); }
-      else {
-        const big = (1 - p.life) * (p.kind === "smoke" ? 26 : 14) + 4;
-        ctx.fillStyle = p.kind === "smoke" ? `rgba(40,36,34,${p.life * 0.7})` : `rgba(235,235,235,${p.life * 0.4})`;
-        ctx.beginPath(); ctx.arc(p.x, p.y, big, 0, 7); ctx.fill();
-      }
-    }
-    for (let i = words.length - 1; i >= 0; i--) {
-      const w = words[i], age = clock - w.t;
-      if (age > 1.4) { words.splice(i, 1); continue; }
-      ctx.globalAlpha = Math.min(1, (1.4 - age) * 2);
-      text(w.text, w.x, w.y - age * 30, 16, w.color, "Rubik Mono One");
-      ctx.globalAlpha = 1;
+    if (near > 0) {
+      const pulse = (Math.sin(clock * 8) * 0.5 + 0.5) * near;
+      const g = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.8);
+      g.addColorStop(0, "rgba(80,0,0,0)"); g.addColorStop(1, `rgba(90,0,0,${0.55 * pulse})`);
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
     }
   }
 
   function drawTitle() {
-    drawFloor();
-    text("SHIFT", 480, 200, 86, "#f1e6d2", "Rubik Mono One");
-    text("CHANGE", 480, 290, 86, "#e0a526", "Rubik Mono One");
-    text("You're the night shift. The day shift says they fixed everything.", 480, 370, 14, "#d8ccb8");
-    text("Some of them are lying.", 480, 396, 14, "#ff6b4a");
-    if (Math.sin(clock * 4) > -0.3) text("tap to clock in", 480, 470, 16, "#f6ead2", "Rubik Mono One");
-    text("M: sound on/off", 480, 560, 10, "rgba(241,230,210,0.4)");
+    ctx.fillStyle = "#0b0909"; ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = Math.sin(clock * 3.1) * Math.sin(clock * 7.3) > 0.85 ? 0.4 : 1;
+    text("THE SHIFTING", W / 2, 210, 64, "#d9cdb8", "IM Fell English SC");
+    text("HOUSE", W / 2, 290, 92, "#b9a37a", "IM Fell English SC");
+    ctx.globalAlpha = 1;
+    text("The rooms move. So does it.", W / 2, 370, 22, "#8d8296");
+    if (Math.sin(clock * 2.4) > -0.4) text("tap, or press Enter, to go inside", W / 2, 460, 18, "#cfc3ae");
+    text("M: sound on/off   ·   best with sound", W / 2, 560, 13, "#5d5560");
   }
 
   function drawEnd() {
-    const r = report(state);
-    ctx.fillStyle = "rgba(8,6,4,0.78)"; ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = "#231d17"; roundRect(250, 130, 460, 340, 14); ctx.fill();
-    const lastWin = r.won && night === LAST_NIGHT;
-    text(r.won ? (lastWin ? "WEEK SURVIVED" : "CLOCKED OUT") : "KA-BOOM", 480, 190, 34, r.won ? "#7ee081" : "#ff4a3d", "Rubik Mono One");
-    const lines = [
-      `Liars caught: ${r.caught} of ${r.liars}`,
-      `Wrong stamps: ${r.wrong}`,
-      `Stamped without testing: ${r.guessed}`,
-      `Pressure peaked at ${r.peak}%`,
-    ];
-    lines.forEach((l, i) => text(l, 480, 250 + i * 30, 14, "#e8dcc6"));
-    const verdict = !r.won ? "The gauge blew. Test faster, or trust less."
-      : r.wrong === 0 && r.guessed === 0 ? "Not one note got past you." : r.wrong === 0 ? "Clean, but you took some guesses." : "You made it. Barely honest.";
-    text(verdict, 480, 384, 12, "#b5a68f");
-    if (clock - endShown > 0.6 && Math.sin(clock * 4) > -0.3)
-      text(lastWin ? "tap for the title" : r.won ? "tap for the next night" : "tap to try again", 480, 432, 15, "#f6ead2", "Rubik Mono One");
+    const k = Math.min(1, (clock - endAt) / 0.6);
+    ctx.fillStyle = house.escaped ? `rgba(20,16,12,${0.8 * k})` : `rgba(0,0,0,${0.92 * k})`;
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = k;
+    if (house.escaped) {
+      const lastFloor = floor === LAST_FLOOR;
+      text(lastFloor ? "YOU GOT OUT" : "YOU FOUND THE DOOR", W / 2, 230, 48, "#e8d9a8", "IM Fell English SC");
+      text(lastFloor ? "The house is quiet now. For now." : "But it opens onto another floor.", W / 2, 290, 20, "#a99e8a");
+      text(`${house.moves} steps · ${house.shoves} shoves`, W / 2, 340, 16, "#8d8296");
+      if (clock - endAt > 0.8) text(lastFloor ? "tap for the title" : "tap to go on", W / 2, 420, 18, "#cfc3ae");
+    } else {
+      ctx.fillStyle = "#e6e2ff";
+      ctx.beginPath(); ctx.ellipse(W / 2 - 60, 220, 16, 7, 0, 0, 7); ctx.ellipse(W / 2 + 60, 220, 16, 7, 0, 0, 7); ctx.fill();
+      text("IT FOUND YOU", W / 2, 320, 48, "#b8b0d8", "IM Fell English SC");
+      if (clock - endAt > 0.8) text("tap to try this floor again", W / 2, 410, 18, "#8d8296");
+    }
+    ctx.globalAlpha = 1;
   }
 
+  // ---------- the loop ----------
   let last = performance.now();
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now; clock += dt;
     ctx.save();
-    if (shake > 0.2) { ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake); shake *= 0.86; }
+    if (shake > 0.2) { ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake); shake *= 0.85; }
     if (scene === "title") drawTitle();
     else {
-      if (scene === "play") {
-        tick(state, dt);
-        if (state.pressure / PRESSURE_MAX > 0.75 && clock - lastTick > 0.25) { sound("tick"); lastTick = clock; }
-        if (state.over) { // a stamp can end the night too, not just the gauge, so check every frame
-          scene = "end"; endShown = clock + (state.won ? 0 : 0.8);
-          if (state.won) sound("win");
-          else { sound("boom"); shake = 40; flash = 1; for (const m of state.machines) { const L = layout(m); burst(L.cx, L.cy, 30, "spark"); burst(L.cx, L.cy, 12, "smoke"); } }
+      if (slide && clock - slide.t0 >= SHOVE_TIME) slide = null;
+      if (walkAnim && clock - walkAnim.t0 >= WALK_TIME * (walkAnim.out ? 3 : 1)) { view.p = { ...house.player }; walkAnim = null; }
+      let near = 0;
+      if (scene === "play" && !house.over) {
+        stepAcc += dt;
+        if (heard && !slide) { heard = false; stepAcc += house.step * 0.5; } // shoving is loud: it comes sooner
+        if (stepAcc >= house.step && !slide) {
+          stepAcc = 0;
+          const way = path(house, house.hunter);
+          lost = way ? 0 : lost + 1;
+          // walled off: it wanders a little, then seeps through the wall toward you
+          const r = way ? hunterStep(house) : lost % 3 ? wander(house, wanderRand, lastWander) : seep(house);
+          if (r.kind === "seep") { sound("near"); if (floor === 1 && !seenSeep) { seenSeep = true; say("It doesn't need doors. It's just slower without them."); } }
+          lastWander = r.d ?? lastWander;
+          view.h = { ...house.hunter };
+          if (way && way.length <= 3) sound("near");
         }
+        const way = path(house, house.hunter);
+        if (way && way.length <= 2) near = (3 - way.length) / 2;
+        if (near > 0 && clock - lastBeat > 0.9 - near * 0.4) { sound("beat"); lastBeat = clock; }
+        if (clock > flickerAt) { flicker = 1; sound("flicker"); flickerAt = clock + 4 + Math.random() * 5; }
       }
-      drawFloor();
-      for (const m of state.machines) drawMachine(m);
-      drawParts(dt);
-      drawMenu();
-      drawGauge();
-      drawHud();
-      if (scene === "end" && clock > endShown) drawEnd();
+      if (house.over && scene === "play" && !walkAnim) {
+        scene = "end"; endAt = clock;
+        if (house.escaped) sound("out"); else { sound("caught"); shake = 30; }
+      }
+      flicker = Math.max(0, flicker - dt * 3);
+      const lit = flicker > 0 ? (Math.sin(clock * 60) > 0 ? flicker : flicker * 0.3) : 0;
+      ctx.fillStyle = "#08070a"; ctx.fillRect(0, 0, W, H);
+      drawHouse();
+      const me = personAt();
+      const dist = Math.abs(house.hunter.x - house.player.x) + Math.abs(house.hunter.y - house.player.y);
+      const seen = Math.max(lit, dist <= 1 ? 0.95 : 0, scene === "end" && house.caught ? 1 : 0);
+      drawShadow(seen);
+      drawPerson(me);
+      drawDarkness(me, lit);
+      drawMemory();
+      drawShadow(Math.max(lit * 0.9, dist <= 1 ? 0.6 : 0)); // close by or in a flicker, you see it through the dark
+      drawKey();
+      drawArrows();
+      drawHud(near);
+      if (scene === "end") drawEnd();
     }
     ctx.restore();
-    if (flash > 0) { ctx.fillStyle = `rgba(255,240,220,${flash})`; ctx.fillRect(0, 0, W, H); flash = Math.max(0, flash - dt * 2); }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 
-  // For the page test: read the state and tap like a player would.
-  window.__shift = { scene: () => scene, state: () => state, night: () => night, layout, menu: () => menu };
+  // For the page test: read the state like a player would see it.
+  window.__house = { scene: () => scene, house: () => house, floor: () => floor, grid, arrows };
 }
