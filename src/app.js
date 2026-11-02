@@ -206,7 +206,7 @@ function start() {
 
   function drawEnd() {
     const k = Math.min(1, (clock - endAt) / 0.8);
-    ctx.fillStyle = escaped ? `rgba(20,16,12,${0.85 * k})` : `rgba(0,0,0,${k})`;
+    ctx.fillStyle = escaped ? `rgba(20,16,12,${0.85 * k})` : "#000"; // caught: the dark is instant
     ctx.fillRect(0, 0, W, H);
     ctx.globalAlpha = k;
     if (escaped) {
@@ -219,8 +219,8 @@ function start() {
       const t = clock - endAt, close = Math.max(0, 1 - t / 1.2); // its face, right up against yours, then gone
       ctx.globalAlpha = 1;
       ctx.fillStyle = "#e6e2ff";
-      const ew = 40 + close * 120, eh = 10 + close * 22, gap = 120 + close * 200;
-      ctx.beginPath(); ctx.ellipse(W / 2 - gap / 2, 190, ew, eh, 0.12, 0, 7); ctx.ellipse(W / 2 + gap / 2, 190, ew, eh, -0.12, 0, 7); ctx.fill();
+      const ew = 18 + close * 60, eh = 3 + close * 7, gap = 70 + close * 130, j = () => (Math.random() - 0.5) * 4 * close;
+      ctx.beginPath(); ctx.ellipse(W / 2 - gap / 2 + j(), 200 + j(), ew, eh, 0.05, 0, 7); ctx.ellipse(W / 2 + gap / 2 + j(), 200 + j(), ew, eh, -0.05, 0, 7); ctx.fill();
       ctx.globalAlpha = Math.min(1, t / 1.2);
       text("IT FOUND YOU", W / 2, 320, 52, "#b8b0d8", "IM Fell English SC");
       if (clock - endAt > 1) text("click to try this floor again", W / 2, 400, 18, "#8d8296");
