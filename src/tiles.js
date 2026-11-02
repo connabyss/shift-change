@@ -7,13 +7,17 @@
 import { N, E, S, W } from "./house.js";
 
 export const R = 5;
-export const FLOOR = 0, WALL = 1, FRONT = 2, WARDROBE = 3;
+export const FLOOR = 0, WALL = 1, FRONT = 2, WARDROBE = 3, CODE = 4;
+// Where a room's line of code is written: on its north wall, just right of the doorway.
+export const CODE_AT = { x: 3, y: 0 };
+export const LOCK_LOOK = 100; // the lock's line is drawn in red
 
 // decor[y][x] is each room's look (wallpaper, whether it has a wardrobe). It moves with its room.
 export const hasWardrobe = (decor) => decor % 3 === 0;
 
 // Tiles for the whole house. slide (optional): a shove in progress, the band still `left` tiles from where it lands.
-export function buildTiles(house, decor, slide = null) {
+// codes (optional): each room's line of code (code.js); a room with one gets a CODE wall tile.
+export function buildTiles(house, decor, slide = null, codes = null) {
   const w = house.w * R, h = house.h * R;
   const kind = Array.from({ length: h }, () => new Array(w).fill(FLOOR));
   const look = Array.from({ length: h }, () => new Array(w).fill(0));
@@ -26,9 +30,10 @@ export function buildTiles(house, decor, slide = null) {
         const mid = (edge === N || edge === S) ? tx === m : ty === m;
         const corner = (tx === 0 || tx === R - 1) && (ty === 0 || ty === R - 1);
         t = mid && !corner && (d & edge) ? FLOOR : WALL;
+        if (t === WALL && codes?.[ry][rx] && tx === CODE_AT.x && ty === CODE_AT.y) t = CODE;
       } else if (hasWardrobe(decor[ry][rx]) && tx === 1 && ty === 1) t = WARDROBE;
       kind[ry * R + ty][rx * R + tx] = t;
-      look[ry * R + ty][rx * R + tx] = decor[ry][rx];
+      look[ry * R + ty][rx * R + tx] = t === CODE && codes[ry][rx].kind === "lock" ? LOCK_LOOK : decor[ry][rx];
     }
   }
   const ex = house.exit;

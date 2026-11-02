@@ -125,7 +125,7 @@ test("stunned, it can't see you or catch you; then it comes looking", () => {
 });
 
 test("every change of mind it reports has a line of its own code to show, short enough to read at a glance", () => {
-  for (const k of ["wake", "spotted", "freeze", "lunge", "lost", "heard", "sneak", "lurk", "wander", "seep", "cut", "recover", "caught"]) {
+  for (const k of ["wake", "spotted", "freeze", "lunge", "lost", "heard", "sneak", "lurk", "wander", "seep", "cut", "recover", "caught", "watch", "dark", "sleep"]) {
     for (const n of [0, 1]) { const t = thought(k, n); assert.ok(t && t.length <= 40, `${k}: ${t}`); }
   }
   assert.notEqual(thought("spotted", 0), thought("spotted", 1), "it doesn't repeat itself every time");
@@ -140,4 +140,11 @@ test("when it goes to wait silently by a door, it says so (an event the game can
     saw = think(sh, world, 0.05, rng(seed)).some((e) => e.kind === "sneak");
   }
   assert.ok(saw);
+});
+
+test("in a dark room it only sees you close up", () => {
+  const map = hall(), sh = makeShadow({ x: 1.5, y: 2.5 });
+  const world = (dark) => ({ map, player: { x: 7.5, y: 2.5, hidden: false }, dark, sawHide: false, noise: null });
+  assert.ok(think({ ...sh }, world(false), 0.05, rng(1)).some((e) => e.kind === "spotted"), "6 tiles away in the light: seen");
+  assert.ok(!think({ ...sh }, world(true), 0.05, rng(1)).some((e) => e.kind === "spotted"), "6 tiles away in the dark: not seen");
 });

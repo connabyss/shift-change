@@ -3,7 +3,7 @@
 import { canSee, tilePath, roomOf, roomCenter, R, FLOOR } from "./tiles.js";
 
 export const SPEED = { wander: 1.0, search: 1.7, sneak: 1.4, hunt: 2.6, lunge: 4.4, pause: 0, lurk: 0, look: 0, stunned: 0, seep: 0.7 };
-export const SIGHT = 9;
+export const SIGHT = 9, DARK_SIGHT = 2.5;
 
 export function makeShadow(p) {
   return { x: p.x, y: p.y, mode: "wander", target: null, lastSeen: null, timer: 0, stuck: 0, path: null, pathAge: 9, silent: false };
@@ -39,6 +39,7 @@ export function cutOff(before, after) {
 export function stun(sh, secs = 4) { go(sh, "stunned", null, secs); }
 
 // One tick. world: { map, player: {x, y, hidden}, sawHide, noise: {x, y} | null }. Returns what happened.
+// world.dark: you're in a room with the lights off.
 export function think(sh, world, dt, rand) {
   const { map, player } = world, events = [];
   if (sh.mode === "stunned") { // it can't see, hear or catch you; when it wakes it heads for you
@@ -46,7 +47,7 @@ export function think(sh, world, dt, rand) {
     if (sh.timer <= 0) { go(sh, "search", player); events.push({ kind: "recover" }); }
     return events;
   }
-  const seesYou = (!player.hidden || world.sawHide) && canSee(map, sh, player, SIGHT);
+  const seesYou = (!player.hidden || world.sawHide) && canSee(map, sh, player, world.dark ? DARK_SIGHT : SIGHT); // in a dark room it sees only close up
   if (seesYou) {
     sh.lastSeen = { x: player.x, y: player.y };
     if (!["hunt", "lunge", "pause"].includes(sh.mode)) {
@@ -139,7 +140,10 @@ const THOUGHTS = {
   seep: ["path == null → through(walls);", "walls.ignore();"],
   cut: ["ERROR: path_to_you == null", "where(you) → ???"],
   recover: ["path_to_you = find();", "retry(you);"],
-  caught: ["found(you);", "return you;"],
+  caught: ["found(you);", "found(you);  // found(me)"],
+  watch: ["house.watch(you);", "edited_by(you) → tell(shadow);"],
+  dark: ["lights.off();", "eyes = adjust();"],
+  sleep: ["shadow.sleep(8);  // for now", "zzz();  // not for long"],
 };
 export function thought(kind, n = 0) {
   const lines = THOUGHTS[kind];
