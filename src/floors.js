@@ -28,6 +28,13 @@ export function floorSpec(n, seed = 1) {
   };
 }
 
+// Your walking speed, in tiles a second. The shadow's pace multiplies its speeds (stalker.js SPEED).
+export const PLAYER_SPEED = 2.1;
+// Floors 1 and 2: even hunting, it is slower than you, so running away works while you learn.
+export function shadowPace(n) { return n === 1 ? 0.62 : n === 2 ? 0.74 : 0.85 + 0.07 * (n - 3); }
+// Seconds before it starts to move. On floor 1 it sleeps until you take the key, or for 25 seconds.
+export function headStart(n) { return n === 1 ? 25 : n === 2 ? 10 : 5; }
+
 export function floorHouse(n, seed) {
   const spec = floorSpec(n, seed);
   return Object.assign(makeHouse(spec), { floor: n, step: spec.step });

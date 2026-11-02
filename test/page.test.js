@@ -41,12 +41,24 @@ test("first person: walk, turn, shove your row and ride along, hide in the wardr
     await page.keyboard.down("w"); await page.waitForTimeout(300); await page.keyboard.up("w");
     const a1 = await me();
     assert.ok(a1.y < a0.y, "walked forward (north)");
+    // with the mouse (pointer locked), D steps sideways to your right; without it, D turns you right
+    const locked = await page.evaluate(() => document.pointerLockElement !== null);
     await page.keyboard.down("d"); await page.waitForTimeout(300); await page.keyboard.up("d");
-    assert.ok((await me()).a > a1.a, "turned right");
-    // face north again, then SHIFT + right shoves your row east: you ride along one room
+    const a2 = await me();
+    if (locked) { assert.ok(a2.x > a1.x, "stepped right (east)"); assert.equal(a2.a, a1.a); }
+    else assert.ok(a2.a > a1.a, "turned right");
+    // on floor 1 the shadow sleeps at first: a head start
+    const sh0 = await page.evaluate(() => ({ ...window.__fp.shadow() }));
+    assert.equal(await page.evaluate(() => window.__fp.awake()), false, "asleep at the start of floor 1");
+    // face north again, hold right: nothing moves yet, the map shows the plan. Let go: your row slides east, you ride along
     await page.evaluate(() => { window.__fp.me().a = -Math.PI / 2; });
     const before = await me();
-    await page.keyboard.press("ArrowRight");
+    await page.keyboard.down("ArrowRight"); await page.waitForTimeout(250);
+    assert.equal(await page.evaluate(() => window.__fp.aim()), "ArrowRight");
+    assert.equal(await page.evaluate(() => window.__fp.house().shoves), 0, "holding an arrow only shows what will slide");
+    const sh1 = await page.evaluate(() => ({ ...window.__fp.shadow() }));
+    assert.deepEqual([sh1.x, sh1.y], [sh0.x, sh0.y], "the sleeping shadow hasn't moved");
+    await page.keyboard.up("ArrowRight");
     await page.waitForTimeout(700);
     const after = await me();
     assert.equal(await page.evaluate(() => window.__fp.house().shoves), 1);
