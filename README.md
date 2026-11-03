@@ -17,6 +17,16 @@ afterwards light up green), then click it. `M` turns the sound off and on.
   - `frontDoor.locked = true`: two rooms hold this line. Either one opens the front door.
   - Floor 2 adds `this.swap(west|east)`: trade your room with the one next to it.
   - Floor 3 adds `house.upsideDown = false`: turn the whole house over. Floors change places, and ladders become holes.
+- **The house plays back.** After each of your moves it makes one of its own in another room: it slides a row, swaps
+  a room or shuts a door, usually to bring the shadow closer. It types the line in red a moment before it happens, so
+  you can see it coming. It never moves the room you're in, and never leaves you with no way out. Sit still too long
+  and it moves anyway. From floor 2 it likes to copy your favourite words.
+- **One new thing at a time.** Floor 1 is just you and the house; the shadow sleeps through it. Floor 2 wakes the
+  shadow, floor 3 brings the flip and the finale. During play the only words are the house's own moves; torn pages
+  are read on the screen between floors.
+- **The finale.** Unlock the last front door and the house turns itself over, then slides its rows every few seconds
+  while the shadow runs you down faster. The way to the door is always lit. The browser tab and the code's file name
+  change as it happens. At the very end, the camera pulls back from the house.
 - **Trap the shadow.** Slide its room away or shut it in, and it has to claw through a wall to get out. A bar shows how long you have.
 - **Beat the house.** Floor 1 needs 1 move, floor 2 needs 2, floor 3 needs 3. The top of the screen shows your moves
   next to the house's best. Every house is generated fresh and checked by a solver: it can be escaped in exactly that

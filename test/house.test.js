@@ -1,7 +1,7 @@
 // The house's rules: how each word changes the rooms, and that every floor can be solved, and needs its new word.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { W, H, makeHouse, pickHouse, pageRoom, applyEdit, solve, reach, clone, find, byId, goodHouse, FLOOR3, EXTRA, NEW_WORD } from "../src/house.js";
+import { W, H, makeHouse, pickHouse, pageRoom, houseMoves, path, applyEdit, solve, reach, clone, find, byId, goodHouse, FLOOR3, EXTRA, NEW_WORD } from "../src/house.js";
 import { PAGES, COMMITS } from "../src/story.js";
 
 const ids = (g) => g.map((row) => row.map((r) => r.id));
@@ -119,4 +119,20 @@ test("each floor's torn page lies in a room you can reach on the way out, not yo
     assert.ok(seen, `floor ${floor}: page room ${id} is never in reach`);
   }
   for (const f of [1, 2, 3]) { assert.ok(PAGES[f]); assert.ok(COMMITS[f]); }
+});
+
+// The house plays back, but never by carrying you off: its moves are in other rooms, and never slide your row,
+// your column, or swap your room. Its favourite moves bring the shadow closer.
+test("the house's own moves never move the room you're in, and the best ones bring the shadow closer", () => {
+  for (const [floor, seed] of [[1, 1], [2, 1000], [2, 5000]]) {
+    const h = pickHouse(floor, seed), me = h.startId, pm = find(h.g, me), moves = houseMoves(h.g, me, h.shadowId, true);
+    assert.ok(moves.length > 0);
+    for (const m of moves) {
+      assert.notEqual(m.id, me);
+      assert.deepEqual(find(m.g, me), pm, `${m.kind} in room ${m.id} moved you`);
+    }
+    const best = moves.reduce((a, b) => (b.score > a.score ? b : a));
+    const before = path(h.g, h.shadowId, me), after = path(best.g, h.shadowId, me);
+    assert.ok((after ? after.length : 99) <= (before ? before.length : 99), "its best move doesn't push the shadow away");
+  }
 });

@@ -174,3 +174,27 @@ export function pageRoom(h, floor) {
   const pool = ok.length ? ok : [...seen].filter((id) => id !== h.startId).sort((a, b) => a - b);
   return pool.length ? pool[Math.floor(rng((h.seed ?? 1) * 31 + floor)() * pool.length)] : null;
 }
+
+// The house's own moves: every word in a room other than yours that it could change (slides, swaps, doors), never one
+// that would carry you along. Each gets a score: how much nearer it brings the shadow, and how much it cuts down
+// where you can walk. The game takes the best one that still leaves a way out.
+export const steps = (p) => p ? p.length - 1 : 9;
+export function houseMoves(g, me, shadowId, awake) {
+  const pm = find(g, me), out = [];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const room = g[y][x]; if (room.id === me) continue;
+    room.lines.forEach((c, li) => {
+      if (c.kind === "row" && y === pm.y) return; if (c.kind === "col" && x === pm.x) return; // never carry you off
+      if (!["row", "col", "swap", "door"].includes(c.kind)) return;
+      for (const dir of c.kind === "door" ? [1] : [-1, 1]) {
+        if (c.kind === "swap" && y === pm.y && (x + dir + W) % W === pm.x) continue;
+        out.push({ id: room.id, li, dir, kind: c.kind });
+      }
+    });
+  }
+  for (const m of out) {
+    const g2 = clone(g); applyEdit(g2, m.id, m.li, null, m.dir); m.g = g2;
+    m.score = (awake ? (steps(path(g, shadowId, me)) - steps(path(g2, shadowId, me))) * 2 : 0) + (reach(g, me).size - reach(g2, me).size);
+  }
+  return out;
+}
