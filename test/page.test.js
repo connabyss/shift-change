@@ -1,4 +1,4 @@
-// The game in a real (headless) browser: go inside, walk, turn, shove your row, hide in the wardrobe.
+// The game in a real (headless) browser: start, point at a word, change it, walk, ask for a hint, mute.
 // Needs Playwright with Chromium. Without it these tests are skipped, and say so.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -25,7 +25,59 @@ function serve() {
   });
 }
 
-test("first person: walk, change a line of the house's code (your row slides, you ride along), unlock the door, hide", { skip }, async () => {
+test("dollhouse: point at a word to preview it, click it to change the house, walk, hint, mute", { skip }, async () => {
+  const server = await serve(), browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    await page.goto(`http://127.0.0.1:${server.address().port}/?seed=4242`);
+    await page.waitForFunction(() => window.__dh);
+    // canvas pixels -> page pixels (the canvas is drawn at 960x600 and scaled to fit)
+    const at = async (x, y) => page.evaluate(([x, y]) => { const r = document.getElementById("game").getBoundingClientRect(); return [r.left + x * r.width / 960, r.top + y * r.height / 600]; }, [x, y]);
+    const S = () => page.evaluate(() => { const s = window.__dh.st(); return { scene: s.scene, moves: s.moves, me: s.player.id, walking: !!s.player.way, preview: !!s.preview, hint: s.hint && s.hint.text, anim: !!s.anim }; });
+
+    await page.keyboard.press("Enter");
+    assert.equal((await S()).scene, "play");
+    await page.waitForTimeout(100);
+    // point at the first yellow word: the house shows what it would do
+    const wr = await page.evaluate(() => window.__dh.st().wordRects[0]);
+    await page.mouse.move(...(await at(wr.x + wr.w / 2, wr.y + wr.h / 2)));
+    await page.waitForTimeout(100);
+    assert.equal((await S()).preview, true, "pointing at a word previews it");
+    // click it: one move, and the house slides
+    await page.mouse.click(...(await at(wr.x + wr.w / 2, wr.y + wr.h / 2)));
+    let s = await S();
+    assert.equal(s.moves, 1); assert.equal(s.anim, true);
+    await page.waitForTimeout(900);
+    // click another room you can reach: you walk there
+    const target = await page.evaluate(() => { const D = window.__dh, st = D.st(); const R = [...D.reach(st.g, st.player.id)].filter((id) => id !== st.player.id); if (!R.length) return null; const p = D.find(st.g, R[0]); return { id: R[0], x: 44 + p.x * 150 + 75, y: 74 + p.y * 146 + 73 }; });
+    if (target) {
+      await page.mouse.click(...(await at(target.x, target.y)));
+      assert.equal((await S()).walking, true, "walking");
+      await page.waitForFunction(() => !window.__dh.st().player.way, null, { timeout: 8000 });
+      const me = await page.evaluate(() => window.__dh.st().player.id);
+      assert.ok(me === target.id || (await page.evaluate(() => window.__dh.st().scene)) !== "play", "arrived (unless it caught you on the way)");
+    }
+    // stuck: after 20 s the hint shows; clicking it names a room and a word
+    await page.evaluate(() => { const st = window.__dh.st(); if (st.scene === "caught") st.caughtT = 99; });
+    await page.waitForTimeout(100);
+    await page.evaluate(() => { window.__dh.st().floorT = 25; });
+    await page.mouse.move(...(await at(5, 5)));
+    await page.waitForTimeout(100);
+    const hr = await page.evaluate(() => window.__dh.st().hintRect);
+    assert.ok(hr, "house.hint() appears");
+    await page.mouse.click(...(await at(hr.x + 20, hr.y + 13)));
+    assert.match((await S()).hint, /^Hint: /);
+    // M mutes and unmutes
+    const muted = () => page.evaluate(() => window.__dh.muted());
+    const m0 = await muted(); await page.keyboard.press("m"); assert.equal(await muted(), !m0); await page.keyboard.press("m"); assert.equal(await muted(), m0);
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); server.close(); }
+});
+
+test("all three floors start, each new word appears in your first room, and the end scene runs", { skip }, async () => {
   const server = await serve(), browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
@@ -33,66 +85,19 @@ test("first person: walk, change a line of the house's code (your row slides, yo
     page.on("pageerror", (e) => errors.push(String(e)));
     await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
-    await page.waitForFunction(() => window.__fp);
-    await page.keyboard.press("Enter");
-    assert.equal(await page.evaluate(() => window.__fp.scene()), "play");
-    const me = () => page.evaluate(() => ({ ...window.__fp.me() }));
-    const a0 = await me();
-    await page.keyboard.down("w"); await page.waitForTimeout(300); await page.keyboard.up("w");
-    const a1 = await me();
-    assert.ok(a1.y < a0.y, "walked forward (north)");
-    // with the mouse (pointer locked), D steps sideways to your right; without it, D turns you right
-    const locked = await page.evaluate(() => document.pointerLockElement !== null);
-    await page.keyboard.down("d"); await page.waitForTimeout(300); await page.keyboard.up("d");
-    const a2 = await me();
-    if (locked) { assert.ok(a2.x > a1.x, "stepped right (east)"); assert.equal(a2.a, a1.a); }
-    else assert.ok(a2.a > a1.a, "turned right");
-    // on floor 1 the shadow sleeps at first: a head start
-    const sh0 = await page.evaluate(() => ({ ...window.__fp.shadow() }));
-    assert.equal(await page.evaluate(() => window.__fp.awake()), false, "asleep at the start of floor 1");
-    const sh1 = await page.evaluate(() => ({ ...window.__fp.shadow() }));
-    assert.deepEqual([sh1.x, sh1.y], [sh0.x, sh0.y], "the sleeping shadow hasn't moved");
-    // the arrow at the top points the way to the lock's line of code
-    assert.equal(await page.evaluate(() => window.__fp.way()?.what), "the lock's code");
-    // stand in front of your first room's writing on the wall, facing it: the line shows, E changes its one word
-    await page.evaluate(() => {
-      const map = window.__fp.map(), m = window.__fp.me();
-      const rx = Math.floor(m.x / 5), ry = Math.floor(m.y / 5);
-      for (let y = ry * 5; y < ry * 5 + 5; y++) for (let x = rx * 5; x < rx * 5 + 5; x++) if (map.kind[y][x] === 4) { m.x = x + 0.5; m.y = y + 1.5; m.a = -Math.PI / 2; }
-    });
-    assert.equal(await page.evaluate(() => window.__fp.facingCode()?.c.kind), "shift");
-    const before = await me();
-    await page.keyboard.press("e");
-    await page.waitForTimeout(700);
-    const after = await me();
-    assert.equal(await page.evaluate(() => window.__fp.house().shoves), 1, "changing the word slid the row");
-    assert.ok(Math.abs((after.x - before.x) - 5) < 0.01 || before.x - after.x > 10, "rode along one room east (or wrapped round)");
-    assert.equal(await page.evaluate(() => window.__fp.facingCode()?.c.dir), -1, "the line now reads west: press again to undo");
-    assert.equal(await page.evaluate(() => window.__fp.mind()?.text), "house.watch(you);", "the house noticed");
-    // the lock: change its word and the front door opens
-    await page.evaluate(() => {
-      const map = window.__fp.map(), m = window.__fp.me(), codes = window.__fp.codes();
-      for (let ry = 0; ry < codes.length; ry++) for (let rx = 0; rx < codes[0].length; rx++) if (codes[ry][rx]?.kind === "lock") { m.x = rx * 5 + 3.5; m.y = ry * 5 + 1.5; m.a = -Math.PI / 2; }
-    });
-    assert.equal(await page.evaluate(() => window.__fp.hasKey()), false);
-    await page.keyboard.press("e");
-    assert.equal(await page.evaluate(() => window.__fp.hasKey()), true, "frontDoor.locked = false");
+    await page.waitForFunction(() => window.__dh);
+    for (const [floor, kind] of [[2, "swap"], [3, "flip"]]) {
+      await page.evaluate((f) => { window.__dh.newGame(f === 3 ? null : 99, f); window.__dh.begin(); }, floor);
+      await page.waitForTimeout(150);
+      const kinds = await page.evaluate(() => { const D = window.__dh, st = D.st(); return D.byId(st.g, st.player.id).lines.map((l) => l.kind); });
+      assert.ok(kinds.includes(kind), `floor ${floor}: ${kind} in your first room`);
+    }
+    // the flip, played out: the house turns over in the browser without errors
+    await page.evaluate(() => { const D = window.__dh, st = D.st(); D.edit(D.byId(st.g, st.player.id).lines.findIndex((l) => l.kind === "flip"), 1); });
+    assert.equal(await page.evaluate(() => window.__dh.st().flipped), true);
+    await page.waitForTimeout(1500);
+    await page.evaluate(() => { const st = window.__dh.st(); st.scene = "end"; st.endT = 0; });
     await page.waitForTimeout(400);
-    assert.equal(await page.evaluate(() => window.__fp.way()?.what), "the door");
-    // stand next to a wardrobe, facing it, and hide in it (with the shadow sent off to wait in a far corner)
-    await page.evaluate(() => {
-      const sh = window.__fp.shadow(); Object.assign(sh, { x: 0.5, y: 0.5, mode: "look", timer: 99, target: null });
-      const map = window.__fp.map(), m = window.__fp.me();
-      for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) if (map.kind[y][x] === 3) { m.x = x + 1.5; m.y = y + 1.5; m.a = Math.atan2(-1, -1); return; }
-    });
-    await page.keyboard.press("e");
-    assert.equal(await page.evaluate(() => window.__fp.hidden()), true);
-    await page.keyboard.press("e");
-    assert.equal(await page.evaluate(() => window.__fp.hidden()), false);
-    // the last floor moves on its own
-    await page.evaluate(() => { window.__fp.begin(3); window.__fp.quakeSoon(); });
-    await page.waitForTimeout(900);
-    assert.equal(await page.evaluate(() => window.__fp.house().shoves), 1, "the house slid a row or column by itself");
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });
