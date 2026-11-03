@@ -917,6 +917,10 @@ function lampLight() {
   const R = 128 * fl;
   let g = c.createRadialGradient(px, py, 6, px, py, R); g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(0.45, "rgba(0,0,0,0.9)"); g.addColorStop(1, "rgba(0,0,0,0)");
   c.fillStyle = g; c.fillRect(0, 0, L, VH);
+  // the rooms you can walk to right now stay dimly visible, so you can see where to go
+  const near = st.scene === "play" ? [...reach(st.g, st.player.id)] : [];
+  c.fillStyle = "rgba(0,0,0,0.5)";
+  for (const id of near) { if (id === st.player.id) continue; const p = find(st.g, id); for (const [x, y] of drawPositions(p)) c.fillRect(x + 2, y + 2, CW - 4, CH - 4); }
   ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(lampCv, 0, 0); ctx.restore();
   // 3. the flame's colour on everything it reaches
   ctx.save(); ctx.globalCompositeOperation = "lighter";
@@ -925,6 +929,9 @@ function lampLight() {
   // 4. the room frames, barely there, so the puzzle still reads
   ctx.save(); ctx.strokeStyle = `rgba(110,150,240,${0.13 + 0.25 * bolt})`; ctx.lineWidth = 1.5;
   for (let y = 0; y < st.g.length; y++) for (let x = 0; x < st.g[y].length; x++) ctx.strokeRect(HX + x * CW + 3, HY + y * CH + 3, CW - 6, CH - 6);
+  ctx.restore();
+  ctx.save(); ctx.strokeStyle = `rgba(${hot},0.4)`; ctx.lineWidth = 1.5;
+  for (const id of near) { if (id === st.player.id) continue; const p = find(st.g, id); for (const [x, y] of drawPositions(p)) ctx.strokeRect(x + 3, y + 3, CW - 6, CH - 6); }
   ctx.restore();
   for (const g2 of glows) g2(); glows.length = 0;
   // 5. it is near: the dark closes in at the edges
