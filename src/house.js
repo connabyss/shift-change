@@ -162,5 +162,15 @@ export const NEW_WORD = {
 // Floor 3 houses are slow to check (no way out without the flip, up to 7 moves), so these seeds were checked ahead of time.
 export const FLOOR3 = [596, 998, 1167, 1208, 1341, 1805, 2267, 2513, 2657, 3092, 3292, 3461, 3725, 4106, 4446, 4698, 4868, 5121, 5256, 5844, 6243, 6692, 6760, 6993, 7148, 7530, 7830, 7864, 8391, 8455];
 export function pickHouse(floor, seed) {
-  if (floor === 3 && seed == null) { const h = makeHouse(FLOOR3[(Math.random() * FLOOR3.length) | 0], 3); h.par = solve(h.g, h.startId, h.lockIds, false, 3).length; return h; }
+  if (floor === 3 && seed == null) { const seed3 = FLOOR3[(Math.random() * FLOOR3.length) | 0], h = makeHouse(seed3, 3); h.seed = seed3; h.par = solve(h.g, h.startId, h.lockIds, false, 3).length; return h; }
   for (let s = seed; ; s++) { const h = makeHouse(s, floor); if (goodHouse(h, floor)) { h.seed = s; return h; } } }
+// Where a floor's torn page lies: in a room you can reach somewhere along the house's best way out (so it can
+// always be found), but not your first room and not a lock room (so it's worth a small detour).
+export function pageRoom(h, floor) {
+  const g = clone(h.g), plan = solve(g, h.startId, h.lockIds, false, floor) || [];
+  const seen = new Set(reach(g, h.startId)); let me = h.startId;
+  for (const m of plan) { applyEdit(g, m.id, m.li, null, m.dir); me = m.id; for (const id of reach(g, me)) seen.add(id); }
+  const ok = [...seen].filter((id) => id !== h.startId && !h.lockIds.includes(id)).sort((a, b) => a - b);
+  const pool = ok.length ? ok : [...seen].filter((id) => id !== h.startId).sort((a, b) => a - b);
+  return pool.length ? pool[Math.floor(rng((h.seed ?? 1) * 31 + floor)() * pool.length)] : null;
+}

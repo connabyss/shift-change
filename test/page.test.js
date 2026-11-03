@@ -101,3 +101,37 @@ test("all three floors start, each new word appears in your first room, and the 
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });
+
+test("the story: walking into the page's room picks it up, and with all three pages you can change the last word", { skip }, async () => {
+  const server = await serve(), browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    await page.goto(`http://127.0.0.1:${server.address().port}/?seed=4242`);
+    await page.waitForFunction(() => window.__dh);
+    await page.evaluate(() => window.__dh.begin());
+    await page.waitForTimeout(200);
+    assert.ok(await page.evaluate(() => window.__dh.st().voice), "the house says something as the floor starts");
+    // stand in the page's room: it's picked up
+    await page.evaluate(() => { const st = window.__dh.st(); st.player.id = st.page.id; });
+    await page.waitForTimeout(150);
+    assert.deepEqual(await page.evaluate(() => [window.__dh.st().page.got, window.__dh.st().pages]), [true, 1]);
+    // the end with all three pages: click "nobody"
+    await page.evaluate(() => { const st = window.__dh.st(); st.pages = 3; st.scene = "end"; st.endT = 5; });
+    await page.waitForTimeout(150);
+    const r = await page.evaluate(() => window.__dh.choiceRects().find((c) => c.word === "nobody"));
+    assert.ok(r, "nobody is a word you can click");
+    const box = await page.evaluate(() => { const b = document.getElementById("game").getBoundingClientRect(); return [b.left, b.top, b.width / 960, b.height / 600]; });
+    await page.mouse.click(box[0] + (r.x + r.w / 2) * box[2], box[1] + (r.y + r.h / 2) * box[3]);
+    assert.equal(await page.evaluate(() => window.__dh.st().ending), "free");
+    await page.waitForTimeout(400);
+    // with fewer pages there's nothing to click, and the house keeps it
+    await page.evaluate(() => { window.__dh.newGame(5, 1); const st = window.__dh.st(); st.pages = 2; st.scene = "end"; st.endT = 7.9; });
+    await page.waitForTimeout(300);
+    assert.equal(await page.evaluate(() => window.__dh.choiceRects().length), 0);
+    assert.equal(await page.evaluate(() => window.__dh.st().ending), "keep");
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); server.close(); }
+});

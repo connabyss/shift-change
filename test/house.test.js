@@ -1,7 +1,8 @@
 // The house's rules: how each word changes the rooms, and that every floor can be solved, and needs its new word.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { W, H, makeHouse, pickHouse, applyEdit, solve, reach, clone, find, byId, goodHouse, FLOOR3, EXTRA, NEW_WORD } from "../src/house.js";
+import { W, H, makeHouse, pickHouse, pageRoom, applyEdit, solve, reach, clone, find, byId, goodHouse, FLOOR3, EXTRA, NEW_WORD } from "../src/house.js";
+import { PAGES, COMMITS } from "../src/story.js";
 
 const ids = (g) => g.map((row) => row.map((r) => r.id));
 const roomWith = (g, kind) => g.flat().find((r) => r.lines.some((l) => l.kind === kind));
@@ -105,4 +106,17 @@ test("each new word is described for the floor that brings it", () => {
   assert.equal(NEW_WORD[2].kind, "swap"); assert.equal(NEW_WORD[3].kind, "flip");
   const h = makeHouse(FLOOR3[0], 3), r = roomWith(h.g, "flip");
   assert.ok(find(h.g, r.id));
+});
+
+// A torn page must always be findable: in a room you can reach somewhere along the best way out.
+test("each floor's torn page lies in a room you can reach on the way out, not your first room or a lock room", () => {
+  const houses = [1, 1000, 5000].flatMap((s) => [[pickHouse(1, s), 1], [pickHouse(2, s), 2]]).concat(FLOOR3.slice(0, 4).map((s) => { const h = makeHouse(s, 3); h.seed = s; return [h, 3]; }));
+  for (const [h, floor] of houses) {
+    const id = pageRoom(h, floor);
+    assert.notEqual(id, null); assert.notEqual(id, h.startId); assert.ok(!h.lockIds.includes(id));
+    const g = clone(h.g); let me = h.startId, seen = reach(g, me).has(id);
+    for (const m of solve(h.g, h.startId, h.lockIds, false, floor)) { applyEdit(g, m.id, m.li, null, m.dir); me = m.id; seen = seen || reach(g, me).has(id); }
+    assert.ok(seen, `floor ${floor}: page room ${id} is never in reach`);
+  }
+  for (const f of [1, 2, 3]) { assert.ok(PAGES[f]); assert.ok(COMMITS[f]); }
 });
