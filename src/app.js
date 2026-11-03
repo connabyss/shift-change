@@ -1,7 +1,7 @@
 // The Shifting House: a doll's house cut open. Click a room to walk there; click a word in the house's code
 // to change the house. Two locks, a front door, and a shadow that hunts you through the rooms.
-import { W, H, FLOOR, byId, find, nbrs, path, reach, clone, applyEdit, edits, solve, pickHouse, pageRoom, NEW_WORD } from "./house.js";
-import { COMMITS, PAGES, VOICE, ENDING } from "./story.js";
+import { W, H, FLOOR, byId, find, nbrs, path, reach, clone, applyEdit, edits, solve, pickHouse, pageRoom, houseMoves, steps, NEW_WORD } from "./house.js";
+import { COMMITS, PAGES, VOICE, ENDING, HOUSE_LINES, FINALE } from "./story.js";
 import * as sfx from "./sound.js";
 import * as art from "./art.js";
 
@@ -36,12 +36,15 @@ function newGame(seed, floor = 1, carry = null) {
     bolt: carry && carry.bolt ? carry.bolt : { t: 99, next: 9, x: 300 }, stepT: 0,
     // story
     page: { id: pageRoom(h, floor), got: false }, pages: carry ? carry.pages : 0, said: carry ? carry.said : new Set(),
+    used: carry ? carry.used : new Set(), playerEdits: 0, houseNext: null, finale: null, finalePath: null,
     voice: null, pageShow: null, started: false, blackout: 0, faceBolt: false, faced: false, typed: null, ending: null, endT2: 0, idleSaid: false,
   };
   if (carry) { st.grabs = carry.grabs; st.scene = "play"; st.shadow.mode = "sleep"; }
+  setTitle("The Shifting House");
 }
+function setTitle(t) { try { document.title = t; } catch { /* fine */ } }
 function nextFloor() {
-  const carry = { grabs: st.grabs, total: st.total, bolt: st.bolt, pages: st.pages, said: st.said };
+  const carry = { grabs: st.grabs, total: st.total, bolt: st.bolt, pages: st.pages, said: st.said, used: st.used };
   newGame(st.floor + 1 === 3 ? null : (Math.random() * 1e9) | 0, st.floor + 1, carry);
 }
 function floorDone() {
@@ -54,6 +57,7 @@ function floorDone() {
 function choose(which) {
   if (st.ending) return; st.ending = which; st.endT2 = 0;
   try { localStorage.setItem("shift-ending", which); } catch { /* fine */ }
+  setTitle(which === "free" ? "nobody home" : FINALE.title);
   (which === "free" ? sfx.endingFree : sfx.endingKeep)();
 }
 function endingUpdate(dt) {
@@ -119,23 +123,125 @@ function walkTo(id, exit, mx, my) {
 }
 function doEdit(li, dir = 1) {
   if (st.anim || st.scene !== "play") return;
-  settle(st.player); settle(st.shadow); st.player.pending = null;
   const room = byId(st.g, st.player.id), c = room.lines[li];
   if (c.kind === "lock" && st.unlocked) return;
-  const res = applyEdit(st.g, room.id, li, st, dir); unseal();
-  if (st.shadow.mode !== "sleep" && !path(st.g, st.shadow.id, st.player.id) && st.shadow.noPath === 0) { trapped(true); st.shadow.noPath = 0.01; }
+  st.used.add(c.kind);
+  const res = performEdit(room.id, li, dir, false);
   st.edits++; st.hint = null; if (res.kind !== "lights" && res.kind !== "lock") st.moves++;
+  st.writeBack = { li, t: 0 };
+  if (res.kind === "lock") {
+    float(HX + 60, HY + HH - 90, "the front door is open", GRN); sfx.unlock();
+    if (st.floor === FLOORS) startFinale(); else say("unlock");
+  }
+  else if (res.kind === "flip") { say("flip"); if (st.floor === 3 && !st.typed) st.typed = { t: -2.6 }; }
+  else say("firstEdit");
+  if (st.shadow.mode === "sleep") { wake(); think("shadow.awake = true;   // you made noise"); }
+  if (res.kind !== "lights" && res.kind !== "lock") houseTurn();
+}
+// one word changes, by you or by the house: the rooms move, with sound, dust and a shake
+function performEdit(id, li, dir, byHouse) {
+  settle(st.player); settle(st.shadow); st.player.pending = null;
+  const res = applyEdit(st.g, id, li, st, dir); unseal();
+  if (st.shadow.mode !== "sleep" && !path(st.g, st.shadow.id, st.player.id) && st.shadow.noPath === 0) { trapped(!byHouse); st.shadow.noPath = 0.01; }
   st.glitch = 0.5; st.shake = res.kind === "row" || res.kind === "col" ? 0.6 : 0.25;
-  st.writeBack = { li, t: 0 }; st.alert = 4; st.preview = null; st.previewKey = "";
+  st.alert = 4; st.preview = null; st.previewKey = "";
   if (res.kind === "row" || res.kind === "col") { st.anim = { ...res, t: 0 }; sfx.slide(); dustBurst(res); }
   else if (res.kind === "swap") { st.anim = { ...res, t: 0 }; sfx.swap(); }
   else if (res.kind === "flip") { st.anim = { ...res, t: 0, slow: true }; sfx.flip(); st.shake = 1; }
   else if (res.kind === "door") (res.open ? sfx.doorOpen : sfx.doorShut)();
   else if (res.kind === "lights") sfx.lights(res.on);
-  if (res.kind === "lock") { float(HX + 60, HY + HH - 90, "the front door is open", GRN); sfx.unlock(); say("unlock"); }
-  else if (res.kind === "flip") { say("flip"); if (st.floor === 3 && !st.typed) st.typed = { t: -2.6 }; }
-  else say("firstEdit");
-  if (st.shadow.mode === "sleep") { wake(); think("shadow.awake = true;   // you made noise"); }
+  return res;
+}
+
+// ---------- the house plays back ----------
+// After your move the house makes one of its own: it picks the nastiest word it can find in another room (bring
+// the shadow closer, cut down where you can go), but never one that leaves no way out. It warns you first, in red.
+const HOUSE_WAIT = 0.6, HOUSE_WARN = 1.5;
+const pick = (a) => a[(Math.random() * a.length) | 0];
+function houseTurn() {
+  if (st.finale || st.scene !== "play") return;
+  st.playerEdits++; st.houseIdle = 0;
+  st.houseNext = { t: -HOUSE_WAIT, move: null };
+}
+function pickHouseMove() {
+  const me = st.player.id, sh = st.shadow;
+  const moves = houseMoves(st.g, me, sh.id, sh.mode !== "sleep");
+  for (const m of moves) { m.reuse = st.floor > 1 && st.used.has(m.kind); m.score += (m.reuse ? 1.5 : 0) + Math.random() * 0.9; }
+  moves.sort((a, b) => b.score - a.score);
+  for (const m of moves.slice(0, 6)) if (solve(m.g, me, st.h.lockIds, st.unlocked, 3)) return m;
+  return null;
+}
+function houseCode(m) {
+  const room = byId(st.g, m.id), c = room.lines[m.li], parts = lineParts(room, c, false);
+  const w = c.kind === "door" ? (room[c.side === "west" ? "l" : "r"] ? "shut" : "open") : parts[1].find((x) => (x.dir ?? 1) === m.dir).text;
+  return parts[0] + w + parts[2];
+}
+const HOUSE_IDLE = [14, 10, 8]; // and if you sit still too long, it moves anyway
+function houseUpdate(dt) {
+  if (!st.houseNext && !st.finale && st.shadow.mode !== "sleep") {
+    st.houseIdle = (st.houseIdle || 0) + dt;
+    if (st.houseIdle > HOUSE_IDLE[st.floor - 1]) { st.houseIdle = 0; st.houseNext = { t: 0, move: null }; }
+  }
+  const hn = st.houseNext; if (!hn) return;
+  hn.t += dt;
+  if (hn.t >= 0 && !hn.move) {
+    const m = pickHouseMove(); if (!m) { st.houseNext = null; return; }
+    hn.move = m; hn.code = houseCode(m); sfx.creak(0.35);
+  }
+  if (hn.move && hn.t >= HOUSE_WARN) {
+    const m = hn.move, room = byId(st.g, m.id); st.houseNext = null;
+    if (!room || !room.lines[m.li] || st.player.id === m.id) return;
+    const still = houseMoves(st.g, st.player.id, st.shadow.id, false).find((x) => x.id === m.id && x.li === m.li && x.dir === m.dir);
+    if (!still || !solve(still.g, st.player.id, st.h.lockIds, st.unlocked, 3)) return; // you moved first: it lets it go
+    const c = room.lines[m.li], wasOpen = c.kind === "door" && room[c.side === "west" ? "l" : "r"];
+    performEdit(m.id, m.li, m.dir, true); st.total.house = (st.total.house || 0) + 1;
+    const lines = m.reuse ? HOUSE_LINES.reuse : c.kind === "door" ? HOUSE_LINES.door[wasOpen ? "shut" : "open"] : HOUSE_LINES[c.kind];
+    sayLine(pick(lines)); think(`house.${c.kind === "door" ? (wasOpen ? "shut" : "open") : "move"}(${room.name});`);
+  }
+}
+function sayLine(text) { st.voice = { text, t: 0 }; sfx.voice(); }
+
+// ---------- the finale ----------
+// The last front door is unlocked: the house stops taking turns and slides its own rows every few seconds while the
+// shadow runs you down. One way to the door always stays open, and it's lit.
+function startFinale() {
+  st.finale = { t: 0, next: 3.4, n: 0, lost: 0 }; st.houseNext = null; sayLine(FINALE.start); setTitle(FINALE.title);
+  if (st.shadow.mode === "sleep") wake();
+  // the house turns itself over, so the front door is as far away as it can make it
+  settle(st.player); settle(st.shadow); st.player.pending = null;
+  if (find(st.g, st.player.id).y > 0) {
+    st.g.reverse(); for (const row of st.g) for (const r of row) [r.up, r.down] = [r.down, r.up];
+    st.flipped = !st.flipped; st.anim = { kind: "flip", t: 0, slow: true }; sfx.flip();
+  } else sfx.breakOut();
+  st.shake = 1;
+  if (!path(st.g, st.player.id, doorRoom())) carve();
+}
+// It wants the chase, so it never shuts you in: if there's no way to the door, it opens one (down, then west).
+function carve() {
+  let p = find(st.g, st.player.id);
+  while (p.y < H - 1) { const a = st.g[p.y][p.x], b = st.g[p.y + 1][p.x]; a.down = true; b.up = true; p = { x: p.x, y: p.y + 1 }; }
+  while (p.x > 0) { const a = st.g[p.y][p.x], b = st.g[p.y][p.x - 1]; a.l = true; b.r = true; p = { x: p.x - 1, y: p.y }; }
+  think("house.open(a.way);  // run");
+}
+const doorRoom = () => st.g[H - 1][0].id;
+function finaleUpdate(dt) {
+  const f = st.finale; f.t += dt; f.next -= dt;
+  st.finalePath = path(st.g, st.player.id, doorRoom());
+  if (!st.finalePath && !st.anim) { f.lost += dt; if (f.lost > 4) { f.lost = 0; carve(); } } else f.lost = 0;
+  if (f.next > 0 || st.anim) return;
+  f.next = 3.2; const me = st.player.id, pm = find(st.g, me), opts = [];
+  for (let y = 0; y < H; y++) for (const dir of [-1, 1]) {
+    if (y === pm.y) continue; const g2 = clone(st.g); g2[y] = g2[y].map((_, x) => g2[y][(x - dir + W * 2) % W]);
+    // keep a way to the door open (or make one, if there isn't one), then bring the shadow closer
+    const open = path(g2, me, g2[H - 1][0].id) ? 10 : 0;
+    opts.push({ y, dir, score: open + steps(path(st.g, st.shadow.id, me)) - steps(path(g2, st.shadow.id, me)) + Math.random() });
+  }
+  opts.sort((a, b) => b.score - a.score); const o = opts[0];
+  if (!o || (st.finalePath && o.score < 10)) return; // never take away the last way out
+  settle(st.player); settle(st.shadow); st.player.pending = null;
+  const row = st.g[o.y]; st.g[o.y] = row.map((_, x) => row[(x - o.dir + W * 2) % W]);
+  st.anim = { kind: "row", i: o.y, dir: o.dir, t: 0 }; sfx.slide(); dustBurst(st.anim); st.shake = 0.7;
+  if (f.n++ % 2 === 0) sayLine(FINALE.lines[(f.n / 2 | 0) % FINALE.lines.length]);
 }
 
 // house.hint(): the next word of the shortest way out
@@ -174,6 +280,8 @@ function update(dt) {
   st.sinceStart += dt; st.floorT += dt; st.alert = Math.max(0, st.alert - dt);
   if (st.anim) { st.anim.t += dt / (st.anim.slow ? 1.3 : 0.7); if (st.anim.t >= 1) st.anim = null; else return; }
 
+  houseUpdate(dt);
+  if (st.finale) finaleUpdate(dt);
   advance(st.player, dt, 250, (way, pending) => {
     st.walked++;
     if (way && way.exit) floorDone();
@@ -184,7 +292,7 @@ function update(dt) {
     const p = walkerPos(st.player); float(p[0] - 10, p[1] - 50, `a torn page (${st.pages} of 3)`, "#e8dcc0");
   }
 
-  const sh = st.shadow, speed = PACE[st.floor - 1] / (1 + 0.22 * st.grabs);
+  const sh = st.shadow, speed = PACE[st.floor - 1] / (1 + 0.22 * st.grabs) * (st.finale ? 1.3 : 1);
   if (sh.mode === "sleep") {
     if (st.sinceStart > (st.floor === 1 ? 30 : 8)) { wake(); think("shadow.awake = true;"); }
   } else if (sh.way) advance(sh, dt, sh.seep ? speed * 0.5 : speed, () => { sh.seep = false; });
@@ -285,6 +393,7 @@ function drawRoom(room, cx, cy, o) {
   const shHere = st.shadow.mode !== "sleep" && st.shadow.id === room.id;
   let lit = room.lights ? 1 : 0;
   if (o.lightPreview) lit = lerp(lit, 1 - lit, o.lightPreview);
+  if (st.finale && st.scene === "play") lit = st.finalePath && st.finalePath.includes(room.id) ? 1 : 0;
   let L = lerp(0.17, 1, lit) * (0.95 + 0.05 * Math.sin(st.t * 11 + room.id * 7) * Math.sin(st.t * 3.3 + room.id));
   if (shHere && Math.random() < 0.18) L *= 0.55;
   if (st.scene === "title") L *= 0.55;
@@ -390,6 +499,17 @@ function outlineSlot(x, y, color, dash) {
   ctx.strokeRect(HX + x * CW + 5, HY + y * CH + 5, CW - 10, CH - 10); ctx.restore();
 }
 
+// a big chalk arrow along a row or column (short: just from one room to the next, for a swap)
+function chalkArrow(b, color) {
+  const a = 0.5 + 0.4 * Math.sin(st.t * 6); ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 4;
+  let x1, y1, x2, y2;
+  if (b.kind === "row" && b.short != null) { const yy = HY + b.i * CH + CH * 0.3, cx = HX + b.short * CW + CW / 2; x1 = cx; x2 = cx + b.dir * CW * 0.8; y1 = y2 = yy; }
+  else if (b.kind === "row") { const yy = HY + b.i * CH + CH * 0.5; x1 = HX + 60; x2 = HX + HW - 60; y1 = y2 = yy; if (b.dir < 0) [x1, x2] = [x2, x1]; }
+  else { const xx = HX + b.i * CW + CW * 0.5; y1 = HY + 40; y2 = HY + HH - 40; x1 = x2 = xx; if (b.dir < 0) [y1, y2] = [y2, y1]; }
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  const ang = Math.atan2(y2 - y1, x2 - x1); ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x2 - 18 * Math.cos(ang - 0.5), y2 - 18 * Math.sin(ang - 0.5)); ctx.lineTo(x2 - 18 * Math.cos(ang + 0.5), y2 - 18 * Math.sin(ang + 0.5)); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
 function drawHouse() {
   art.roof(ctx, { x: HX, y: HY, w: HW, h: HH }, st.t, HX + HW + 8);
   ctx.save(); ctx.beginPath(); ctx.rect(HX, HY, HW, HH); ctx.clip();
@@ -411,6 +531,14 @@ function drawHouse() {
     const p = find(st.g, st.hover.id), ok = reach(st.g, st.player.id).has(st.hover.id);
     outlineSlot(p.x, p.y, ok ? "rgba(240,230,210,0.55)" : "rgba(255,90,78,0.6)", false);
   }
+  if (st.houseNext && st.houseNext.move) {
+    const m = st.houseNext.move, p = find(st.g, m.id);
+    if (p) {
+      outlineSlot(p.x, p.y, `rgba(255,90,78,${0.55 + 0.4 * Math.sin(st.t * 10)})`, false);
+      if (m.kind === "row" || m.kind === "col" || m.kind === "swap") chalkArrow(m.kind === "col" ? { kind: "col", i: p.x, dir: m.dir } : m.kind === "row" ? { kind: "row", i: p.y, dir: m.dir } : { kind: "row", i: p.y, dir: m.dir, short: p.x }, RED);
+    }
+  }
+  if (st.finale && st.finalePath && st.scene === "play") for (const id of st.finalePath) { const p = find(st.g, id); outlineSlot(p.x, p.y, `rgba(207,224,255,${0.35 + 0.25 * Math.sin(st.t * 5)})`, true); }
   if (st.hint && st.hint.id != null) { const p = find(st.g, st.hint.id); outlineSlot(p.x, p.y, `rgba(255,211,106,${0.5 + 0.4 * Math.sin(st.t * 6)})`, false); }
   // shut in: its room gets a red frame and a bar that drains until it claws out
   if (st.scene === "play" && st.shadow.mode !== "sleep" && st.shadow.noPath > 0 && !st.shadow.way) {
@@ -428,15 +556,7 @@ function drawHouse() {
   }
   for (const d of st.dust) { ctx.fillStyle = `rgba(200,185,160,${0.6 * (1 - d.t / d.life)})`; ctx.fillRect(d.x, d.y, 2, 2); }
   // big chalk arrow for a slide preview
-  if (pv && pv.band && (pv.band.kind === "row" || pv.band.kind === "col")) {
-    const b = pv.band, a = 0.5 + 0.4 * Math.sin(st.t * 6); ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = YEL; ctx.fillStyle = YEL; ctx.lineWidth = 4;
-    let x1, y1, x2, y2;
-    if (b.kind === "row") { const yy = HY + b.i * CH + CH * 0.5; x1 = HX + 60; x2 = HX + HW - 60; y1 = y2 = yy; if (b.dir < 0) [x1, x2] = [x2, x1]; }
-    else { const xx = HX + b.i * CW + CW * 0.5; y1 = HY + 40; y2 = HY + HH - 40; x1 = x2 = xx; if (b.dir < 0) [y1, y2] = [y2, y1]; }
-    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-    const ang = Math.atan2(y2 - y1, x2 - x1); ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x2 - 18 * Math.cos(ang - 0.5), y2 - 18 * Math.sin(ang - 0.5)); ctx.lineTo(x2 - 18 * Math.cos(ang + 0.5), y2 - 18 * Math.sin(ang + 0.5)); ctx.closePath(); ctx.fill();
-    ctx.restore();
-  }
+  if (pv && pv.band && (pv.band.kind === "row" || pv.band.kind === "col")) chalkArrow(pv.band, YEL);
   ctx.restore();
   // beams between rooms
   ctx.fillStyle = "#17131a";
@@ -516,11 +636,21 @@ function drawPanel() {
   ctx.strokeStyle = "rgba(214,204,182,0.12)"; ctx.lineWidth = 1; ctx.strokeRect(x - 12, 16, w + 24, VH - 32);
   // an editor tab: this is the house's source file
   ctx.fillStyle = "#0e0c12"; ctx.fillRect(x - 12, 0, 92, 17); ctx.strokeRect(x - 12, 0, 92, 17);
-  ctx.font = `15px ${MONO}`; ctx.fillStyle = YEL; ctx.fillText("● house.js", x - 4, 13);
+  const yours = !!st.finale || (st.scene === "end" && st.floor === FLOORS);
+  ctx.font = `15px ${MONO}`; ctx.fillStyle = yours ? RED : YEL; ctx.fillText(yours ? glitchText("● you.js", st.finale && st.finale.t < 1 ? 0.6 : 0) : "● house.js", x - 4, 13);
   // the shadow's thought
-  ctx.font = `16px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText("// it thinks", x, 42);
-  const th = st.thought.t < 0.25 ? glitchText(st.thought.text, 0.7) : st.thought.text;
-  const s0 = fitFont(th, w, 24); ctx.fillStyle = RED; ctx.fillText(th, x, 68);
+  const hn = st.houseNext && st.houseNext.move ? st.houseNext : null;
+  if (hn) {
+    // the house's next move, typed out in red before it happens
+    const k = hn.t, n = Math.floor(clamp(k * 40, 0, hn.code.length)), blink = Math.sin(st.t * 14) > 0;
+    ctx.fillStyle = `rgba(255,90,78,${0.12 + 0.08 * Math.sin(st.t * 10)})`; ctx.fillRect(x - 6, 24, w + 12, 54);
+    ctx.font = `16px ${MONO}`; ctx.fillStyle = RED; ctx.fillText("// the house writes", x, 42);
+    fitFont(hn.code, w - 10, 24); ctx.fillStyle = RED; ctx.fillText(hn.code.slice(0, n) + (blink ? "_" : ""), x, 68);
+  } else {
+    ctx.font = `16px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText("// it thinks", x, 42);
+    const th = st.thought.t < 0.25 ? glitchText(st.thought.text, 0.7) : st.thought.text;
+    fitFont(th, w, 24); ctx.fillStyle = RED; ctx.fillText(th, x, 68);
+  }
   // your room
   const room = byId(st.g, st.player.id);
   ctx.font = `16px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText(`// you are in the ${room.name}`, x, 112);
@@ -595,20 +725,46 @@ function drawOverlay() {
   const k = st.shadow.mode === "sleep" ? 0.35 : [0.75, 0.58, 0.45][d] ?? 0.35;
   const g = ctx.createRadialGradient(VW / 2, VH / 2, 220, VW / 2, VH / 2, 620); g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, `rgba(0,0,0,${k})`);
   ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+  if (st.finale && st.scene === "play") { const r = ctx.createRadialGradient(VW / 2, VH / 2, 260, VW / 2, VH / 2, 640); r.addColorStop(0, "rgba(120,0,0,0)"); r.addColorStop(1, `rgba(150,10,10,${0.25 + 0.15 * Math.sin(st.t * 7)})`); ctx.fillStyle = r; ctx.fillRect(0, 0, VW, VH); }
   for (let i = 0; i < 140; i++) { ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.05})`; ctx.fillRect(Math.random() * VW, Math.random() * VH, 1, 1); }
   for (const f of st.floats) { ctx.font = `20px ${MONO}`; ctx.fillStyle = f.color; ctx.globalAlpha = 1 - f.t / 1.4; ctx.fillText(f.text, f.x - 40, f.y - f.t * 30); ctx.globalAlpha = 1; }
 }
 // commit 212  "it moved a room tonight..."  (typed: n letters of the message)
 function commitText(floor, n) { const [c, msg] = COMMITS[floor]; return `${c}   "${msg.slice(0, Math.max(0, Math.floor(n)))}"`; }
 let choiceRects = [];
+// The end has two layers: the world (the house, darkened, and anyone walking out) and the words on top.
+// After the last word the camera pulls back: the house is a doll's house on a desk, beside the laptop it was written on.
+const PULL = { free: 6.5, keep: 5 };
+function pullK() { if (st.scene !== "end" || !st.ending) return 0; return ease(clamp((st.endT2 - PULL[st.ending]) / 3.5, 0, 1)); }
+function endWorld() {
+  const k = st.endT, e = st.ending, k2 = st.endT2, z = pullK();
+  const dark = e === "free" ? Math.max(0.3, 0.9 - k2 * 0.25) : e === "keep" ? lerp(0.9, 0.5, z) : Math.min(0.9, k * 1.2);
+  ctx.fillStyle = `rgba(0,0,0,${dark})`; ctx.fillRect(0, 0, VW, VH);
+  if (e === "free") {
+    const gy = HY + HH + 30, walk = Math.min(1, Math.max(0, k2 - 2.2) / 9) * 260, x1 = HX - 16 + walk, x2 = HX - 40 + walk * 0.96;
+    drawPlayer(x1, gy);
+    if (k2 < 1.6) art.shadow(ctx, x2, gy, st.t, { asleep: false, seep: false, near: 3, look: -1 });
+    else { ctx.globalAlpha = clamp((k2 - 1.6) / 0.8, 0, 1); art.player(ctx, x2, gy, st.t, walk > 0); ctx.globalAlpha = 1; }
+  }
+  if (e === "keep" && k2 > 2.6) { ctx.fillStyle = "#f3e9d2"; const fx = HX - 17, fy = HY + HH - 44; ctx.fillRect(fx - 5, fy, 3, 3); ctx.fillRect(fx + 3, fy, 3, 3); }
+}
 function drawEnd() {
   const k = st.endT, e = st.ending, k2 = st.endT2; choiceRects = [];
-  const dark = e === "free" ? Math.max(0.3, 0.9 - k2 * 0.25) : Math.min(0.9, k * 1.2);
-  ctx.fillStyle = `rgba(0,0,0,${dark})`; ctx.fillRect(0, 0, VW, VH);
-  if (e === "free") return drawFreed();
+  if (e) {
+    // the words sit at the top, then slide down onto the desk as the camera pulls back
+    const z = pullK(), [l1, l2] = e === "free" ? ENDING.free : ENDING.keep;
+    for (const [alpha, ys] of [[1 - z, [52, 86, 116, 140]], [z, [508, 538, 566, 590]]]) {
+      if (alpha <= 0.01) continue; ctx.globalAlpha = alpha;
+      if (ys[0] < 200) { ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0, 0, VW, 150); }
+      if (k2 > 0.4) centerText(l1, ys[0], e === "free" ? `28px ${MONO}` : `italic 24px ${SERIF}`, e === "free" ? GRN : INK);
+      if (k2 > 2) centerText(l2, ys[1], `italic 21px ${SERIF}`, e === "free" ? INK : DIM);
+      endStats(k2 - PULL[e] - 1.5, ys[2], ys[3]);
+    }
+    ctx.globalAlpha = 1; return;
+  }
   const line = ENDING.line, n = Math.floor(clamp((k - 1) * 18, 0, line.length));
   if (k > 1) centerText(line.slice(0, n), VH / 2 - 60, `26px ${MONO}`, n < line.length ? INK : RED);
-  if (!e && k > 4.4) {
+  if (k > 4.4) {
     const [pre, words, post] = ENDING.choice, open = st.pages >= 3;
     ctx.font = `34px ${MONO}`; const shown = open ? words : [words[0]];
     const full = pre + shown.join("|") + post; let cx = VW / 2 - ctx.measureText(full).width / 2; const y = VH / 2 + 10;
@@ -625,28 +781,44 @@ function drawEnd() {
       const left = clamp((16.5 - k) / 12, 0, 1); ctx.fillStyle = "rgba(214,204,182,0.25)"; ctx.fillRect(VW / 2 - 120, y + 64, 240 * left, 3);
     } else { centerText(`${ENDING.locked} You found ${st.pages}.`, y + 44, `italic 20px ${SERIF}`, DIM); choiceRects = []; }
   }
-  if (e === "keep") {
-    if (k2 > 0.4) centerText(ENDING.keep[0], VH / 2 + 10, `italic 22px ${SERIF}`, INK);
-    if (k2 > 1.8) centerText(ENDING.keep[1], VH / 2 + 42, `italic 22px ${SERIF}`, DIM);
-    if (k2 > 2.6) { ctx.fillStyle = "#f3e9d2"; const fx = HX - 17, fy = HY + HH - 44; ctx.fillRect(fx - 5, fy, 3, 3); ctx.fillRect(fx + 3, fy, 3, 3); }
-    endStats(k2, VH - 90, VH - 52);
+}
+// the room around the doll's house: a wall, a desk lamp, the desk, and who (if anyone) is sitting there
+const DESK = 470, BASE = HY + HH + 44;
+const toDesk = (z) => { const sc = 1 - 0.5 * z, dy = lerp(BASE, DESK, z); return { sc, X: (x) => VW / 2 + (x - VW / 2) * sc, Y: (y) => dy + (y - BASE) * sc }; };
+function drawRealRoom(z) {
+  const T = toDesk(z), dy = T.Y(BASE);
+  const wall = ctx.createLinearGradient(0, 0, 0, dy); wall.addColorStop(0, "#0d0a0c"); wall.addColorStop(1, "#1d1517"); ctx.fillStyle = wall; ctx.fillRect(0, 0, VW, VH);
+  const lamp = ctx.createRadialGradient(120, 90, 10, 120, 90, 520); lamp.addColorStop(0, "rgba(255,200,130,0.28)"); lamp.addColorStop(1, "rgba(255,200,130,0)"); ctx.fillStyle = lamp; ctx.fillRect(0, 0, VW, VH);
+  // who sits at the desk: you, still (the house kept you), or nobody
+  const hx = T.X(HCX), hy = T.Y(HY - 130);
+  if (st.ending === "keep") {
+    ctx.fillStyle = "#050405"; ctx.beginPath(); ctx.ellipse(hx, hy, 78 * T.sc * 1.6, 92 * T.sc * 1.6, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(hx, hy + 210 * T.sc, 260 * T.sc, 130 * T.sc, 0, Math.PI, 0); ctx.fill();
+    ctx.save(); ctx.shadowColor = "#fff0dc"; ctx.shadowBlur = 8; ctx.fillStyle = "rgba(245,238,224,0.9)";
+    ctx.fillRect(hx - 30 * T.sc - 4, hy - 6, 8, 4); ctx.fillRect(hx + 30 * T.sc - 4, hy - 6, 8, 4); ctx.restore();
+  } else {
+    ctx.fillStyle = "#140e0f"; ctx.fillRect(hx - 120 * T.sc, hy - 40 * T.sc, 240 * T.sc, 260 * T.sc); // an empty chair's back
+    ctx.strokeStyle = "#241a1b"; ctx.lineWidth = 3; ctx.strokeRect(hx - 120 * T.sc, hy - 40 * T.sc, 240 * T.sc, 260 * T.sc);
   }
+  const desk = ctx.createLinearGradient(0, dy, 0, VH); desk.addColorStop(0, "#4a3020"); desk.addColorStop(1, "#22150d");
+  ctx.fillStyle = desk; ctx.fillRect(0, dy, VW, VH - dy); ctx.fillStyle = "rgba(255,210,150,0.18)"; ctx.fillRect(0, dy, VW, 2);
 }
-// free: two of you walk out, the rain stops, the house goes dark room by room
-function drawFreed() {
-  const k2 = st.endT2, gy = HY + HH + 30, walk = Math.min(1, Math.max(0, k2 - 2.2) / 9) * 260;
-  const x1 = HX - 16 + walk, x2 = HX - 40 + walk * 0.96;
-  drawPlayer(x1, gy);
-  if (k2 < 1.6) art.shadow(ctx, x2, gy, st.t, { asleep: false, seep: false, near: 3, look: -1 });
-  else { ctx.globalAlpha = clamp((k2 - 1.6) / 0.8, 0, 1); art.player(ctx, x2, gy, st.t, walk > 0); ctx.globalAlpha = 1; }
-  ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0, 0, VW, 150);
-  if (k2 > 0.4) centerText(ENDING.free[0], 52, `28px ${MONO}`, GRN);
-  if (k2 > 2) centerText(ENDING.free[1], 86, `italic 21px ${SERIF}`, INK);
-  endStats(k2 + 1, 116, 140);
+// the code panel, now a laptop screen
+function drawLaptop(z) {
+  const T = toDesk(z), x1 = T.X(PX - 16), x2 = T.X(PX + PW + 16), y1 = T.Y(-4), y2 = T.Y(VH - 10);
+  ctx.globalAlpha = z; ctx.strokeStyle = "#2b2a30"; ctx.lineWidth = 7 * T.sc + 2; ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+  ctx.fillStyle = "#3a3940"; ctx.beginPath(); ctx.moveTo(x1 - 6, y2 + 3); ctx.lineTo(x2 + 6, y2 + 3); ctx.lineTo(x2 + 26, y2 + 16); ctx.lineTo(x1 - 26, y2 + 16); ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = 1;
 }
-function endStats(k2, y1, y2) {
-  if (k2 > 3.4) centerText(`3 floors in ${st.total.moves} moves (the house's best: ${st.total.par}), ${st.grabs} grab${st.grabs === 1 ? "" : "s"}, ${st.total.hints} hint${st.total.hints === 1 ? "" : "s"}, ${st.pages} of 3 pages.`, y1, `20px ${MONO}`, INK);
-  if (k2 > 4.4) centerText(st.ending === "free" ? "Click to build a new house." : "Click to try again. It's waiting.", y2, `20px ${MONO}`, DIM);
+function clipFrame() {
+  ctx.beginPath();
+  ctx.moveTo(HX - 22, HY + 1); ctx.lineTo(HCX, HY - 62); ctx.lineTo(HX + HW + 22, HY + 1); ctx.closePath();
+  ctx.rect(HX + HW * 0.72 - 4, HY - 66, 32, 66); ctx.rect(HX - 38, HY - 4, HW + 50, BASE - HY + 4); ctx.rect(PX - 16, -4, PW + 32, VH - 6);
+  ctx.clip();
+}
+function endStats(k, y1, y2) {
+  if (k > 0) centerText(`3 floors in ${st.total.moves} moves (the house's best: ${st.total.par}), ${st.grabs} grab${st.grabs === 1 ? "" : "s"}, ${st.total.house || 0} move${st.total.house === 1 ? "" : "s"} by the house, ${st.pages} of 3 pages.`, y1, `18px ${MONO}`, INK);
+  if (k > 1) centerText(st.ending === "free" ? "Click to build a new house." : "Click to try again. It's waiting.", y2, `18px ${MONO}`, DIM);
 }
 function centerText(text, y, font, color) { ctx.font = font; ctx.fillStyle = color; ctx.textAlign = "center"; ctx.fillText(text, VW / 2, y); ctx.textAlign = "left"; }
 function drawScenes() {
@@ -682,6 +854,17 @@ function drawScenes() {
 
 function render() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const z = pullK();
+  if (z > 0) {
+    drawRealRoom(z); ctx.save(); const T = toDesk(z);
+    ctx.translate(T.X(0), T.Y(0)); ctx.scale(T.sc, T.sc); clipFrame();
+  }
+  drawWorld();
+  if (st.scene === "end") endWorld();
+  if (z > 0) { ctx.restore(); drawLaptop(z); }
+  drawVoice(); drawScenes(); if (st.scene !== "end") drawMute();
+}
+function drawWorld() {
   art.night(ctx, VW, VH, { x: HX, y: HY, w: HW, h: HH }, st.t, flash(), st.bolt.x);
   if (st.faceBolt && flash() > 0.1) drawWatcher(flash());
   const dry = st.ending === "free" ? clamp((st.endT2 - 1) / 3, 0, 1) : 0;
@@ -690,7 +873,7 @@ function render() {
   if (st.shake > 0) ctx.translate((Math.random() - 0.5) * 12 * st.shake, (Math.random() - 0.5) * 12 * st.shake);
   drawHouse(); ctx.restore();
   const f = flash(); if (f > 0) { ctx.fillStyle = `rgba(210,220,255,${f * 0.22})`; ctx.fillRect(0, 0, PX - 14, VH); }
-  drawPanel(); scanlines(); drawOverlay(); drawVoice(); drawScenes(); drawMute();
+  drawPanel(); scanlines(); drawOverlay();
 }
 // something enormous stands behind the house: only the lightning shows it
 function drawWatcher(f) {
@@ -757,7 +940,7 @@ cv.addEventListener("pointerdown", (e) => {
   if (st.scene === "title") { st.scene = "play"; return; }
   if (st.scene === "end") {
     if (!st.ending) { const c = choiceAt(...toView(e)); if (c) choose(c.word === "nobody" ? "free" : "keep"); return; }
-    if (st.endT2 > (st.ending === "free" ? 3.4 : 4.4)) { sfx.reset(); newGame((Math.random() * 1e9) | 0); }
+    if (st.endT2 > PULL[st.ending] + 2.5) { sfx.reset(); newGame((Math.random() * 1e9) | 0); }
     return;
   }
   if (st.scene === "floor") { if (st.endT > 1.2) nextFloor(); return; }

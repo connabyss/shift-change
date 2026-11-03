@@ -135,3 +135,33 @@ test("the story: walking into the page's room picks it up, and with all three pa
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });
+
+test("the house plays back after your move, and the last lock starts the finale: the tab and the file rename themselves", { skip }, async () => {
+  const server = await serve(), browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    await page.goto(`http://127.0.0.1:${server.address().port}/`);
+    await page.waitForFunction(() => window.__dh);
+    await page.evaluate(() => { window.__dh.newGame(99, 2); window.__dh.begin(); });
+    await page.waitForTimeout(200);
+    await page.evaluate(() => { const D = window.__dh, st = D.st(), r = D.byId(st.g, st.player.id); D.edit(r.lines.findIndex((l) => l.kind === "row" || l.kind === "swap"), 1); });
+    // it writes its move in red first, then makes it
+    await page.waitForFunction(() => { const h = window.__dh.st().houseNext; return h && h.move; }, null, { timeout: 4000 });
+    const code = await page.evaluate(() => window.__dh.st().houseNext.code);
+    assert.match(code, /\.(row|column)\.shift\(|\.swap\(|\.door\./);
+    await page.waitForFunction(() => window.__dh.st().total.house >= 1, null, { timeout: 4000 });
+    // floor 3: unlocking starts the finale
+    await page.evaluate(() => { window.__dh.newGame(null, 3); window.__dh.begin(); const st = window.__dh.st(); st.player.id = st.h.lockIds[0]; });
+    await page.waitForTimeout(100);
+    await page.evaluate(() => { const D = window.__dh, st = D.st(), r = D.byId(st.g, st.player.id); D.edit(r.lines.findIndex((l) => l.kind === "lock"), 1); });
+    assert.ok(await page.evaluate(() => !!window.__dh.st().finale));
+    assert.equal(await page.title(), "you.trapped = true");
+    // the house slides a row by itself, and there's always a way to the door
+    await page.waitForFunction(() => window.__dh.st().finale.n >= 1, null, { timeout: 9000 });
+    await page.waitForFunction(() => { const st = window.__dh.st(); return !st.anim && st.finalePath && st.finalePath.length; }, null, { timeout: 6000 });
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); server.close(); }
+});

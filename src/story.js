@@ -41,3 +41,18 @@ export const ENDING = {
   free: ["house.keep(nobody);   // nobody home", "It walks out beside you. Behind you, the lights go out one by one."],
   locked: "Find all three torn pages to change the last word.",
 };
+
+// The house plays back: after your move it makes one of its own, and says why.
+export const HOUSE_LINES = {
+  row: ["No. That one's mine.", "Let me help.", "Closer.", "I'll move it back for you.", "Wrong way. Here."],
+  col: ["Down you go. Up it comes.", "Let me help."],
+  swap: ["Excuse me.", "Rooms like company."],
+  door: { shut: ["Doors are mine too.", "Shh. Close that."], open: ["Come in.", "Leave it open. It's cold in there."] },
+  reuse: ["You taught me that one.", "That's your move. I'm just copying."],
+};
+// The finale: once the front door is unlocked on the last floor, the house stops taking turns.
+export const FINALE = {
+  start: "Then run.",
+  lines: ["Left. No, right.", "I'll find you a longer way.", "Every room is mine.", "Almost.", "You built this. You can't outrun it."],
+  title: "you.trapped = true",
+};
