@@ -21,6 +21,9 @@ afterwards light up green), then click it. `M` turns the sound off and on.
   a room or shuts a door, usually to bring the shadow closer. It types the line in red a moment before it happens, so
   you can see it coming. It never moves the room you're in, and never leaves you with no way out. Sit still too long
   and it moves anyway. From floor 2 it likes to copy your favourite words.
+- **One new thing at a time.** Floor 1 is just you and the house; the shadow sleeps through it. Floor 2 wakes the
+  shadow, floor 3 brings the flip and the finale. During play the only words are the house's own moves; torn pages
+  are read on the screen between floors.
 - **The finale.** Unlock the last front door and the house turns itself over, then slides its rows every few seconds
   while the shadow runs you down faster. The way to the door is always lit. The browser tab and the code's file name
   change as it happens. At the very end, the camera pulls back from the house.

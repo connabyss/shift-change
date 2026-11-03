@@ -105,7 +105,10 @@ function settle(w) { if (w.way) { const a = w.way.pts[w.way.seg]; w.id = a.id; w
 // ---------- actions ----------
 function think(text) { if (st.thought.text !== text) st.thought = { text, t: 0 }; }
 // the house talks back, typed out under the house; most lines only once a game
+// Only these speak during play now (CH: "a lot going on"); the house's own moves speak for it the rest of the time.
+const SPOKEN = new Set(["start1", "start1again", "start2", "start3", "caught"]);
 function say(key) {
+  if (!SPOKEN.has(key)) return;
   const v = VOICE[key], text = typeof v === "string" ? v : v.text;
   if (st.said.has(key) && !(v && v.again)) return;
   st.said.add(key); st.voice = { text, t: 0 }; sfx.voice();
@@ -133,9 +136,9 @@ function doEdit(li, dir = 1) {
     float(HX + 60, HY + HH - 90, "the front door is open", GRN); sfx.unlock();
     if (st.floor === FLOORS) startFinale(); else say("unlock");
   }
-  else if (res.kind === "flip") { say("flip"); if (st.floor === 3 && !st.typed) st.typed = { t: -2.6 }; }
+  else if (res.kind === "flip") say("flip");
   else say("firstEdit");
-  if (st.shadow.mode === "sleep") { wake(); think("shadow.awake = true;   // you made noise"); }
+  if (st.shadow.mode === "sleep") wake();
   if (res.kind !== "lights" && res.kind !== "lock") houseTurn();
 }
 // one word changes, by you or by the house: the rooms move, with sound, dust and a shake
@@ -194,7 +197,7 @@ function houseUpdate(dt) {
     const still = houseMoves(st.g, st.player.id, st.shadow.id, false).find((x) => x.id === m.id && x.li === m.li && x.dir === m.dir);
     if (!still || !solve(still.g, st.player.id, st.h.lockIds, st.unlocked, 3)) return; // you moved first: it lets it go
     const c = room.lines[m.li], wasOpen = c.kind === "door" && room[c.side === "west" ? "l" : "r"];
-    performEdit(m.id, m.li, m.dir, true); st.total.house = (st.total.house || 0) + 1;
+    st.lastHouse = houseCode(m); performEdit(m.id, m.li, m.dir, true); st.total.house = (st.total.house || 0) + 1;
     const lines = m.reuse ? HOUSE_LINES.reuse : c.kind === "door" ? HOUSE_LINES.door[wasOpen ? "shut" : "open"] : HOUSE_LINES[c.kind];
     sayLine(pick(lines)); think(`house.${c.kind === "door" ? (wasOpen ? "shut" : "open") : "move"}(${room.name});`);
   }
@@ -288,13 +291,13 @@ function update(dt) {
     if (pending) walkTo(pending.id, pending.exit, 0, 0);
   });
   if (st.page.id != null && !st.page.got && st.player.id === st.page.id) {
-    st.page.got = true; st.pages++; st.pageShow = { t: 0, n: st.floor }; sfx.page(); say("page");
+    st.page.got = true; st.pages++; sfx.page(); // you read it between floors
     const p = walkerPos(st.player); float(p[0] - 10, p[1] - 50, `a torn page (${st.pages} of 3)`, "#e8dcc0");
   }
 
   const sh = st.shadow, speed = PACE[st.floor - 1] / (1 + 0.22 * st.grabs) * (st.finale ? 1.3 : 1);
   if (sh.mode === "sleep") {
-    if (st.sinceStart > (st.floor === 1 ? 30 : 8)) { wake(); think("shadow.awake = true;"); }
+    if (st.sinceStart > 8) wake();
   } else if (sh.way) advance(sh, dt, sh.seep ? speed * 0.5 : speed, () => { sh.seep = false; });
   else if ((sh.timer -= dt) <= 0) planShadow();
 
@@ -305,6 +308,7 @@ function update(dt) {
 }
 // it wakes. On floor 2 every lamp in the house dies with it, for a moment.
 function wake() {
+  if (st.floor === 1) return; // floor 1 is just you and the house; it sleeps through it
   const sh = st.shadow; sh.mode = "hunt"; sh.timer = 1.2;
   if (st.floor === 2 && !st.said.has("blackout")) { st.blackout = 1.8; sfx.blackout(); say("blackout"); }
 }
@@ -647,9 +651,9 @@ function drawPanel() {
     ctx.font = `16px ${MONO}`; ctx.fillStyle = RED; ctx.fillText("// the house writes", x, 42);
     fitFont(hn.code, w - 10, 24); ctx.fillStyle = RED; ctx.fillText(hn.code.slice(0, n) + (blink ? "_" : ""), x, 68);
   } else {
-    ctx.font = `16px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText("// it thinks", x, 42);
-    const th = st.thought.t < 0.25 ? glitchText(st.thought.text, 0.7) : st.thought.text;
-    fitFont(th, w, 24); ctx.fillStyle = RED; ctx.fillText(th, x, 68);
+    // between its moves: the house's last move, faded
+    ctx.font = `16px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText("// the house", x, 42);
+    if (st.lastHouse) { fitFont(st.lastHouse, w, 22); ctx.fillStyle = "rgba(255,90,78,0.35)"; ctx.fillText(st.lastHouse, x, 68); }
   }
   // your room
   const room = byId(st.g, st.player.id);
@@ -665,17 +669,6 @@ function drawPanel() {
     const rs = codeLine(parts, x, y, size, { click: !spent, hot, spent }); if (!spent) for (const r of rs) st.wordRects.push({ ...r, li });
     y += room.lines.length > 3 ? 33 : 38;
   });
-  if (st.writeBack) {
-    ctx.font = `20px ${MONO}`; ctx.fillStyle = `rgba(255,90,78,${Math.min(1, 2.2 - st.writeBack.t)})`;
-    ctx.fillText(glitchText("house.watch(you);", Math.max(0, 0.4 - st.writeBack.t)), x, y - 8);
-  }
-  // floor 3, after the flip: the house writes a line of its own, then thinks better of it
-  if (st.typed && st.typed.t > 0 && st.typed.t < 6.5 && !st.writeBack) {
-    const full = "you.trapped = true;", note = "  // not yet", k = st.typed.t;
-    const txt = k < 2 ? full.slice(0, Math.floor(k * 11)) : k < 3.2 ? full : full + note.slice(0, Math.floor((k - 3.2) * 14));
-    ctx.font = `20px ${MONO}`; ctx.fillStyle = `rgba(255,90,78,${Math.min(1, 6.5 - k)})`;
-    ctx.fillText(txt + (Math.sin(st.t * 10) > 0 ? "_" : ""), x, y - 8);
-  }
   y += 16;
   // what the hovered word does, in plain words
   // what the pointed-at word does, in plain words; or, before your first move, what this floor is about
@@ -696,9 +689,6 @@ function drawPanel() {
     let yy = sep + 46; for (const c of hv.lines) { const parts = lineParts(hv, c, false); codeLine(parts, x, yy, fitFont(flat(parts), w, 22), { dim: true }); yy += 23; }
     ctx.font = `italic 15px ${SERIF}`; ctx.fillStyle = DIM;
     ctx.fillText(reach(st.g, room.id).has(hv.id) ? "Click the room to walk there." : "No way there right now.", x, yy);
-  } else if (st.pageShow && !hw) {
-    ctx.font = `16px ${MONO}`; ctx.fillStyle = "#e8dcc0"; ctx.fillText(`// a torn page (${st.pages} of 3)`, x, sep + 22);
-    ctx.font = `italic 16px ${SERIF}`; ctx.fillStyle = `rgba(232,220,192,${Math.min(1, 10 - st.pageShow.t)})`; wrap(PAGES[st.pageShow.n], x, sep + 48, w, 19);
   } else if (st.hint && !hw) {
     ctx.font = `italic 16px ${SERIF}`; ctx.fillStyle = YEL; wrap(st.hint.text, x, sep + 24, w, 19);
   } else if (!hw) {
@@ -762,6 +752,7 @@ function drawEnd() {
     }
     ctx.globalAlpha = 1; return;
   }
+  if (st.page.got && st.floor === FLOORS) { ctx.globalAlpha = clamp(k, 0, 1) * 0.85; centerText(`a torn page (${st.pages} of 3)`, 96, `18px ${MONO}`, "#e8dcc0"); centerWrap(PAGES[FLOORS], 128, 640, 26, `italic 21px ${SERIF}`, "#e8dcc0"); ctx.globalAlpha = 1; }
   const line = ENDING.line, n = Math.floor(clamp((k - 1) * 18, 0, line.length));
   if (k > 1) centerText(line.slice(0, n), VH / 2 - 60, `26px ${MONO}`, n < line.length ? INK : RED);
   if (k > 4.4) {
@@ -820,6 +811,11 @@ function endStats(k, y1, y2) {
   if (k > 0) centerText(`3 floors in ${st.total.moves} moves (the house's best: ${st.total.par}), ${st.grabs} grab${st.grabs === 1 ? "" : "s"}, ${st.total.house || 0} move${st.total.house === 1 ? "" : "s"} by the house, ${st.pages} of 3 pages.`, y1, `18px ${MONO}`, INK);
   if (k > 1) centerText(st.ending === "free" ? "Click to build a new house." : "Click to try again. It's waiting.", y2, `18px ${MONO}`, DIM);
 }
+function centerWrap(text, y, maxW, lh, font, color) {
+  ctx.font = font; const words = text.split(" "), lines = []; let line = "";
+  for (const w of words) { const t = line ? line + " " + w : w; if (ctx.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t; }
+  if (line) lines.push(line); lines.forEach((l, i) => centerText(l, y + i * lh, font, color));
+}
 function centerText(text, y, font, color) { ctx.font = font; ctx.fillStyle = color; ctx.textAlign = "center"; ctx.fillText(text, VW / 2, y); ctx.textAlign = "left"; }
 function drawScenes() {
   if (st.scene === "title") {
@@ -830,7 +826,7 @@ function drawScenes() {
     centerText(back === "free" ? "Nobody home. Or so it says." : back === "keep" ? "Welcome back. It kept your room just as you left it." : "You wrote this house. It never let you leave.", 248, `italic 20px ${SERIF}`, back ? RED : DIM);
     centerText("Mouse only, three floors. Click a room to walk there.", 318, `22px ${SERIF}`, INK);
     centerText("The house's code is on the right. Every yellow word changes the house.", 348, `22px ${SERIF}`, INK);
-    centerText("Something is asleep downstairs. Shut it in a room, and it has to claw its way out.", 378, `22px ${SERIF}`, INK);
+    centerText("Then the house changes something back. Watch for its move in red.", 378, `22px ${SERIF}`, INK);
     centerText("Click to begin", 450, `30px ${MONO}`, Math.sin(st.t * 3) > -0.3 ? YEL : DIM);
   } else if (st.scene === "caught") {
     const k = st.caughtT;
@@ -840,14 +836,17 @@ function drawScenes() {
   } else if (st.scene === "floor") {
     const k = st.endT; ctx.fillStyle = `rgba(0,0,0,${Math.min(0.92, k * 1.5)})`; ctx.fillRect(0, 0, VW, VH);
     if (k > 0.4) {
-      centerText(commitText(st.floor + 1, (k - 0.4) * 30), 150, `20px ${MONO}`, DIM);
-      centerText(`Floor ${st.floor} of ${FLOORS}: out.`, 220, `44px ${MONO}`, INK);
+      centerText(`Floor ${st.floor} of ${FLOORS}: out.`, 120, `44px ${MONO}`, INK);
       const best = st.moves <= st.h.par;
-      centerText(`You used ${st.moves} move${st.moves === 1 ? "" : "s"}. The house's best: ${st.h.par}.`, 276, `24px ${MONO}`, best ? GRN : INK);
-      if (best) centerText("You matched the house.", 306, `italic 20px ${SERIF}`, GRN);
-      centerText(`The front door opens onto stairs going down. Floor ${st.floor + 1} needs ${st.floor + 1} moves, and it's faster down there.`, 360, `italic 19px ${SERIF}`, DIM);
-      const nw = NEW_WORD[st.floor + 1]; if (nw) centerText(`New word: ${nw.code}`, 396, `24px ${MONO}`, YEL);
-      if (k > 1.2) centerText("Click to go down", 440, `28px ${MONO}`, Math.sin(st.t * 3) > -0.3 ? YEL : DIM);
+      centerText(`You used ${st.moves} move${st.moves === 1 ? "" : "s"}. The house's best: ${st.h.par}.${best ? " You matched it." : ""}`, 164, `22px ${MONO}`, best ? GRN : INK);
+      // the page you found on this floor, read now, between floors, not while it's hunting you
+      if (st.page.got) { centerText(`a torn page (${st.pages} of 3)`, 230, `18px ${MONO}`, "#e8dcc0"); centerWrap(PAGES[st.floor], 262, 620, 26, `italic 21px ${SERIF}`, "#e8dcc0"); }
+      else centerText("You didn't find this floor's torn page.", 246, `italic 19px ${SERIF}`, DIM);
+      centerText(commitText(st.floor + 1, (k - 0.4) * 30), 352, `18px ${MONO}`, DIM);
+      const nw = NEW_WORD[st.floor + 1];
+      centerText(st.floor === 1 ? "Next floor: the shadow wakes up." : "Next floor: the last one.", 396, `22px ${SERIF}`, INK);
+      if (nw) centerText(`New word: ${nw.code}`, 428, `24px ${MONO}`, YEL);
+      if (k > 1.2) centerText("Click to go down", 478, `28px ${MONO}`, Math.sin(st.t * 3) > -0.3 ? YEL : DIM);
     }
   } else if (st.scene === "end") drawEnd();
 }

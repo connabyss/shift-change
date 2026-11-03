@@ -165,3 +165,27 @@ test("the house plays back after your move, and the last lock starts the finale:
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });
+
+// CH: "A LOT going on" from floor 1. Floor 1 is just you and the house: the shadow sleeps through it, and the only
+// words during play are the house's own moves (pages are read between floors).
+test("floor 1 is calm: the shadow never wakes, and finding a page doesn't put text in the panel", { skip }, async () => {
+  const server = await serve(), browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    await page.goto(`http://127.0.0.1:${server.address().port}/?seed=4242`);
+    await page.waitForFunction(() => window.__dh);
+    await page.evaluate(() => window.__dh.begin());
+    await page.evaluate(() => { const D = window.__dh, st = D.st(), r = D.byId(st.g, st.player.id); D.edit(r.lines.findIndex((l) => l.kind === "row"), 1); st.sinceStart = 60; });
+    await page.waitForTimeout(1500);
+    assert.equal(await page.evaluate(() => window.__dh.st().shadow.mode), "sleep");
+    await page.evaluate(() => { const st = window.__dh.st(); st.player.id = st.page.id; });
+    await page.waitForTimeout(200);
+    const st = await page.evaluate(() => { const s = window.__dh.st(); return { got: s.page.got, voice: s.voice && s.voice.text }; });
+    assert.equal(st.got, true);
+    assert.notEqual(st.voice, "That's your handwriting.");
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); server.close(); }
+});
