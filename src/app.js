@@ -240,10 +240,11 @@ function finaleUpdate(dt) {
     opts.push({ y, dir, score: open + steps(path(st.g, st.shadow.id, me)) - steps(path(g2, st.shadow.id, me)) + Math.random() });
   }
   opts.sort((a, b) => b.score - a.score); const o = opts[0];
-  if (!o || (st.finalePath && o.score < 10)) return; // never take away the last way out
+  if (!o) return;
   settle(st.player); settle(st.shadow); st.player.pending = null;
   const row = st.g[o.y]; st.g[o.y] = row.map((_, x) => row[(x - o.dir + W * 2) % W]);
   st.anim = { kind: "row", i: o.y, dir: o.dir, t: 0 }; sfx.slide(); dustBurst(st.anim); st.shake = 0.7;
+  if (!path(st.g, me, doorRoom())) carve(); // every slide would cut you off: it slides anyway, and opens a new way
   if (f.n++ % 2 === 0) sayLine(FINALE.lines[(f.n / 2 | 0) % FINALE.lines.length]);
 }
 

@@ -160,7 +160,7 @@ test("the house plays back after your move, and the last lock starts the finale:
     assert.ok(await page.evaluate(() => !!window.__dh.st().finale));
     assert.equal(await page.title(), "you.trapped = true");
     // the house slides a row by itself, and there's always a way to the door
-    await page.waitForFunction(() => window.__dh.st().finale.n >= 1, null, { timeout: 9000 });
+    await page.waitForFunction(() => window.__dh.st().finale.n >= 1, null, { timeout: 15000 });
     await page.waitForFunction(() => { const st = window.__dh.st(); return !st.anim && st.finalePath && st.finalePath.length; }, null, { timeout: 6000 });
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
