@@ -2,7 +2,7 @@
 // Nothing plays until init() runs from the player's first click (browsers block sound before that).
 // Ambience: wind, rain, a low organ drone and a music box that plays a slow, wrong little tune.
 
-let AC = null, out = null, verb = null, muted = false, boxT = 2, boxStep = 0, whisperT = 3, beatT = 0;
+let AC = null, out = null, verb = null, amb = null, muted = false, boxT = 2, boxStep = 0, whisperT = 3, beatT = 0;
 try { muted = localStorage.getItem("shift-muted") === "1"; } catch { /* no storage: sound on */ }
 
 export function init() {
@@ -43,13 +43,15 @@ function ambience() {
   const lfo2 = AC.createOscillator(), lg2 = AC.createGain(); lfo2.frequency.value = 0.11; lg2.gain.value = 160;
   lfo2.connect(lg2); lg2.connect(wind.f.frequency); lfo2.start();
   // rain on the roof
-  loopNoise("highpass", 2600, 0.028);
+  const rain = loopNoise("highpass", 2600, 0.028);
   // a low organ: A minor, through a dark filter
   const lp = AC.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 520; lp.connect(out);
+  const notes = [];
   for (const [f, v] of [[55, 0.05], [110.4, 0.02], [130.8, 0.014], [164.8, 0.012]]) {
     const o = AC.createOscillator(), g = AC.createGain(); o.type = "sawtooth"; o.frequency.value = f; g.gain.value = v;
-    o.connect(g); g.connect(lp); o.start();
+    o.connect(g); g.connect(lp); o.start(); notes.push(o);
   }
+  amb = { rain, wind, notes };
 }
 
 function tone(type, f1, f2, dur, vol, delay = 0, toVerb = false) {
@@ -87,11 +89,30 @@ export function whisper() {
   for (let i = 0; i < 3; i++) { const f = 900 + Math.random() * 1600; burst(0.18 + Math.random() * 0.2, 0.05, "bandpass", f, f * 0.8, i * 0.17, 9); }
 }
 
+// the house speaks: a low murmur under the words
+export function voice() { tone("sine", 92, 70, 1.1, 0.12, 0, true); burst(0.9, 0.05, "bandpass", 420, 260, 0, 6); }
+export function page() { burst(0.35, 0.12, "highpass", 2400, 4000); tone("sine", 1046, 1046, 0.6, 0.04, 0.05, true); }
+// blackout: every lamp dies at once
+export function blackout() { tone("square", 1800, 900, 0.05, 0.08); tone("sine", 120, 60, 0.4, 0.2); thunder(0.25); }
+let ended = false;
+// Endings. Free: the rain stops, the wind drops, and the organ's minor chord turns major. Keep: it just goes on.
+export function endingFree() {
+  ended = true; if (!AC || !amb) return; const t = AC.currentTime;
+  amb.rain.g.gain.setTargetAtTime(0, t + 1, 1.5); amb.wind.g.gain.setTargetAtTime(0.012, t + 1, 2);
+  amb.notes[2].frequency.setTargetAtTime(138.6, t + 1.5, 0.6); // C to C#: A minor becomes A major
+  [440, 554.4, 659.3, 880].forEach((f, i) => tone("sine", f, f, 2.2, 0.05, 1.8 + i * 0.45, true));
+}
+export function endingKeep() { if (!AC) return; doorShut(); tone("sine", 55, 41, 3, 0.3, 0.4); whisper(); }
+export function reset() {
+  ended = false; if (!AC || !amb) return; const t = AC.currentTime;
+  amb.rain.g.gain.setTargetAtTime(0.028, t, 0.5); amb.wind.g.gain.setTargetAtTime(0.05, t, 0.5); amb.notes[2].frequency.setTargetAtTime(130.8, t, 0.3);
+}
+
 // A music box, slightly out of tune, slower when the shadow is far, silent when it's on you.
 const TUNE = [880, 659.3, 523.3, 659.3, 493.9, 659.3, 440, 0, 523.3, 493.9, 440, 415.3, 440, 0, 0, 0];
 // near: rooms between you and the shadow (0 = same room; Infinity = asleep or no way)
 export function update(dt, near) {
-  if (!AC || muted) return;
+  if (!AC || muted || ended) return;
   boxT -= dt;
   if (boxT <= 0) {
     const f = TUNE[boxStep++ % TUNE.length];

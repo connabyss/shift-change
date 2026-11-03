@@ -25,6 +25,11 @@ afterwards light up green), then click it. `M` turns the sound off and on.
 - **You can't lose.** If it catches you, it drags you back to your first room. What you changed stays changed, and it
   gets a little slower each time.
 
+- **The story.** The house talks back now and then, in a line typed under it. Each floor starts with a note from its
+  commit log, and each floor hides one torn page in your handwriting, in a room you can reach on the way out. Find all
+  three and the last line of the game becomes a word you can change: `house.keep(shadow|nobody)`. All of the story's
+  words are in `src/story.js`.
+
 Everything you see and hear is drawn and played by code: no image or sound files. Rain, wind, thunder, a music box
 that plays a slow, wrong little tune, and whispers when it's in the next room. Headphones help.
 
