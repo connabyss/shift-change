@@ -455,6 +455,8 @@ function drawRoom(room, cx, cy, o) {
   // the lock
   if (room.lines.some((l) => l.kind === "lock")) {
     const lx = bx + bw * 0.7, ly = by + bh * 0.42, col = st.unlocked ? GRN : RED;
+    glows.push(() => { ctx.save(); ctx.shadowColor = col; ctx.shadowBlur = 16 + 6 * Math.sin(st.t * 4); ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(lx, ly - 4 - (st.unlocked ? 5 : 0), 6, Math.PI, 0); ctx.stroke(); ctx.fillRect(lx - 8, ly - 3, 16, 12); ctx.restore(); });
     ctx.save(); ctx.shadowColor = col; ctx.shadowBlur = 12 + 6 * Math.sin(st.t * 4); ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 2.5;
     ctx.beginPath(); ctx.arc(lx, ly - 4 - (st.unlocked ? 5 : 0), 6, Math.PI, 0); ctx.stroke(); ctx.fillRect(lx - 8, ly - 3, 16, 12); ctx.restore();
   }
@@ -462,6 +464,8 @@ function drawRoom(room, cx, cy, o) {
   // a torn page on the floor, glowing faintly
   if (st.page.id === room.id && !st.page.got) {
     const [px, py] = G.fl(0.3, 0.25), k = 0.6 + 0.4 * Math.sin(st.t * 3 + 1);
+    glows.push(() => { ctx.save(); ctx.globalCompositeOperation = "lighter"; const pg2 = ctx.createRadialGradient(px, py, 1, px, py, 22);
+      pg2.addColorStop(0, `rgba(255,240,200,${0.5 * k})`); pg2.addColorStop(1, "rgba(255,240,200,0)"); ctx.fillStyle = pg2; ctx.fillRect(px - 24, py - 24, 48, 48); ctx.restore(); });
     ctx.save(); ctx.globalCompositeOperation = "lighter"; const pg = ctx.createRadialGradient(px, py, 1, px, py, 26);
     pg.addColorStop(0, `rgba(255,240,200,${0.35 * k})`); pg.addColorStop(1, "rgba(255,240,200,0)"); ctx.fillStyle = pg; ctx.fillRect(px - 28, py - 28, 56, 56); ctx.restore();
     ctx.save(); ctx.translate(px, py); ctx.rotate(-0.25); ctx.fillStyle = shade([232, 220, 192], Math.max(L, 0.6));
@@ -489,8 +493,17 @@ function drawRoom(room, cx, cy, o) {
 
 const drawPlayer = (x, y) => art.player(ctx, x, y, st.t, !!st.player.way);
 function drawShadow(x, y) {
-  const sh = st.shadow, pp = walkerPos(st.player);
-  art.shadow(ctx, x, y, st.t, { asleep: sh.mode === "sleep", seep: sh.seep, near: nearness(), look: clamp((pp[0] - x) / 60, -1, 1) });
+  const sh = st.shadow, pp = walkerPos(st.player), end = st.scene === "end";
+  // in the dark you only see it when it is in your light, or when lightning shows it
+  const seen = end ? 1 : Math.max(clamp(1.5 - Math.hypot(pp[0] - x, pp[1] - y) / 110, 0, 1), flash() * 0.9);
+  if (seen > 0) { ctx.save(); ctx.globalAlpha = seen; art.shadow(ctx, x, y, st.t, { asleep: sh.mode === "sleep", seep: sh.seep, near: nearness(), look: clamp((pp[0] - x) / 60, -1, 1) }); ctx.restore(); }
+  if (end || sh.seep) return;
+  // two red eyes in the dark: shut while it sleeps, wider the closer it gets
+  const ey = y - 44 + Math.sin(st.t * 1.4) * 2, lx = clamp((pp[0] - x) / 60, -1, 1) * 1.5, blink = Math.sin(st.t * 0.9 + x * 0.01) > 0.97;
+  ctx.save(); ctx.shadowColor = "#ff2a1e";
+  if (sh.mode === "sleep") { ctx.globalAlpha = 0.35 * (1 - seen); ctx.fillStyle = "#ff3b2e"; ctx.fillRect(x - 6 + lx, ey + 1, 4, 1); ctx.fillRect(x + 2 + lx, ey + 1, 4, 1); }
+  else if (!blink) { const n = nearness(), r = n <= 1 ? 4 : 3; ctx.shadowBlur = n <= 1 ? 16 : 10; ctx.fillStyle = "#ff3b2e"; ctx.fillRect(x - 6 + lx, ey, r, r - 1); ctx.fillRect(x + 2.5 + lx, ey, r, r - 1); }
+  ctx.restore();
 }
 // how many rooms the shadow is from you along open ways (Infinity: asleep, or no way through)
 function nearness() {
@@ -516,6 +529,8 @@ function chalkArrow(b, color) {
 }
 function drawHouse() {
   art.roof(ctx, { x: HX, y: HY, w: HW, h: HH }, st.t, HX + HW + 8);
+  if (st.scene !== "end") { ctx.save(); ctx.fillStyle = `rgba(2,5,16,${0.8 - 0.5 * flash()})`; ctx.beginPath(); ctx.moveTo(HX - 22, HY); ctx.lineTo(HCX, HY - 62); ctx.lineTo(HX + HW + 22, HY); ctx.closePath(); ctx.fill();
+    ctx.fillRect(HX + HW * 0.72 - 4, HY - 64, 32, 64); ctx.restore(); }
   ctx.save(); ctx.beginPath(); ctx.rect(HX, HY, HW, HH); ctx.clip();
   const pv = st.preview;
   // the flip: the house turns over (drawn as the new house, squashed from upside down to upright)
@@ -528,6 +543,7 @@ function drawHouse() {
     if (pv && pv.roomId === room.id) { if (pv.door) o.door = pv.door; if (pv.light) o.lightPreview = 0.5 + 0.5 * Math.sin(st.t * 5); }
     for (const [cx, cy] of drawPositions({ x, y })) drawRoom(room, cx, cy, o);
   }
+  lampLight();
   // reach outlines
   if (pv && pv.reach) for (const id of pv.reach) { const p = find(pv.g, id); outlineSlot(p.x, p.y, st.h.lockIds.includes(id) && !st.unlocked ? RED : GRN, true); }
   if (st.reachFlash > 0) { ctx.save(); ctx.globalAlpha = Math.min(1, st.reachFlash); for (const id of reach(st.g, st.player.id)) { const p = find(st.g, id); outlineSlot(p.x, p.y, "rgba(240,230,210,0.7)", true); } ctx.restore(); }
@@ -873,6 +889,53 @@ function drawWorld() {
   drawHouse(); ctx.restore();
   const f = flash(); if (f > 0) { ctx.fillStyle = `rgba(210,220,255,${f * 0.22})`; ctx.fillRect(0, 0, PX - 14, VH); }
   drawPanel(); scanlines(); drawOverlay();
+}
+// ---------- lamp light: the house is dark, you are the light ----------
+// Your lamp is the only warm thing. It changes colour as the house takes you: amber, then cold, then red.
+// The dark hides the rooms but not the puzzle: room frames, locks and the torn page show through, and
+// lightning lights the whole house for a moment. When it is close, your lamp gutters.
+const HOT = [null, [255, 170, 80], [150, 205, 255], [255, 64, 52]];
+let lampCv = null; const glows = [];
+function lampFear() { const n = nearness(); return n === Infinity ? 0 : n <= 0 ? 1 : n === 1 ? 0.75 : n === 2 ? 0.4 : 0.12; }
+function lampFlicker(fear) {
+  const t = st.t, base = 1 + Math.sin(t * 11) * 0.02 + Math.sin(t * 3.7) * 0.03;
+  // it is near: the flame stutters and nearly goes out
+  const gutter = fear > 0.3 && Math.sin(t * 23) * Math.sin(t * 7.3) > 0.55 ? 0.55 : 1;
+  return base * gutter * (1 - 0.18 * fear);
+}
+function lampLight() {
+  if (st.scene === "end") { glows.length = 0; return; }
+  const hot = HOT[st.floor] || HOT[1], L = PX - 14, fear = lampFear(), fl = lampFlicker(fear), bolt = flash();
+  const pp = walkerPos(st.player), px = pp[0], py = pp[1] - 32;
+  // 1. drain the colour out of the house
+  ctx.save(); ctx.globalCompositeOperation = "saturation"; ctx.fillStyle = "#808080"; ctx.globalAlpha = 0.7; ctx.fillRect(0, 0, L, VH); ctx.restore();
+  // 2. the dark, with a hole where your lamp is (lightning thins it for a moment)
+  if (!lampCv) { lampCv = document.createElement("canvas"); lampCv.width = VW * DPR; lampCv.height = VH * DPR; }
+  const c = lampCv.getContext("2d"); c.setTransform(DPR, 0, 0, DPR, 0, 0); c.clearRect(0, 0, VW, VH);
+  c.globalCompositeOperation = "source-over"; c.fillStyle = `rgba(2,5,16,${0.965 - 0.55 * bolt})`; c.fillRect(0, 0, L, VH);
+  c.globalCompositeOperation = "destination-out";
+  const R = 128 * fl;
+  let g = c.createRadialGradient(px, py, 6, px, py, R); g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(0.45, "rgba(0,0,0,0.9)"); g.addColorStop(1, "rgba(0,0,0,0)");
+  c.fillStyle = g; c.fillRect(0, 0, L, VH);
+  // the rooms you can walk to right now stay dimly visible, so you can see where to go
+  const near = st.scene === "play" ? [...reach(st.g, st.player.id)] : [];
+  c.fillStyle = "rgba(0,0,0,0.5)";
+  for (const id of near) { if (id === st.player.id) continue; const p = find(st.g, id); for (const [x, y] of drawPositions(p)) c.fillRect(x + 2, y + 2, CW - 4, CH - 4); }
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(lampCv, 0, 0); ctx.restore();
+  // 3. the flame's colour on everything it reaches
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  g = ctx.createRadialGradient(px, py, 0, px, py, 105 * fl); g.addColorStop(0, `rgba(${hot},${0.55 * fl})`); g.addColorStop(1, `rgba(${hot},0)`);
+  ctx.fillStyle = g; ctx.fillRect(px - 120, py - 120, 240, 240); ctx.restore();
+  // 4. the room frames, barely there, so the puzzle still reads
+  ctx.save(); ctx.strokeStyle = `rgba(110,150,240,${0.13 + 0.25 * bolt})`; ctx.lineWidth = 1.5;
+  for (let y = 0; y < st.g.length; y++) for (let x = 0; x < st.g[y].length; x++) ctx.strokeRect(HX + x * CW + 3, HY + y * CH + 3, CW - 6, CH - 6);
+  ctx.restore();
+  ctx.save(); ctx.strokeStyle = `rgba(${hot},0.4)`; ctx.lineWidth = 1.5;
+  for (const id of near) { if (id === st.player.id) continue; const p = find(st.g, id); for (const [x, y] of drawPositions(p)) ctx.strokeRect(x + 3, y + 3, CW - 6, CH - 6); }
+  ctx.restore();
+  for (const g2 of glows) g2(); glows.length = 0;
+  // 5. it is near: the dark closes in at the edges
+  if (fear > 0.3) { ctx.save(); const v = ctx.createRadialGradient(px, py, 60, px, py, 520); v.addColorStop(0, "rgba(40,0,0,0)"); v.addColorStop(1, `rgba(40,0,0,${0.5 * fear})`); ctx.fillStyle = v; ctx.fillRect(0, 0, L, VH); ctx.restore(); }
 }
 // something enormous stands behind the house: only the lightning shows it
 function drawWatcher(f) {
