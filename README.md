@@ -39,6 +39,12 @@ afterwards light up green), then click it. `M` turns the sound off and on.
 - **You can't lose.** If it catches you, it drags you back to your first room. What you changed stays changed, and it
   gets a little slower each time.
 
+- **After the ending.** The credits roll, and the shadow edits its own line until it's bigger than yours. Then you're
+  left on the house's desktop: open `notes.txt` (the torn pages you found), click the Bin, or click `house.js` to
+  build a new house.
+- **It has a sense of humour.** Try `Ctrl+Z` (`Cmd+Z` on a Mac) three times. Hold `Shift`. Ask for a lot of hints.
+  Shut the shadow in. Leave and come back later: it counts. Open the browser's developer console. Nothing is saved
+  except the time you left and which house you were in, only in your own browser.
 - **The story.** The house talks back now and then, in a line typed under it. Each floor starts with a note from its
   commit log, and each floor hides one torn page in your handwriting, in a room you can reach on the way out. Find all
   three and the last line of the game becomes a word you can change: `house.keep(shadow|nobody)`. All of the story's

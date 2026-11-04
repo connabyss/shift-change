@@ -15,7 +15,7 @@ function poly(ctx, pts, fill) {
 
 // ---------- outside ----------
 // box: the house's frame {x, y, w, h}; flash: lightning, 0..1; bolt: x of the last bolt
-export function night(ctx, vw, vh, box, t, flash, bolt) {
+export function night(ctx, vw, vh, box, t, flash, bolt, noMoon = false) {
   const sky = ctx.createLinearGradient(0, 0, 0, vh);
   sky.addColorStop(0, "#0c0f22"); sky.addColorStop(0.5, "#08080f"); sky.addColorStop(1, "#050407");
   ctx.fillStyle = sky; ctx.fillRect(0, 0, vw, vh);
@@ -23,8 +23,8 @@ export function night(ctx, vw, vh, box, t, flash, bolt) {
     const x = hash(i) * vw, y = hash(i + 99) * 140, a = 0.25 + 0.5 * Math.abs(Math.sin(t * (0.5 + hash(i + 7)) + i));
     ctx.fillStyle = `rgba(230,230,255,${a * 0.6})`; ctx.fillRect(x, y, 1.2, 1.2);
   }
-  // moon, behind drifting cloud
-  const mx = box.x + 150, my = 30;
+  // moon, behind drifting cloud (unless someone pressed undo on it)
+  const mx = box.x + 150, my = noMoon ? -999 : 30;
   const glow = ctx.createRadialGradient(mx, my, 10, mx, my, 90); glow.addColorStop(0, "rgba(220,225,255,0.25)"); glow.addColorStop(1, "rgba(220,225,255,0)");
   ctx.fillStyle = glow; ctx.fillRect(mx - 90, my - 90, 180, 180);
   ctx.fillStyle = "#e8e3cf"; ctx.beginPath(); ctx.arc(mx, my, 20, 0, 7); ctx.fill();
@@ -43,11 +43,11 @@ export function night(ctx, vw, vh, box, t, flash, bolt) {
     }
   }
 }
-export function rain(ctx, vw, vh, t) {
+export function rain(ctx, vw, vh, t, up = false) {
   ctx.strokeStyle = "rgba(170,185,230,0.2)"; ctx.lineWidth = 1; ctx.beginPath();
   for (let i = 0; i < 110; i++) {
     const sp = 380 + hash(i) * 200, x = (hash(i + 50) * (vw + 100) + t * 60) % (vw + 100) - 50, y = (hash(i + 20) * vh + t * sp) % (vh + 40) - 20;
-    ctx.moveTo(x, y); ctx.lineTo(x - 3, y + 11);
+    if (up) { ctx.moveTo(x, vh - y); ctx.lineTo(x + 3, vh - y - 11); } else { ctx.moveTo(x, y); ctx.lineTo(x - 3, y + 11); }
   }
   ctx.stroke();
 }

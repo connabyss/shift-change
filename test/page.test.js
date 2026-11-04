@@ -230,3 +230,117 @@ test("the finale's screen break: the house tears out, the chase waits for it, a 
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });
+
+async function open(path = "/") {
+  const server = await serve(), browser = await chromium.launch();
+  const context = await browser.newContext({ viewport: { width: 960, height: 600 } });
+  const page = await context.newPage(), errors = [], logs = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => logs.push(m.text()));
+  await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  const url = `http://127.0.0.1:${server.address().port}`;
+  await page.goto(url + path); await page.waitForFunction(() => window.__dh);
+  const at = async (x, y) => page.evaluate(([x, y]) => { const r = document.getElementById("game").getBoundingClientRect(); return [r.left + x * r.width / 960, r.top + y * r.height / 600]; }, [x, y]);
+  const close = async () => { await browser.close(); server.close(); };
+  return { page, errors, logs, at, close, url };
+}
+
+test("the jokes: Ctrl+Z undoes the moon, then gravity, then your undo; hints 5 and 7; the shadow's note; the console", { skip }, async () => {
+  const { page, errors, logs, close } = await open("/?seed=4242");
+  try {
+    assert.ok(logs.some((l) => l.includes("I can see you reading this.")), "a line for whoever opens the console");
+    await page.evaluate(() => window.__dh.begin()); await page.waitForTimeout(100);
+    const voice = () => page.evaluate(() => window.__dh.st().voice && window.__dh.st().voice.text);
+    await page.keyboard.press("Control+z"); assert.equal(await page.evaluate(() => window.__dh.undone()), 1); assert.equal(await voice(), "Undo: the moon.");
+    await page.keyboard.press("Meta+z"); assert.equal(await page.evaluate(() => window.__dh.undone()), 2); assert.equal(await voice(), "Undo: gravity.");
+    await page.keyboard.press("Control+z"); assert.equal(await page.evaluate(() => window.__dh.undone()), 0); assert.equal(await voice(), "I undid your undo. You're welcome.");
+    // hints: the fifth says leave, the seventh draws a door, the rest are real
+    const hints = await page.evaluate(() => { const out = []; for (let i = 0; i < 8; i++) { window.__dh.hint(); out.push(window.__dh.st().hint.text); } return { out, crayon: !!window.__dh.st().crayon }; });
+    assert.equal(hints.out[4], "Hint: leave.");
+    assert.equal(hints.out[6], "Hint: I'm out of hints. Here's a drawing of a door.");
+    assert.match(hints.out[5], /^Hint: (click|walk|the way|a red|even)/);
+    assert.ok(hints.crayon, "the crayon door is drawn");
+    // shut the shadow in: it slides a note under the wall, once
+    await page.evaluate(() => { const D = window.__dh, st = D.st(); D.newGame(99, 2); D.begin(); });
+    await page.waitForTimeout(100);
+    const note = await page.evaluate(() => { const st = window.__dh.st(); window.__dh.trapped(true); const a = !!st.note; st.note = null; window.__dh.trapped(true); return [a, !!st.note]; });
+    assert.deepEqual(note, [true, false]);
+    await page.waitForTimeout(200);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("after the ending: the credits (the shadow edits its line), then the desktop: notes.txt, the Bin, house.js plays again", { skip }, async () => {
+  const { page, errors, at, close } = await open("/?seed=4242");
+  try {
+    await page.evaluate(() => { const st = window.__dh.st(); st.found = [1, 3]; st.pages = 2; st.scene = "end"; st.endT = 9; window.__dh.choose("keep"); st.endT2 = 20; });
+    await page.waitForTimeout(100);
+    await page.mouse.click(...(await at(480, 300)));
+    assert.equal(await page.evaluate(() => window.__dh.st().scene), "credits");
+    await page.evaluate(() => { window.__dh.st().credT = 8; }); await page.waitForTimeout(100);
+    await page.mouse.click(...(await at(480, 300)));
+    assert.equal(await page.evaluate(() => window.__dh.st().scene), "desk");
+    assert.equal(await page.title(), "Desktop");
+    const icon = async (name) => { const j = ["house.js", "you.js", "notes.txt", "shadow.js", "Bin"].indexOf(name); return at(26 + 25, 22 + j * 82 + 30); };
+    assert.equal(await page.evaluate(() => window.__dh.deskHit(51, 22 + 2 * 82 + 30)), "notes.txt");
+    await page.mouse.click(...(await icon("notes.txt")));
+    assert.equal(await page.evaluate(() => window.__dh.st().desk.open), "notes.txt");
+    await page.mouse.click(...(await icon("Bin")));
+    await page.waitForTimeout(500);
+    assert.ok(await page.evaluate(() => window.__dh.st().desk.bin > 0.2), "the Bin spills");
+    await page.mouse.click(...(await icon("house.js")));
+    assert.equal(await page.evaluate(() => window.__dh.st().scene), "title", "house.js builds a new house");
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("the house remembers: come back and it says how long you were gone, and the rows of the house you left slide", { skip }, async () => {
+  const { page, errors, close, url } = await open("/");
+  try {
+    assert.equal(await page.evaluate(() => window.__dh.goneFor(3 * 3600e3 + 5 * 60e3)), "3 hours, 5 minutes");
+    assert.equal(await page.evaluate(() => window.__dh.goneFor(1000)), "1 second");
+    assert.equal(await page.evaluate(() => window.__dh.goneFor(2 * 86400e3 + 3600e3)), "2 days, 1 hour");
+    // you left 2 hours ago (only the time and the house's seed are kept)
+    // (set as the next page loads: leaving this one saves a fresh time, as it should)
+    await page.addInitScript(() => { if (!sessionStorage.getItem("once")) { sessionStorage.setItem("once", "1"); localStorage.setItem("shift-left", JSON.stringify({ t: Date.now() - 2 * 3600e3 - 60e3, seed: 4242 })); } });
+    await page.goto(url + "/"); await page.waitForFunction(() => window.__dh);
+    assert.equal(await page.evaluate(() => window.__dh.awayLine()), "You left. I counted: 2 hours, 1 minute.");
+    const before = await page.evaluate(() => window.__dh.st().g.map((r) => r.map((c) => c.id).join()));
+    await page.waitForFunction(() => window.__dh.st().shuffle.done, null, { timeout: 10000 });
+    const after = await page.evaluate(() => window.__dh.st().g.map((r) => r.map((c) => c.id).join()));
+    assert.notDeepEqual(after, before, "the rooms shuffled while you were away");
+    // starting plays a fresh, solvable house, not the shuffled one
+    await page.keyboard.press("Enter");
+    const s = await page.evaluate(() => { const st = window.__dh.st(); return { scene: st.scene, decor: !!st.decor, line: window.__dh.awayLine() }; });
+    assert.deepEqual(s, { scene: "play", decor: false, line: null });
+    // leaving saves the time again
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await page.evaluate(() => dispatchEvent(new Event("pagehide")));
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("shift-left")));
+    assert.deepEqual(Object.keys(saved).sort(), ["seed", "t"], "only a time and a seed");
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("holding Shift slides the house over a room and snaps back; the puzzle doesn't change and clicks wait", { skip }, async () => {
+  const { page, errors, at, close } = await open("/?seed=4242");
+  try {
+    await page.evaluate(() => window.__dh.begin()); await page.waitForTimeout(100);
+    const grid = () => page.evaluate(() => JSON.stringify(window.__dh.st().g));
+    const g0 = await grid();
+    await page.keyboard.down("Shift");
+    await page.waitForFunction(() => window.__dh.shiftK() >= 1, null, { timeout: 4000 });
+    assert.equal(await grid(), g0, "only the drawing moves");
+    const wr = await page.evaluate(() => window.__dh.st().wordRects[0]);
+    await page.mouse.click(...(await at(wr.x + wr.w / 2, wr.y + wr.h / 2)));
+    assert.equal(await page.evaluate(() => window.__dh.st().moves), 0, "clicks wait while it's held over");
+    assert.ok(["Put me down.", "That tickles.", "I'm load-bearing, you know.", "Shift happens."].includes(await page.evaluate(() => window.__dh.st().voice.text)));
+    await page.keyboard.up("Shift");
+    await page.waitForFunction(() => window.__dh.shiftK() === 0, null, { timeout: 4000 });
+    assert.equal(await grid(), g0);
+    // a quick tap (like Sticky Keys presses) doesn't slide it
+    await page.keyboard.press("Shift"); await page.waitForTimeout(100);
+    assert.equal(await page.evaluate(() => window.__dh.shiftK()), 0);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
