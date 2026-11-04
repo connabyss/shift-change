@@ -120,7 +120,7 @@ function say(key) {
   if (!SPOKEN.has(key)) return;
   const v = VOICE[key], text = typeof v === "string" ? v : v.text;
   if (st.said.has(key) && !(v && v.again)) return;
-  st.said.add(key); st.voice = { text, t: 0 }; sfx.voice();
+  st.said.add(key); sayLine(text);
 }
 function lastEnding() { try { return localStorage.getItem("shift-ending"); } catch { return null; } }
 function float(x, y, text, color) { st.floats.push({ x, y, text, color, t: 0 }); }
@@ -218,10 +218,22 @@ function houseUpdate(dt) {
     const c = room.lines[m.li], wasOpen = c.kind === "door" && room[c.side === "west" ? "l" : "r"];
     st.lastHouse = houseCode(m); performEdit(m.id, m.li, m.dir, true); st.total.house = (st.total.house || 0) + 1;
     const lines = m.reuse ? HOUSE_LINES.reuse : c.kind === "door" ? HOUSE_LINES.door[wasOpen ? "shut" : "open"] : HOUSE_LINES[c.kind];
-    sayLine(pick(lines)); think(`house.${c.kind === "door" ? (wasOpen ? "shut" : "open") : "move"}(${room.name});`);
+    if (!st.voice && !jokeDue()) sayLine(pick(lines)); think(`house.${c.kind === "door" ? (wasOpen ? "shut" : "open") : "move"}(${room.name});`);
   }
 }
-function sayLine(text) { st.voice = { text, t: 0 }; sfx.voice(); }
+// One line at a time, each up long enough to read. Lines that come while one is showing wait their turn
+// (CH: "I don't want the jokes happening so fast that they're hard to catch"). The chase and a grab speak at once.
+function voiceLen(text) { return Math.max(4, 2.2 + text.length * 0.06); }
+function sayLine(text, now = !!st.finale || st.scene === "caught") {
+  st.voiceQ = st.voiceQ || [];
+  if (st.voice && !now) { if (st.voice.text !== text && !st.voiceQ.includes(text) && st.voiceQ.length < 2) st.voiceQ.push(text); return; }
+  if (now) st.voiceQ.length = 0;
+  st.voice = { text, t: 0, len: voiceLen(text) }; st.quiet = 0; sfx.voice();
+}
+// the screen has been free of house lines and jokes for a while: room for the next joke
+// the house's chatter after its own moves is optional: it stays quiet when a line is up or a floor joke is due
+function jokeDue() { return !st.gag && ((st.floor === 1 && st.sinceStart > 9) || (st.floor === 2 && st.sinceStart > 5)); }
+function quietFor(s) { return !st.voice && !(st.voiceQ || []).length && !st.sign && !st.sticker && st.quiet >= s; }
 
 // ---------- the finale ----------
 // The last front door is unlocked: the house stops taking turns and slides its own rows every few seconds while the
@@ -289,16 +301,16 @@ function finaleWatch() {
 // One absurd moment per floor, early, and on floor 1 a nudge so nobody sits stuck
 function gags() {
   if (st.finale) return;
-  if (st.floor === 1 && !st.gag && st.sinceStart > 12) { st.gag = true; st.shake = 0.9; dustBurst({ kind: "row", i: 0 }); dustBurst({ kind: "row", i: 2 }); sfx.breakOut(); sayLine(JOKES.sneeze); }
+  if (st.floor === 1 && !st.gag && st.sinceStart > 12 && quietFor(3)) { st.gag = true; st.shake = 0.9; dustBurst({ kind: "row", i: 0 }); dustBurst({ kind: "row", i: 2 }); sfx.breakOut(); sayLine(JOKES.sneeze); }
   // floor 1: lost, whether sitting still or clicking around? It points the way (and keeps doing it)
   if (st.floor === 1 && !st.unlocked) {
     const nz = st.nudge || (st.nudge = { at: 0, moves: 0, n: 0 }), since = st.sinceStart - nz.at, R = reach(st.g, st.player.id);
     const lost = !st.h.lockIds.some((l) => R.has(l));
-    if (lost && ((nz.n === 0 && st.sinceStart > 30 && st.moves === 0) || (nz.n === 0 && st.moves >= st.h.par + 4 && st.sinceStart > 10) || (nz.n > 0 && (since > 25 || (st.moves - nz.moves >= 4 && since > 8))))) {
+    if (lost && quietFor(4) && ((nz.n === 0 && st.sinceStart > 30 && st.moves === 0) || (nz.n === 0 && st.moves >= st.h.par + 4 && st.sinceStart > 10) || (nz.n > 0 && (since > 25 || (st.moves - nz.moves >= 4 && since > 8))))) {
       nz.at = st.sinceStart; nz.moves = st.moves; nz.n++; st.nudged = true; doHint(false); sayLine(JOKES.nudges[Math.min(nz.n, JOKES.nudges.length) - 1]);
     }
   }
-  if (st.floor === 2 && !st.gag && st.sinceStart > 8 && st.shadow.mode !== "sleep") { st.gag = true; st.sign = { t: 0 }; }
+  if (st.floor === 2 && !st.gag && st.sinceStart > 8 && st.shadow.mode !== "sleep" && quietFor(2.5)) { st.gag = true; st.sign = { t: 0 }; }
 }
 // house.hint(): the next word of the shortest way out
 function doHint(asked = true) {
@@ -321,18 +333,21 @@ function update(dt) {
   weather(dt);
   st.t += dt; st.thought.t += dt; st.glitch = Math.max(0, st.glitch - dt); st.shake = Math.max(0, st.shake - dt);
   st.reachFlash = Math.max(0, st.reachFlash - dt); st.blackout = Math.max(0, st.blackout - dt);
-  if (st.voice) { st.voice.t += dt; if (st.voice.t > 6) st.voice = null; }
+  st.quiet = (st.quiet || 0) + dt; st.voiceQ = st.voiceQ || [];
+  if (st.voice) { st.quiet = 0; st.voice.t += dt; if (st.voice.t > st.voice.len) st.voice = null; }
+  else if (st.voiceQ.length && st.quiet > 0.7) sayLine(st.voiceQ.shift());
   if (st.pageShow) { st.pageShow.t += dt; if (st.pageShow.t > 10) st.pageShow = null; }
   if (st.typed) st.typed.t += dt;
   if (st.faceBolt && st.bolt.t > 1.2) st.faceBolt = false;
   if (st.writeBack) { st.writeBack.t += dt; if (st.writeBack.t > 2.2) st.writeBack = null; }
   if (st.crayon && (st.crayon.t += dt) > 9) st.crayon = null;
   if (st.note && (st.note.t += dt) > 6) st.note = null;
-  if (st.sign && (st.sign.t += dt) > 4) st.sign = null;
-  if (st.sticker && (st.sticker.t += dt) > 5) st.sticker = null;
+  if (st.sign && (st.sign.t += dt) > 6) st.sign = null;
+  if (st.sticker && (st.sticker.t += dt) > 7) st.sticker = null;
   if (st.desk) { st.desk.t += dt; if (st.desk.bin != null) st.desk.bin += dt; }
   st.floats = st.floats.filter((f) => (f.t += dt) < 1.4);
-  st.dust = st.dust.filter((d) => { d.t += dt; d.x += d.vx * dt; d.y += d.vy * dt; d.vy += 40 * dt; return d.t < d.life; });
+  st.dust = st.dust.filter((d) => { d.t += dt; d.x += d.vx * dt; d.y += d.vy * dt; d.vy += (d.up ? -6 : 40) * dt; return d.t < d.life; });
+  gravity(dt);
   if (st.scene === "caught") { st.caughtT += dt; if (st.caughtT > 2.4) dragBack(); return; }
   if (st.scene === "desk") return;
   if (st.scene === "credits") { st.credT += dt; if (st.credT > CRED_LEN + 1.5) openDesk(); return; }
@@ -976,8 +991,29 @@ function drawSticky() { if (sticky) { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); te
 function deskClock() { const now = new Date(); TG.clock = [now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), now.toLocaleDateString()]; }
 function openDesk() { st.scene = "desk"; st.desk = { t: 0, open: null, bin: null }; setTitle("Desktop"); }
 // Ctrl+Z (Cmd+Z on a Mac): there's no undo in here, so it undoes the moon, then gravity, then your undo
-let undone = 0;
-function undo() { undone = (undone + 1) % 3; sfx.lights(undone === 0); if (st) sayLine(JOKES.undo[(undone + 2) % 3]); }
+// Each step holds for a moment before the next press counts, so you can see what it did.
+// Gravity: the house lifts off and bobs, loose things drift up out of the rooms, the rain falls up.
+// The third press drops it all back with a thump.
+let undone = 0, undoAt = -1e9, grav = 0, junk = [];
+const JUNK = ["#8a5a3a", "#c9b48a", "#6d7a8a", "#a33f3f", "#d9cfb8", "#4f6b4a"];
+function undo() {
+  const now = performance.now(); if (now - undoAt < 2200) return; undoAt = now;
+  undone = (undone + 1) % 3; sfx.lights(undone === 0);
+  if (!st) return;
+  sayLine(JOKES.undo[(undone + 2) % 3], true);
+  if (undone === 2) junk = Array.from({ length: 9 }, (_, i) => ({ x: HX + 30 + Math.random() * (HW - 60), y: HY + CH * (1 + (i % 3)) - 12, w: 8 + Math.random() * 14, h: 6 + Math.random() * 10, c: JUNK[i % JUNK.length], vy: -(14 + Math.random() * 16), vx: (Math.random() - 0.5) * 10, r: 0, vr: (Math.random() - 0.5) * 1.6, d: i * 0.25 }));
+  if (undone === 0) { junk = []; st.shake = 0.8; sfx.doorShut(); dustBurst({ kind: "row", i: 3 }); }
+}
+function gravity(dt) {
+  grav = undone === 2 ? Math.min(1, grav + dt / 1.2) : Math.max(0, grav - dt * 6);
+  for (const j of junk) { if ((j.d -= dt) > 0) continue; j.x += j.vx * dt; j.y += j.vy * dt; j.r += j.vr * dt; }
+  junk = junk.filter((j) => j.y > -40);
+  if (grav > 0.5 && Math.random() < dt * 14) st.dust.push({ x: HX + Math.random() * HW, y: HY + HH - Math.random() * HH, vx: (Math.random() - 0.5) * 8, vy: -20 - Math.random() * 20, up: true, t: 0, life: 2.5 });
+}
+function lift() { return grav <= 0 ? 0 : grav * grav * (22 + Math.sin(st.t * 1.7) * 8); }
+function drawJunk() {
+  for (const j of junk) { if (j.d > 0) continue; ctx.save(); ctx.translate(j.x, j.y - lift()); ctx.rotate(j.r); ctx.fillStyle = j.c; ctx.fillRect(-j.w / 2, -j.h / 2, j.w, j.h); ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.fillRect(-j.w / 2, j.h / 2 - 2, j.w, 2); ctx.restore(); }
+}
 // Shift five times: the house's own Sticky Keys box (src/tear.js). It pauses nothing and turns nothing on.
 let sticky = null, shifts = [];
 function stickyKey(e) {
@@ -1000,7 +1036,8 @@ function drawWorld() {
   if (dry < 1) { ctx.globalAlpha = 1 - dry; art.rain(ctx, VW, VH, st.t, undone >= 2); ctx.globalAlpha = 1; }
   ctx.save();
   if (st.shake > 0) ctx.translate((Math.random() - 0.5) * 12 * st.shake, (Math.random() - 0.5) * 12 * st.shake);
-  drawHouse(); ctx.restore();
+  const L = lift(); if (L) { ctx.translate(HCX, HY + HH); ctx.rotate(Math.sin(st.t * 1.1) * 0.012 * grav); ctx.translate(-HCX, -(HY + HH) - L); }
+  drawHouse(); ctx.restore(); if (junk.length) drawJunk();
   const f = flash(); if (f > 0) { ctx.fillStyle = `rgba(210,220,255,${f * 0.22})`; ctx.fillRect(0, 0, PX - 14, VH); }
   drawPanel(); scanlines(); drawOverlay();
   if (st.scene === "play") { if (st.crayon) drawCrayonDoor(st.crayon.t); if (st.note) drawNote(st.note.t); if (st.floorT < 4) drawYou(st.floorT); if (st.sign) drawSign(st.sign.t); if (st.sticker) drawSticker(st.sticker.t); }
@@ -1015,14 +1052,14 @@ function drawYou(t) {
 }
 // floor 2: the shadow, newly awake, holds up a little sign
 function drawSign(t) {
-  const [x, y] = walkerPos(st.shadow), a = Math.min(1, t * 3, (4 - t) / 0.5), up = Math.min(1, t * 2.5) * 16;
+  const [x, y] = walkerPos(st.shadow), a = Math.min(1, t * 3, (6 - t) / 0.5), up = Math.min(1, t * 2.5) * 16;
   ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = "#040305"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x + 10, y - 30); ctx.lineTo(x + 14, y - 52 - up); ctx.stroke();
   ctx.translate(x + 14, y - 70 - up); ctx.rotate(0.06); ctx.fillStyle = "#efe6cf"; ctx.fillRect(-26, -16, 52, 26);
   ctx.fillStyle = "#2b2119"; ctx.font = `italic 18px ${SERIF}`; ctx.textAlign = "center"; ctx.fillText(JOKES.sign, 0, 3); ctx.textAlign = "left"; ctx.restore();
 }
 // floor 3: the first time you turn it over, a shipping sticker, now upside down
 function drawSticker(t) {
-  const a = Math.min(1, t * 3, (5 - t) / 0.6);
+  const a = Math.min(1, t * 3, (7 - t) / 0.6);
   ctx.save(); ctx.globalAlpha = a; ctx.translate(HX + 130, HY - 14); ctx.rotate(Math.PI - 0.12); // on the roof
   ctx.fillStyle = "#e8c35a"; ctx.fillRect(-82, -20, 164, 40); ctx.strokeStyle = "#7a4a10"; ctx.lineWidth = 2; ctx.strokeRect(-78, -16, 156, 32);
   ctx.fillStyle = "#5a3208"; ctx.font = `22px ${MONO}`; ctx.textAlign = "center"; ctx.fillText(JOKES.sticker, 0, 7); ctx.textAlign = "left"; ctx.restore();
@@ -1107,7 +1144,7 @@ function drawWatcher(f) {
 // what the house says, typed out under it
 function drawVoice() {
   const v = st.voice; if (!v || (st.scene !== "play" && st.scene !== "caught")) return;
-  const n = Math.floor(clamp(v.t * 32, 0, v.text.length)), a = Math.min(1, 6 - v.t);
+  const n = Math.floor(clamp(v.t * 32, 0, v.text.length)), a = clamp(Math.min(v.t * 4, (v.len - v.t) / 0.6), 0, 1);
   ctx.font = `italic 20px ${SERIF}`; ctx.textAlign = "center"; ctx.fillStyle = `rgba(0,0,0,${0.5 * a})`;
   const tw = ctx.measureText(v.text).width; ctx.fillRect(HCX - tw / 2 - 12, VH - 62, tw + 24, 30);
   ctx.fillStyle = `rgba(255,140,120,${a})`; ctx.fillText(v.text.slice(0, n), HCX, VH - 41); ctx.textAlign = "left";
@@ -1243,7 +1280,7 @@ addEventListener("blur", () => { shiftAt = null; });
 function holdUpdate(dt) {
   const on = shiftAt != null && performance.now() - shiftAt > 300 && st.scene === "play" && !st.tear;
   shiftK = clamp(shiftK + (on ? dt / 0.35 : -dt / 0.2), 0, 1);
-  if (on && shiftK > 0.5 && !holdSaid) { holdSaid = true; sayLine(pick(HOLD)); sfx.slide(); }
+  if (on && shiftK > 0.5 && !holdSaid) { holdSaid = true; sayLine(pick(HOLD), true); sfx.slide(); }
 }
 const rowCv = document.createElement("canvas");
 function slideRows(offs) {
@@ -1294,5 +1331,5 @@ requestAnimationFrame(frame);
 // hooks for automated checks
 window.__dh = {
   pickHouseMove: () => pickHouseMove(), houseMove: (m) => performEdit(m.id, m.li, m.dir, true), houseMoves, st: () => st, begin: () => { st.scene = "play"; }, choose: (w) => choose(w), say: (k) => say(k), choiceRects: () => choiceRects, nextFloor: () => nextFloor(), solve, hint: () => doHint(), edit: (li, d) => doEdit(li, d), edits, path, walk: (id, exit) => walkTo(id, exit, 0, 0),
-  reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(), sticky: () => sticky, gag: () => ({ gag: !!st.gag, nudged: !!st.nudged, sign: !!st.sign, sticker: !!st.sticker }), undone: () => undone, undo: () => undo(), deskHit: desk.deskHit, shiftK: () => shiftK, goneFor, openDesk: () => openDesk(), trapped: (b) => trapped(b), awayLine: () => awayLine,
+  reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(), sticky: () => sticky, gag: () => ({ gag: !!st.gag, nudged: !!st.nudged, sign: !!st.sign, sticker: !!st.sticker }), undone: () => undone, undo: () => undo(), say: (t) => sayLine(t), hush: () => { st.voice = null; st.voiceQ = []; st.quiet = 99; st.sign = st.sticker = null; }, lift: () => lift(), junk: () => junk.length, deskHit: desk.deskHit, shiftK: () => shiftK, goneFor, openDesk: () => openDesk(), trapped: (b) => trapped(b), awayLine: () => awayLine,
 };

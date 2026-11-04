@@ -64,7 +64,7 @@ export const FINALE = {
 // The house has a sense of humour. It never says so.
 export const JOKES = {
   // Ctrl+Z (Cmd+Z on a Mac): it undoes the moon, then gravity, then your undo
-  undo: ["Undo: the moon.", "Undo: gravity.", "I undid your undo. You're welcome."],
+  undo: ["Undo: the moon.", "Undo: gravity. Hold on.", "I undid your undo. You're welcome."],
   hint5: "Hint: leave.",
   hint7: "Hint: I'm out of hints. Here's a drawing of a door.",
   fine: "...Fine.",
