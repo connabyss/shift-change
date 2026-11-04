@@ -137,7 +137,7 @@ function doEdit(li, dir = 1) {
   st.writeBack = { li, t: 0 };
   if (res.kind === "lock") {
     float(HX + 60, HY + HH - 90, "the front door is open", GRN); sfx.unlock();
-    if (st.floor === FLOORS) startFinale(); else say("unlock");
+    say("unlock"); // on the last floor the finale starts once the front door is in reach (finaleWatch)
   }
   else if (res.kind === "flip") say("flip");
   else say("firstEdit");
@@ -166,7 +166,7 @@ function performEdit(id, li, dir, byHouse) {
 const HOUSE_WAIT = 0.6, HOUSE_WARN = 1.5;
 const pick = (a) => a[(Math.random() * a.length) | 0];
 function houseTurn() {
-  if (st.finale || st.scene !== "play") return;
+  if (st.finale || st.scene !== "play" || st.floor === 1) return; // floor 1 is calm: it starts fighting back on floor 2
   st.playerEdits++; st.houseIdle = 0;
   st.houseNext = { t: -HOUSE_WAIT, move: null };
 }
@@ -240,12 +240,14 @@ function carve() {
   while (p.x > 0) { const a = st.g[p.y][p.x], b = st.g[p.y][p.x - 1]; a.l = true; b.r = true; p = { x: p.x - 1, y: p.y }; }
   think("house.open(a.way);  // run");
 }
-const doorRoom = () => st.g[H - 1][0].id;
+const doorRoom = () => st.g[H - 1][0].id, FINALE_GIVE_UP = 26;
 function finaleUpdate(dt) {
   const f = st.finale; f.t += dt; f.next -= dt;
   st.finalePath = path(st.g, st.player.id, doorRoom());
   if (!st.finalePath && !st.anim) { f.lost += dt; if (f.lost > 4) { f.lost = 0; carve(); } } else f.lost = 0;
-  if (f.next > 0 || st.anim) return;
+  // about half a minute in, it stops sliding and lets you go (the whole chase runs about 35 seconds)
+  if (!f.giveUp && f.t > FINALE_GIVE_UP && !st.anim) { f.giveUp = true; if (!st.finalePath) carve(); sayLine(FINALE.giveUp); think("house.let(you).go();  // fine"); }
+  if (f.giveUp || f.next > 0 || st.anim) return;
   f.next = 3.2; const me = st.player.id, pm = find(st.g, me), opts = [];
   for (let y = 0; y < H; y++) for (const dir of [-1, 1]) {
     if (y === pm.y) continue; const g2 = clone(st.g); g2[y] = g2[y].map((_, x) => g2[y][(x - dir + W * 2) % W]);
@@ -271,6 +273,11 @@ function tearUpdate(dt) {
   if (t1 >= T.len) { st.tear = null; setTitle(FINALE.title); sayLine(FINALE.start); }
 }
 
+// Last floor: the lock is open, but the chase only starts once you've got the front door in reach, so the floor's
+// own puzzle (and its new word, the flip) still has to be solved
+function finaleWatch() {
+  if (st.floor === FLOORS && st.unlocked && !st.finale && !st.anim && reach(st.g, st.player.id).has(doorRoom())) startFinale();
+}
 // One absurd moment per floor, early, and on floor 1 a nudge so nobody sits stuck
 function gags() {
   if (st.finale) return;
@@ -332,7 +339,7 @@ function update(dt) {
   // floor 3: lightning, and for a moment something enormous behind the house
   if (st.floor === 3 && !st.faced && st.sinceStart > 7) { st.faced = true; st.faceBolt = true; st.bolt = { t: 0, next: 20, x: HCX }; sfx.thunder(0.7); say("face"); }
   st.sinceStart += dt; st.floorT += dt; st.alert = Math.max(0, st.alert - dt);
-  gags();
+  gags(); finaleWatch();
   if (st.anim) { st.anim.t += dt / (st.anim.slow ? 1.3 : 0.7); if (st.anim.t >= 1) st.anim = null; else return; }
 
   houseUpdate(dt);
@@ -347,14 +354,15 @@ function update(dt) {
     const p = walkerPos(st.player); float(p[0] - 10, p[1] - 50, `a torn page (${st.pages} of 3)`, "#e8dcc0");
   }
 
-  const sh = st.shadow, speed = PACE[st.floor - 1] / (1 + 0.22 * st.grabs) * (st.finale ? 1.3 : 1);
+  const sh = st.shadow, speed = PACE[st.floor - 1] / (1 + 0.22 * st.grabs) * (st.finale ? (st.finale.giveUp ? 0.6 : 1.3) : 1);
   if (sh.mode === "sleep") {
     if (st.sinceStart > 8) wake();
   } else if (sh.way) advance(sh, dt, sh.seep ? speed * 0.5 : speed, () => { sh.seep = false; });
   else if ((sh.timer -= dt) <= 0) planShadow();
 
   const pp = walkerPos(st.player), sp = walkerPos(sh);
-  if (sh.mode !== "sleep" && Math.hypot(pp[0] - sp[0], pp[1] - sp[1]) < 24) { st.scene = "caught"; st.caughtT = 0; think("found(you);"); sfx.caught(); say("caught"); }
+  if (sh.mode !== "sleep" && st.finale && Math.hypot(pp[0] - sp[0], pp[1] - sp[1]) < 24) shoved();
+  else if (sh.mode !== "sleep" && Math.hypot(pp[0] - sp[0], pp[1] - sp[1]) < 24) { st.scene = "caught"; st.caughtT = 0; think("found(you);"); sfx.caught(); say("caught"); }
   sfx.update(dt, nearness());
   if (st.player.way && (st.stepT -= dt) <= 0) { sfx.step(); st.stepT = 0.27; }
 }
@@ -405,6 +413,13 @@ function unseal() {
   const p = find(st.g, me); room.l = room.r = true;
   if (p.x > 0) st.g[p.y][p.x - 1].r = true; if (p.x < W - 1) st.g[p.y][p.x + 1].l = true;
   think("house.open(this);  // not yet");
+}
+// In the finale it doesn't drag you back: it grabs, lets go, and is flung to the far side of the house
+function shoved() {
+  st.grabs++; const sh = st.shadow, b = find(st.g, st.player.id); let best = null, bd = -1;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const r = st.g[y][x]; if (r.id === st.player.id) continue; const d = Math.abs(x - b.x) + Math.abs(y - b.y) + Math.random() * 0.5; if (d > bd) { bd = d; best = r; } }
+  sh.way = null; sh.id = best.id; sh.fx = 0.5; sh.timer = 2; sh.noPath = 0; st.shake = 1; st.blackout = 0.25; sfx.caught();
+  think("found(you);  // not yet"); sayLine(FINALE.shoved); const p = walkerPos(st.player); float(p[0] - 20, p[1] - 50, "it let go", RED);
 }
 function dragBack() {
   st.grabs++; st.scene = "play";

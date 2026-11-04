@@ -156,7 +156,8 @@ test("the house plays back after your move, and the last lock starts the finale:
     // floor 3: unlocking starts the finale
     await page.evaluate(() => { window.__dh.newGame(null, 3); window.__dh.begin(); const st = window.__dh.st(); st.player.id = st.h.lockIds[0]; });
     await page.waitForTimeout(100);
-    await page.evaluate(() => { const D = window.__dh, st = D.st(), r = D.byId(st.g, st.player.id); D.edit(r.lines.findIndex((l) => l.kind === "lock"), 1); });
+    await page.evaluate(() => { const D = window.__dh, st = D.st(), r = D.byId(st.g, st.player.id); D.edit(r.lines.findIndex((l) => l.kind === "lock"), 1); st.player.id = st.g[2][0].id; }); // open the lock, then have the front door in reach
+    await page.waitForFunction(() => !!window.__dh.st().finale, null, { timeout: 4000 });
     assert.ok(await page.evaluate(() => !!window.__dh.st().finale));
     assert.equal(await page.title(), "you.trapped = true");
     await page.evaluate(() => { window.__dh.st().tear.t = 99; }); // past the screen break (its own test is below)
@@ -204,7 +205,8 @@ test("the finale's screen break: the house tears out, the chase waits for it, a 
     await page.waitForFunction(() => window.__dh);
     await page.evaluate(() => { window.__dh.newGame(null, 3); window.__dh.begin(); const st = window.__dh.st(); st.player.id = st.h.lockIds[0]; });
     await page.waitForTimeout(100);
-    await page.evaluate(() => { const D = window.__dh, st = D.st(), r = D.byId(st.g, st.player.id); D.edit(r.lines.findIndex((l) => l.kind === "lock"), 1); });
+    await page.evaluate(() => { const D = window.__dh, st = D.st(), r = D.byId(st.g, st.player.id); D.edit(r.lines.findIndex((l) => l.kind === "lock"), 1); st.player.id = st.g[2][0].id; }); // open the lock, then have the front door in reach
+    await page.waitForFunction(() => !!window.__dh.st().finale, null, { timeout: 4000 });
     const S = () => page.evaluate(() => { const s = window.__dh.st(); return { tear: s.tear && s.tear.t, ft: s.finale.t, sh: s.shadow.id + ":" + s.shadow.fx, voice: s.voice && s.voice.text }; });
     let s = await S();
     assert.ok(s.tear !== null && s.tear < 1, "the screen break starts with the finale");
@@ -441,6 +443,48 @@ test("floor 1 keeps nudging a lost player, and a hint follows the house's moves"
     assert.ok(r.tried, "found a house move that cuts the hinted room off");
     const ok = r.ok;
     assert.ok(ok, "the hint points somewhere you can go");
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+// CH's picks: floor 1 is calm (no counter-moves), the last floor's chase starts only once the door is in reach (so
+// its own puzzle still counts), and the chase lets you go after about half a minute, with no drag back to the start.
+test("floor 1 has no counter-moves; floor 3's lock waits for the door; the chase is short and never drags you back", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    await page.evaluate(() => { const D = window.__dh; D.begin(); const st = D.st(); st.gag = true; D.edit(D.byId(st.g, st.player.id).lines.findIndex((l) => l.kind === "row"), 1); });
+    await page.waitForTimeout(3500);
+    assert.equal(await page.evaluate(() => window.__dh.st().houseNext || window.__dh.st().total.house || 0), 0, "floor 1: the house doesn't answer");
+    // floor 3: open a lock where the door isn't in reach: no finale yet
+    const r = await page.evaluate(() => {
+      const D = window.__dh;
+      for (let i = 0; i < 30; i++) {
+        D.newGame(null, 3); D.begin(); const st = D.st(); st.gag = true;
+        for (const l of st.h.lockIds) { st.player.id = l; if (D.reach(st.g, l).has(st.g[2][0].id)) continue;
+          D.edit(D.byId(st.g, l).lines.findIndex((x) => x.kind === "lock"), 1); return { found: true }; }
+      }
+      return { found: false };
+    });
+    assert.ok(r.found, "a floor-3 lock without the door in reach");
+    await page.waitForTimeout(400);
+    assert.deepEqual(await page.evaluate(() => [window.__dh.st().unlocked, !!window.__dh.st().finale]), [true, false], "unlocked, but no chase yet");
+    // bring the door into reach: the chase starts
+    await page.evaluate(() => { const st = window.__dh.st(); st.player.id = st.g[2][0].id; });
+    await page.waitForFunction(() => !!window.__dh.st().finale, null, { timeout: 4000 });
+    await page.evaluate(() => { window.__dh.st().tear.t = 99; });
+    await page.waitForFunction(() => !window.__dh.st().tear, null, { timeout: 4000 });
+    // caught in the chase: you stay put, it's flung away
+    await page.waitForFunction(() => !window.__dh.st().anim, null, { timeout: 4000 }); // the house finishes turning over
+    const c = await page.evaluate(() => { const st = window.__dh.st(); const me = st.player.id; st.player.way = null; st.shadow.id = me; st.shadow.fx = st.player.fx; st.shadow.way = null; return me; });
+    await page.waitForFunction((me) => window.__dh.st().shadow.id !== me || window.__dh.st().scene !== "play", c, { timeout: 4000 });
+    const after = await page.evaluate(() => { const st = window.__dh.st(); return { scene: st.scene, me: st.player.id, sh: st.shadow.id }; });
+    assert.equal(after.scene, "play", "no drag back");
+    assert.equal(after.me, c); assert.notEqual(after.sh, c);
+    // and about half a minute in, it gives up and stops sliding
+    await page.evaluate(() => { window.__dh.st().finale.t = 27; });
+    await page.waitForFunction(() => window.__dh.st().finale.giveUp, null, { timeout: 4000 });
+    assert.equal(await page.evaluate(() => window.__dh.st().voice.text), "Fine. Go. I'll keep the light on.");
+    assert.ok(await page.evaluate(() => { const st = window.__dh.st(); return !!window.__dh.path(st.g, st.player.id, st.g[2][0].id); }), "a way to the door is open");
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });

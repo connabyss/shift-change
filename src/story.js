@@ -56,6 +56,8 @@ export const FINALE = {
   start: "Then run.",
   lines: ["Left. No, right.", "I'll find you a longer way.", "Every room is mine.", "Almost.", "You built this. You can't outrun it."],
   title: "you.trapped = true",
+  shoved: "Not yet. I want to watch you run.",
+  giveUp: "Fine. Go. I'll keep the light on.",
 };
 
 // The house has a sense of humour. It never says so.
