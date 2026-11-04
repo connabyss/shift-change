@@ -52,7 +52,10 @@ function nextFloor() {
 }
 function floorDone() {
   // the chase: the front door holds shut until the house lets you go (about half a minute)
-  if (st.finale && !st.finale.giveUp) { const p = walkerPos(st.player); float(p[0] + 30, p[1] - 50, "frontDoor.open = \"not yet\";", RED); sayLine(pick(FINALE.notYet)); sfx.doorShut(); st.shake = 0.5; return; }
+  if (st.finale && !st.finale.giveUp) {
+    if (!(st.finale.bounced > st.finale.t - 1.5)) { st.finale.bounced = st.finale.t; float(HX + 90, HY + HH - 110, "frontDoor.open = \"not yet\";", RED); sayLine(pick(FINALE.notYet)); sfx.doorShut(); st.shake = 0.5; }
+    return;
+  }
   st.total.moves += st.moves; st.total.par += st.h.par;
   if (st.floor < FLOORS) { st.scene = "floor"; st.endT = 0; } else { st.scene = "end"; st.endT = 0; }
   sfx.frontDoor();
@@ -245,16 +248,18 @@ function carve() {
 const doorRoom = () => st.g[H - 1][0].id, FINALE_GIVE_UP = 30;
 function finaleUpdate(dt) {
   const f = st.finale; f.t += dt; f.next -= dt;
-  st.finalePath = path(st.g, st.player.id, doorRoom());
-  if (!st.finalePath && !st.anim) { f.lost += dt; if (f.lost > 4) { f.lost = 0; carve(); } } else f.lost = 0;
+  // until it gives up, the door is out of reach and you run from the shadow through the rooms you can reach (lit);
+  // then it opens a way to the door and lights that
+  st.finalePath = f.giveUp ? path(st.g, st.player.id, doorRoom()) : [...reach(st.g, st.player.id)];
+  if (f.giveUp && !st.finalePath && !st.anim) { f.lost += dt; if (f.lost > 4) { f.lost = 0; carve(); } } else f.lost = 0;
   // about half a minute in, it stops sliding and lets you go (the whole chase runs about 35 seconds)
-  if (!f.giveUp && f.t > FINALE_GIVE_UP && !st.anim) { f.giveUp = true; if (!st.finalePath) carve(); sayLine(FINALE.giveUp); think("house.let(you).go();  // fine"); }
+  if (!f.giveUp && f.t > FINALE_GIVE_UP && !st.anim) { f.giveUp = true; if (!path(st.g, st.player.id, doorRoom())) carve(); sayLine(FINALE.giveUp); think("house.let(you).go();  // fine"); }
   if (f.giveUp || f.next > 0 || st.anim) return;
   f.next = 3.2; const me = st.player.id, pm = find(st.g, me), opts = [];
   for (let y = 0; y < H; y++) for (const dir of [-1, 1]) {
     if (y === pm.y) continue; const g2 = clone(st.g); g2[y] = g2[y].map((_, x) => g2[y][(x - dir + W * 2) % W]);
-    // keep a way to the door open (or make one, if there isn't one), then bring the shadow closer
-    const open = path(g2, me, g2[H - 1][0].id) ? 10 : 0;
+    // keep the door out of reach for now, then bring the shadow closer
+    const open = path(g2, me, g2[H - 1][0].id) ? 0 : 10;
     opts.push({ y, dir, score: open + steps(path(st.g, st.shadow.id, me)) - steps(path(g2, st.shadow.id, me)) + Math.random() });
   }
   opts.sort((a, b) => b.score - a.score); const o = opts[0];
@@ -262,7 +267,6 @@ function finaleUpdate(dt) {
   settle(st.player); settle(st.shadow); st.player.pending = null;
   const row = st.g[o.y]; st.g[o.y] = row.map((_, x) => row[(x - o.dir + W * 2) % W]);
   st.anim = { kind: "row", i: o.y, dir: o.dir, t: 0 }; sfx.slide(); dustBurst(st.anim); st.shake = 0.7;
-  if (!path(st.g, me, doorRoom())) carve(); // every slide would cut you off: it slides anyway, and opens a new way
   if (f.n++ % 2 === 0) sayLine(FINALE.lines[(f.n / 2 | 0) % FINALE.lines.length]);
 }
 
@@ -473,7 +477,7 @@ function drawRoom(room, cx, cy, o) {
   const shHere = st.shadow.mode !== "sleep" && st.shadow.id === room.id;
   let lit = room.lights ? 1 : 0;
   if (o.lightPreview) lit = lerp(lit, 1 - lit, o.lightPreview);
-  if (st.finale && st.scene === "play") lit = st.finalePath && st.finalePath.includes(room.id) ? 1 : 0;
+  if (st.finale && st.scene === "play") lit = room.id === st.player.id || (st.finalePath && st.finalePath.includes(room.id)) ? 1 : 0;
   let L = lerp(0.17, 1, lit) * (0.95 + 0.05 * Math.sin(st.t * 11 + room.id * 7) * Math.sin(st.t * 3.3 + room.id));
   if (shHere && Math.random() < 0.18) L *= 0.55;
   if (st.scene === "title") L *= 0.55;

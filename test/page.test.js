@@ -485,6 +485,12 @@ test("floor 1 has no counter-moves; floor 3's lock waits for the door; the chase
     await page.waitForFunction(() => !window.__dh.st().player.way, null, { timeout: 4000 });
     assert.equal(await page.evaluate(() => window.__dh.st().scene), "play", "the door won't open yet");
     assert.ok(["Not yet.", "The door's mine too.", "Run a little longer."].includes(await page.evaluate(() => window.__dh.st().voice.text)));
+    // a second try right away doesn't stack a second label
+    await page.evaluate(() => { const st = window.__dh.st(); window.__dh.walk(st.g[2][0].id, true); });
+    await page.waitForFunction(() => !window.__dh.st().player.way, null, { timeout: 4000 });
+    assert.equal(await page.evaluate(() => window.__dh.st().floats.filter((f) => f.text.includes("not yet")).length), 1);
+    // until it gives up, what's lit is where you can run, not a way to the door
+    assert.ok(await page.evaluate(() => { const D = window.__dh, st = D.st(); const R = [...D.reach(st.g, st.player.id)].sort().join(); return [...st.finalePath].sort().join() === R; }));
     // and about half a minute in, it gives up and stops sliding
     await page.evaluate(() => { window.__dh.st().finale.t = 31; });
     await page.waitForFunction(() => window.__dh.st().finale.giveUp, null, { timeout: 4000 });
