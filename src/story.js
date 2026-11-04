@@ -52,6 +52,7 @@ export const HOUSE_LINES = {
 };
 // The finale: once the front door is unlocked on the last floor, the house stops taking turns.
 export const FINALE = {
+  tear: "Did you think I only lived in there?",
   start: "Then run.",
   lines: ["Left. No, right.", "I'll find you a longer way.", "Every room is mine.", "Almost.", "You built this. You can't outrun it."],
   title: "you.trapped = true",

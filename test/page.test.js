@@ -159,6 +159,7 @@ test("the house plays back after your move, and the last lock starts the finale:
     await page.evaluate(() => { const D = window.__dh, st = D.st(), r = D.byId(st.g, st.player.id); D.edit(r.lines.findIndex((l) => l.kind === "lock"), 1); });
     assert.ok(await page.evaluate(() => !!window.__dh.st().finale));
     assert.equal(await page.title(), "you.trapped = true");
+    await page.evaluate(() => { window.__dh.st().tear.t = 99; }); // past the screen break (its own test is below)
     // the house slides a row by itself, and there's always a way to the door
     await page.waitForFunction(() => window.__dh.st().finale.n >= 1, null, { timeout: 15000 });
     await page.waitForFunction(() => { const st = window.__dh.st(); return !st.anim && st.finalePath && st.finalePath.length; }, null, { timeout: 6000 });
@@ -186,6 +187,46 @@ test("floor 1 is calm: the shadow never wakes, and finding a page doesn't put te
     const st = await page.evaluate(() => { const s = window.__dh.st(); return { got: s.page.got, voice: s.voice && s.voice.text }; });
     assert.equal(st.got, true);
     assert.notEqual(st.voice, "That's your handwriting.");
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); server.close(); }
+});
+
+// The screen break: the last lock opens and the house tears out of its window onto a desktop. While it's out, the
+// chase waits; a click skips to the slam; then it says "Then run." and the chase starts.
+test("the finale's screen break: the house tears out, the chase waits for it, a click skips it, Shift x5 gets its own box", { skip }, async () => {
+  const server = await serve(), browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    await page.goto(`http://127.0.0.1:${server.address().port}/`);
+    await page.waitForFunction(() => window.__dh);
+    await page.evaluate(() => { window.__dh.newGame(null, 3); window.__dh.begin(); const st = window.__dh.st(); st.player.id = st.h.lockIds[0]; });
+    await page.waitForTimeout(100);
+    await page.evaluate(() => { const D = window.__dh, st = D.st(), r = D.byId(st.g, st.player.id); D.edit(r.lines.findIndex((l) => l.kind === "lock"), 1); });
+    const S = () => page.evaluate(() => { const s = window.__dh.st(); return { tear: s.tear && s.tear.t, ft: s.finale.t, sh: s.shadow.id + ":" + s.shadow.fx, voice: s.voice && s.voice.text }; });
+    let s = await S();
+    assert.ok(s.tear !== null && s.tear < 1, "the screen break starts with the finale");
+    assert.equal(s.voice, "Did you think I only lived in there?");
+    await page.waitForFunction(() => window.__dh.st().tear.t > 2, null, { timeout: 8000 });
+    const s2 = await S();
+    assert.equal(s2.ft, 0, "the chase waits while the house is out of its window");
+    assert.equal(s2.sh, s.sh, "and the shadow waits too");
+    assert.equal(await page.title(), "you.js (Not Responding)");
+    // a click skips to the slam, and then the chase starts
+    const box = await page.evaluate(() => { const b = document.getElementById("game").getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; });
+    await page.mouse.click(...box);
+    assert.ok((await S()).tear >= 5, "a click skips ahead");
+    await page.waitForFunction(() => !window.__dh.st().tear, null, { timeout: 4000 });
+    assert.equal((await S()).voice, "Then run.");
+    assert.equal(await page.title(), "you.trapped = true");
+    await page.waitForFunction(() => window.__dh.st().finale.t > 0, null, { timeout: 4000 }); // the chase is on
+    // Shift five times: the house's Sticky Keys box; a click closes it
+    for (let i = 0; i < 5; i++) await page.keyboard.press("Shift");
+    assert.ok(await page.evaluate(() => !!window.__dh.sticky()), "Sticky Keys box");
+    await page.mouse.click(...box);
+    assert.equal(await page.evaluate(() => window.__dh.sticky()), null);
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });

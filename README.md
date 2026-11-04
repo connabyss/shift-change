@@ -7,7 +7,7 @@ beside it is the house's own source code. Every yellow word in it is a choice: c
 of rooms grinds past with you inside. Reach a room with a red lock, change its word, and get to the front door before
 the shadow finds you.
 
-Mouse only, one hand. Click a room to walk there. Point at a word to see what it would do (the rooms you could walk to
+Mouse only, one hand. (Press Shift five times and the house has something to say about Sticky Keys.) Click a room to walk there. Point at a word to see what it would do (the rooms you could walk to
 afterwards light up green), then click it. `M` turns the sound off and on.
 
 - **The words:**
@@ -24,7 +24,11 @@ afterwards light up green), then click it. `M` turns the sound off and on.
 - **One new thing at a time.** Floor 1 is just you and the house; the shadow sleeps through it. Floor 2 wakes the
   shadow, floor 3 brings the flip and the finale. During play the only words are the house's own moves; torn pages
   are read on the screen between floors.
-- **The finale.** Unlock the last front door and the house turns itself over, then slides its rows every few seconds
+- **The finale.** Unlock the last front door and the screen breaks: the game shrinks into a window on a desktop, the
+  house's rooms tear out through the frame, it shifts the desktop's rows like its own, a "not responding" box comes
+  up and the house rewrites its button to `Stay`, and the shadow climbs out after them. Then the rooms slam back in. It's
+  all drawn inside the game (`src/tear.js`), so it looks the same on Windows, Mac and Linux and touches nothing real.
+  A click skips it. Then the house turns itself over, then slides its rows every few seconds
   while the shadow runs you down faster. The way to the door is always lit. The browser tab and the code's file name
   change as it happens. At the very end, the camera pulls back from the house.
 - **Trap the shadow.** Slide its room away or shut it in, and it has to claw through a wall to get out. A bar shows how long you have.

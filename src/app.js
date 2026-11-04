@@ -4,6 +4,7 @@ import { W, H, FLOOR, byId, find, nbrs, path, reach, clone, applyEdit, edits, so
 import { COMMITS, PAGES, VOICE, ENDING, HOUSE_LINES, FINALE } from "./story.js";
 import * as sfx from "./sound.js";
 import * as art from "./art.js";
+import * as tear from "./tear.js";
 
 
 // ---------- layout ----------
@@ -208,7 +209,8 @@ function sayLine(text) { st.voice = { text, t: 0 }; sfx.voice(); }
 // The last front door is unlocked: the house stops taking turns and slides its own rows every few seconds while the
 // shadow runs you down. One way to the door always stays open, and it's lit.
 function startFinale() {
-  st.finale = { t: 0, next: 3.4, n: 0, lost: 0 }; st.houseNext = null; sayLine(FINALE.start); setTitle(FINALE.title);
+  st.finale = { t: 0, next: 3.4, n: 0, lost: 0 }; st.houseNext = null; sayLine(FINALE.tear); setTitle(FINALE.title);
+  st.tear = { t: 0 }; st.floats = []; sfx.thunder(); // the screen break: the house tears out of its window first (src/tear.js)
   if (st.shadow.mode === "sleep") wake();
   // the house turns itself over, so the front door is as far away as it can make it
   settle(st.player); settle(st.shadow); st.player.pending = null;
@@ -248,6 +250,15 @@ function finaleUpdate(dt) {
   if (f.n++ % 2 === 0) sayLine(FINALE.lines[(f.n / 2 | 0) % FINALE.lines.length]);
 }
 
+// While the house is out of its window nothing else moves. Sounds land on the beats; then it says "Then run."
+function tearUpdate(dt) {
+  const t0 = st.tear.t, t1 = (st.tear.t += dt), T = tear.TEAR, at = (k) => t0 < k && t1 >= k;
+  if (at(T.out)) { sfx.slide(); sfx.creak(0.6); }
+  if (at(T.out + 0.4)) setTitle(tear.windowTitle(t1));
+  if (at(T.slam)) { sfx.doorShut(); sfx.breakOut(); sfx.thunder(0.1); }
+  if (t1 >= T.len) { st.tear = null; setTitle(FINALE.title); sayLine(FINALE.start); }
+}
+
 // house.hint(): the next word of the shortest way out
 function doHint() {
   const plan = solve(st.g, st.player.id, st.h.lockIds, st.unlocked, 4);
@@ -277,6 +288,7 @@ function update(dt) {
   if (st.scene === "end") { st.endT += dt; if (st.ending) endingUpdate(dt); else if (st.endT > (st.pages >= 3 ? 16.5 : 8)) choose("keep"); return; }
   if (st.scene === "floor") { st.endT += dt; return; }
   if (st.scene !== "play") return;
+  if (st.tear) { tearUpdate(dt); if (st.tear) return; }
   if (!st.started) { st.started = true; say(st.floor === 1 ? (lastEnding() ? "start1again" : "start1") : `start${st.floor}`); }
   if (st.floorT > 45 && st.edits > 0 && !st.idleSaid) { st.idleSaid = true; say("idle"); }
   // floor 3: lightning, and for a moment something enormous behind the house
@@ -879,6 +891,25 @@ function render() {
   if (st.scene === "end") endWorld();
   if (z > 0) { ctx.restore(); drawLaptop(z); }
   drawVoice(); drawScenes(); if (st.scene !== "end") drawMute();
+  if (st.finale && st.scene === "play") {
+    if (st.tear) drawTear(); else tear.drawCracks(ctx, TG, 1, (x, y) => [x, y], 0.3); // the glass stays cracked
+  }
+  if (sticky) { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); tear.drawSticky(ctx, TG, sticky.t); }
+}
+// Shift five times: the house's own Sticky Keys box (src/tear.js). It pauses nothing and turns nothing on.
+let sticky = null, shifts = [];
+function stickyKey(e) {
+  if (e.key !== "Shift" || e.repeat) return;
+  const now = performance.now(); shifts = shifts.filter((s) => now - s < 3000); shifts.push(now);
+  if (shifts.length >= 5) { shifts = []; sticky = { t: 0 }; sfx.lights(true); }
+}
+// the screen break works on a copy of the frame just drawn
+const tearCv = document.createElement("canvas"), TG = { VW, VH, DPR, HX, HY, CW, CH, HW, HH, W, H, MONO, clock: ["", ""] };
+function drawTear() {
+  if (tearCv.width !== cv.width) { tearCv.width = cv.width; tearCv.height = cv.height; }
+  const b = tearCv.getContext("2d"); b.setTransform(1, 0, 0, 1, 0, 0); b.clearRect(0, 0, cv.width, cv.height); b.drawImage(cv, 0, 0);
+  const now = new Date(); TG.clock = [now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), now.toLocaleDateString()];
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.clearRect(0, 0, VW, VH); tear.draw(ctx, tearCv, st.tear.t, TG);
 }
 function drawWorld() {
   art.night(ctx, VW, VH, { x: HX, y: HY, w: HW, h: HH }, st.t, flash(), st.bolt.x);
@@ -906,7 +937,7 @@ function lampFlicker(fear) {
 }
 function lampLight() {
   if (st.scene === "end") { glows.length = 0; return; }
-  const hot = HOT[st.floor] || HOT[1], L = PX - 14, fear = lampFear(), fl = lampFlicker(fear), bolt = flash();
+  const hot = HOT[st.floor] || HOT[1], L = PX - 14, fear = lampFear(), fl = lampFlicker(fear), bolt = st.tear ? 0.95 : flash(); // torn out of its window, the house is in the light
   const pp = walkerPos(st.player), px = pp[0], py = pp[1] - 32;
   // 1. drain the colour out of the house
   ctx.save(); ctx.globalCompositeOperation = "saturation"; ctx.fillStyle = "#808080"; ctx.globalAlpha = 0.7; ctx.fillRect(0, 0, L, VH); ctx.restore();
@@ -999,6 +1030,7 @@ cv.addEventListener("pointermove", (e) => {
 function choiceAt(x, y) { for (const r of choiceRects) if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return { type: "choice", word: r.word }; return null; }
 cv.addEventListener("pointerdown", (e) => {
   sfx.init();
+  if (sticky) { sticky = null; return; } // any click closes the Sticky Keys box
   const [x, y] = toView(e);
   if (st.scene === "title") { st.scene = "play"; return; }
   if (st.scene === "end") {
@@ -1008,6 +1040,7 @@ cv.addEventListener("pointerdown", (e) => {
   }
   if (st.scene === "floor") { if (st.endT > 1.2) nextFloor(); return; }
   if (st.scene !== "play") return;
+  if (st.tear) { st.tear.t = Math.max(st.tear.t, tear.TEAR.hold); return; } // a click skips to the slam
   const h = hitTest(x, y); st.hover = h;
   if (!h) return;
   if (h.type === "word") doEdit(h.li, h.dir);
@@ -1020,6 +1053,7 @@ cv.addEventListener("pointerdown", (e) => {
 addEventListener("keydown", (e) => {
   if (e.key === "Enter" && st.scene === "title") { sfx.init(); st.scene = "play"; }
   if (e.key === "m" || e.key === "M") sfx.toggleMute();
+  stickyKey(e);
 });
 
 function dustBurst(res) {
@@ -1032,11 +1066,11 @@ function dustBurst(res) {
 // ---------- loop ----------
 newGame(Number(new URLSearchParams(location.search).get("seed")) || ((Math.random() * 1e9) | 0));
 let last = performance.now();
-function frame(now) { const dt = Math.min(0.05, (now - last) / 1000); last = now; update(dt); render(); requestAnimationFrame(frame); }
+function frame(now) { const dt = Math.min(0.05, (now - last) / 1000); last = now; if (sticky && (sticky.t += dt) > 6) sticky = null; update(dt); render(); requestAnimationFrame(frame); }
 requestAnimationFrame(frame);
 
 // hooks for automated checks
 window.__dh = {
   st: () => st, begin: () => { st.scene = "play"; }, choose: (w) => choose(w), say: (k) => say(k), choiceRects: () => choiceRects, nextFloor: () => nextFloor(), solve, hint: () => doHint(), edit: (li, d) => doEdit(li, d), edits, path, walk: (id, exit) => walkTo(id, exit, 0, 0),
-  reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(),
+  reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(), sticky: () => sticky,
 };
