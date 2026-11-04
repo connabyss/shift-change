@@ -56,4 +56,41 @@ export const FINALE = {
   start: "Then run.",
   lines: ["Left. No, right.", "I'll find you a longer way.", "Every room is mine.", "Almost.", "You built this. You can't outrun it."],
   title: "you.trapped = true",
+  shoved: "Not yet. I want to watch you run.",
+  giveUp: "Fine. Go. I'll keep the light on.",
+  notYet: ["Not yet.", "The door's mine too.", "Run a little longer."],
+};
+
+// The house has a sense of humour. It never says so.
+export const JOKES = {
+  // Ctrl+Z (Cmd+Z on a Mac): it undoes the moon, then gravity, then your undo
+  undo: ["Undo: the moon.", "Undo: gravity.", "I undid your undo. You're welcome."],
+  hint5: "Hint: leave.",
+  hint7: "Hint: I'm out of hints. Here's a drawing of a door.",
+  fine: "...Fine.",
+  // one absurd thing on each floor, early
+  sneeze: "Achoo. ...Sorry. Dust.",            // floor 1: the house sneezes
+  nudge: "Psst. The yellow words. Click one. I never said that.", // floor 1, if you're lost (first time)
+  nudges: ["Psst. The yellow words. Click one. I never said that.", "Still lost? That one. The yellow frame. I'm not helping.", "Look, just click the framed word. I have a reputation."],
+  sign: "hi :)",                                // floor 2: the shadow wakes up and holds up a sign
+  sticker: "THIS SIDE UP",                      // floor 3: the first time you turn it over
+  note: ["can i come out", "yes", "no", "maybe"],
+  console: "I can see you reading this.",
+  notesEmpty: "(empty. You didn't pick any up.)",
+  desk: "Click house.js to build a new house.",
+  beatPar: "You beat it. It helped. It won't say so.",
+};
+
+// Hold Shift and the house slides over a room, then snaps back when you let go. It doesn't like it.
+export const HOLD = ["Put me down.", "That tickles.", "I'm load-bearing, you know.", "Shift happens."];
+
+// Come back after you left and it says how long you were gone, to the minute.
+export const AWAY = (gone) => `You left. I counted: ${gone}.`;
+
+// The credits, and then the shadow edits its own line until it's bigger than yours.
+export const CREDITS = {
+  title: "THE SHIFTING HOUSE",
+  you: ["written by you", "with help from you", "(you)"],
+  shadow: ["co-author: shadow", "author: shadow", "AUTHOR: SHADOW"],
+  real: "Made by connabyss for GitHub Game Off 2026, with Claude Code.",
 };

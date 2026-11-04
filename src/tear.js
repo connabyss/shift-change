@@ -158,28 +158,34 @@ function shiftedDesktop(ctx, G, z, t) {
   }
   if (z < 1) { ctx.fillStyle = `rgba(0,0,0,${(1 - z) * 0.6})`; ctx.fillRect(0, 0, VW, VH); }
 }
-function desktop(ctx, G) {
+export const ICONS = [["house.js", "#ffd36a"], ["you.js", "#ff5a4e"], ["notes.txt", "#e8e4dc"], ["shadow.js", "#5d5a66"], ["Bin", "#9aa3ad"]];
+export const iconAt = (j) => ({ x: 26, y: 22 + j * 82, w: 50, h: 70 });
+export function fileIcon(ctx, x, y, col, k = 1) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(k, k);
+  ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(8, 0); ctx.lineTo(30, 0); ctx.lineTo(40, 10); ctx.lineTo(40, 48); ctx.lineTo(8, 48); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.fillRect(13, 20, 22, 2); ctx.fillRect(13, 27, 18, 2); ctx.fillRect(13, 34, 20, 2);
+  ctx.restore();
+}
+export function label(ctx, text, x, y) {
+  ctx.font = `12px ${SANS}`; ctx.textAlign = "center"; ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillText(text, x + 1, y + 1); ctx.fillStyle = "#f2f2f4"; ctx.fillText(text, x, y); ctx.textAlign = "left";
+}
+export function desktop(ctx, G, app = "house.js") {
   const { VW, VH } = G;
   const wall = ctx.createLinearGradient(0, 0, VW, VH); wall.addColorStop(0, "#14304a"); wall.addColorStop(0.55, "#1d2440"); wall.addColorStop(1, "#2c1830");
   ctx.fillStyle = wall; ctx.fillRect(-20, -20, VW + 40, VH + 40);
   const glow = ctx.createRadialGradient(VW * 0.7, VH * 0.25, 20, VW * 0.7, VH * 0.25, 520); glow.addColorStop(0, "rgba(120,170,230,0.22)"); glow.addColorStop(1, "rgba(120,170,230,0)");
   ctx.fillStyle = glow; ctx.fillRect(0, 0, VW, VH);
   // the icons down the left: the house knows what's on your desktop
-  const icons = [["house.js", "#ffd36a"], ["you.js", "#ff5a4e"], ["notes.txt", "#e8e4dc"], ["shadow.js", "#5d5a66"], ["Bin", "#9aa3ad"]];
-  icons.forEach(([name, col], j) => {
-    const x = 26, y = 22 + j * 82;
-    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x + 8, y); ctx.lineTo(x + 30, y); ctx.lineTo(x + 40, y + 10); ctx.lineTo(x + 40, y + 48); ctx.lineTo(x + 8, y + 48); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.fillRect(x + 13, y + 20, 22, 2); ctx.fillRect(x + 13, y + 27, 18, 2); ctx.fillRect(x + 13, y + 34, 20, 2);
-    ctx.font = `12px ${SANS}`; ctx.textAlign = "center"; ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillText(name, x + 25, y + 64); ctx.fillStyle = "#f2f2f4"; ctx.fillText(name, x + 24, y + 63); ctx.textAlign = "left";
-  });
+  ICONS.forEach(([name, col], j) => { const { x, y } = iconAt(j); fileIcon(ctx, x, y, col); label(ctx, name, x + 24, y + 63); });
   // the taskbar, with today's real time on it
   const ty = VH - 34; ctx.fillStyle = "rgba(10,12,18,0.92)"; ctx.fillRect(0, ty, VW, 34);
   ctx.fillStyle = "#8fb8e8"; ctx.beginPath(); ctx.arc(22, ty + 17, 9, 0, 7); ctx.fill();
-  ctx.fillStyle = "rgba(255,255,255,0.12)"; ctx.fillRect(46, ty + 4, 120, 26); ctx.fillStyle = "#ffd36a"; ctx.fillRect(46, ty + 30, 120, 2);
-  ctx.font = `13px ${SANS}`; ctx.fillStyle = "#e6e6ea"; ctx.fillText("house.js", 58, ty + 22);
+  if (app) { ctx.fillStyle = "rgba(255,255,255,0.12)"; ctx.fillRect(46, ty + 4, 120, 26); ctx.fillStyle = "#ffd36a"; ctx.fillRect(46, ty + 30, 120, 2); }
+  ctx.font = `13px ${SANS}`; ctx.fillStyle = "#e6e6ea"; if (app) ctx.fillText(app, 58, ty + 22);
   ctx.textAlign = "right"; ctx.fillText(G.clock[0], VW - 14, ty + 15); ctx.fillStyle = "#a9adb8"; ctx.fillText(G.clock[1], VW - 14, ty + 29); ctx.textAlign = "left";
 }
 
+export { SANS };
 export const DIALOG = { title: "you.js", text: "you.js is not responding.", sub: "If you close it, it keeps what it has of you.", wait: "Wait", close: "Close the program", stay: "Stay" };
 function dialog(ctx, G, t) {
   const pop = easeOut(clamp((t - (TEAR.tear - 0.3)) / 0.25, 0, 1)), crush = t > TEAR.slam - 0.12 ? clamp((t - (TEAR.slam - 0.12)) / 0.2, 0, 1) : 0;

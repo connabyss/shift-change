@@ -17,19 +17,20 @@ afterwards light up green), then click it. `M` turns the sound off and on.
   - `frontDoor.locked = true`: two rooms hold this line. Either one opens the front door.
   - Floor 2 adds `this.swap(west|east)`: trade your room with the one next to it.
   - Floor 3 adds `house.upsideDown = false`: turn the whole house over. Floors change places, and ladders become holes.
-- **The house plays back.** After each of your moves it makes one of its own in another room: it slides a row, swaps
+- **The house plays back** (from floor 2; floor 1 is calm). After each of your moves it makes one of its own in another room: it slides a row, swaps
   a room or shuts a door, usually to bring the shadow closer. It types the line in red a moment before it happens, so
   you can see it coming. It never moves the room you're in, and never leaves you with no way out. Sit still too long
   and it moves anyway. From floor 2 it likes to copy your favourite words.
 - **One new thing at a time.** Floor 1 is just you and the house; the shadow sleeps through it. Floor 2 wakes the
   shadow, floor 3 brings the flip and the finale. During play the only words are the house's own moves; torn pages
   are read on the screen between floors.
-- **The finale.** Unlock the last front door and the screen breaks: the game shrinks into a window on a desktop, the
+- **The finale.** Unlock the last front door, get the door in reach, and the screen breaks: the game shrinks into a window on a desktop, the
   house's rooms tear out through the frame, it shifts the desktop's rows like its own, a "not responding" box comes
   up and the house rewrites its button to `Stay`, and the shadow climbs out after them. Then the rooms slam back in. It's
   all drawn inside the game (`src/tear.js`), so it looks the same on Windows, Mac and Linux and touches nothing real.
   A click skips it. Then the house turns itself over, then slides its rows every few seconds
-  while the shadow runs you down faster. The way to the door is always lit. The browser tab and the code's file name
+  while the shadow runs you down faster. The way to the door is always lit. If it grabs you, it lets go (it wants to
+  watch you run), and the front door holds shut until, about half a minute in, it stops and lets you leave. The browser tab and the code's file name
   change as it happens. At the very end, the camera pulls back from the house.
 - **Trap the shadow.** Slide its room away or shut it in, and it has to claw through a wall to get out. A bar shows how long you have.
 - **Beat the house.** Floor 1 needs 1 move, floor 2 needs 2, floor 3 needs 3. The top of the screen shows your moves
@@ -39,6 +40,12 @@ afterwards light up green), then click it. `M` turns the sound off and on.
 - **You can't lose.** If it catches you, it drags you back to your first room. What you changed stays changed, and it
   gets a little slower each time.
 
+- **After the ending.** The credits roll, and the shadow edits its own line until it's bigger than yours. Then you're
+  left on the house's desktop: open `notes.txt` (the torn pages you found), click the Bin, or click `house.js` to
+  build a new house.
+- **It has a sense of humour.** Try `Ctrl+Z` (`Cmd+Z` on a Mac) three times. Hold `Shift`. Ask for a lot of hints.
+  Shut the shadow in. Leave and come back later: it counts. Open the browser's developer console. Only three things
+  are saved, in your own browser: the time you left, which house you were in, and which ending you got last.
 - **The story.** The house talks back now and then, in a line typed under it. Each floor starts with a note from its
   commit log, and each floor hides one torn page in your handwriting, in a room you can reach on the way out. Find all
   three and the last line of the game becomes a word you can change: `house.keep(shadow|nobody)`. All of the story's
