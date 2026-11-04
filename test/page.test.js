@@ -515,7 +515,7 @@ test("floor 1 has no counter-moves; floor 3's lock waits for the door; the chase
     await page.waitForFunction(() => !window.__dh.st().player.way, null, { timeout: 4000 });
     assert.equal(await page.evaluate(() => window.__dh.st().scene), "play", "the door won't open yet");
     assert.ok(await page.evaluate(() => window.__dh.st().player.fx >= 0), "pushed back inside, not left on the doorstep");
-    assert.ok(["Not yet.", "The door's mine too.", "Run a little longer."].includes(await page.evaluate(() => window.__dh.st().voice.text)));
+    assert.ok(await page.evaluate(() => window.__dh.st().floats.some((f) => f.text.includes("not yet"))), "the door says not yet");
     // a second try right away doesn't stack a second label
     await page.evaluate(() => { const st = window.__dh.st(); window.__dh.walk(st.g[2][0].id, true); });
     await page.waitForFunction(() => !window.__dh.st().player.way, null, { timeout: 4000 });
@@ -539,19 +539,20 @@ test("floor 1 has no counter-moves; floor 3's lock waits for the door; the chase
 test("the chase: a slide about every 4 s, and each line said once, six at most", { skip }, async () => {
   const { page, errors, close } = await open("/");
   try {
+    for (let run = 0; run < 4; run++) {
     const r = await page.evaluate(() => {
       const D = window.__dh; D.newGame(null, 3); D.begin(); const st = D.st(); st.gag = true; st.faced = true; st.floorT = 9; st.player.id = st.h.lockIds[0];
       D.edit(D.byId(st.g, st.player.id).lines.findIndex((l) => l.kind === "lock"), 1); st.player.id = st.g[2][0].id; st.anim = null;
       D.tick(0.05, 2); if (!st.finale) return { started: false };
       st.tear.t = 99; D.tick(0.05, 1);
       // you keep trying the front door the whole time (it says "not yet")
-      const said = [], at = []; let v = null, a = null;
+      const said = [], at = [], shown = []; let v = null, a = null;
       for (let i = 0; i < 800 && !st.finale.giveUp; i++) {
         if (!st.player.way && !st.anim) D.walk(st.g[2][0].id, true);
-        D.tick(0.05, 1); if (st.voice && st.voice !== v) { v = st.voice; said.push(v.text); } if (st.anim && st.anim !== a) { a = st.anim; if (a.kind === "row") at.push(st.finale.t); }
+        D.tick(0.05, 1); if (st.voice && st.voice !== v) { if (v) shown.push(v.t); v = st.voice; said.push(v.text); } if (st.anim && st.anim !== a) { a = st.anim; if (a.kind === "row") at.push(st.finale.t); }
       }
       const gaps = at.slice(1).map((t, i) => t - at[i]);
-      return { started: true, said, slides: at.length, gap: Math.min(...gaps), giveUp: !!st.finale.giveUp };
+      return { started: true, said, slides: at.length, gap: Math.min(...gaps), giveUp: !!st.finale.giveUp, shortest: Math.min(99, ...shown) };
     });
     assert.ok(r.started, "the finale started");
     assert.ok(r.giveUp, "and it lets you go");
@@ -560,6 +561,9 @@ test("the chase: a slide about every 4 s, and each line said once, six at most",
     const dupes = r.said.filter((t, i) => r.said.indexOf(t) !== i);
     assert.deepEqual(dupes, [], `no line twice: ${r.said.join(" | ")}`);
     assert.ok(r.said.length <= 6, `at most six lines in the chase: ${r.said.join(" | ")}`);
+    assert.ok(r.said.filter((t) => t.startsWith("Not yet")).length <= 1, "it says \"not yet\" once");
+    assert.ok(r.shortest >= 2.5, `each line stays up to be read (shortest ${r.shortest.toFixed(2)} s)`);
+    }
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });

@@ -227,7 +227,7 @@ function houseUpdate(dt) {
 // One line at a time, each up long enough to read. Lines that come while one is showing wait their turn
 // (CH: "I don't want the jokes happening so fast that they're hard to catch"). The chase and a grab speak at once.
 function voiceLen(text) { return Math.max(4, 2.2 + text.length * 0.06); }
-function sayLine(text, now = !!st.finale || st.scene === "caught") {
+function sayLine(text, now = st.scene === "caught") {
   st.voiceQ = st.voiceQ || [];
   if (st.voice && !now) { if (st.voice.text !== text && !st.voiceQ.includes(text) && st.voiceQ.length < 2) st.voiceQ.push(text); return; }
   if (now) st.voiceQ.length = 0;
@@ -242,7 +242,7 @@ function quietFor(s) { return !st.voice && !(st.voiceQ || []).length && !st.sign
 // The last front door is unlocked: the house stops taking turns and slides its own rows every few seconds while the
 // shadow runs you down. One way to the door always stays open, and it's lit.
 function startFinale() {
-  st.finale = { t: 0, next: 3.4, n: 0, lost: 0 }; st.houseNext = null; sayLine(FINALE.tear); setTitle(FINALE.title);
+  st.finale = { t: 0, next: 3.4, n: 0, lost: 0 }; st.houseNext = null; sayLine(FINALE.tear, true); setTitle(FINALE.title);
   st.tear = { t: 0 }; st.floats = []; sfx.thunder(); // the screen break: the house tears out of its window first (src/tear.js)
   if (st.shadow.mode === "sleep") wake();
   // the house turns itself over, so the front door is as far away as it can make it
@@ -271,7 +271,7 @@ function finaleUpdate(dt) {
   st.finalePath = f.giveUp ? path(st.g, st.player.id, doorRoom()) : [...reach(st.g, st.player.id)];
   if (f.giveUp && !st.finalePath && !st.anim) { f.lost += dt; if (f.lost > 4) { f.lost = 0; carve(); } } else f.lost = 0;
   // about half a minute in, it stops sliding and lets you go (the whole chase runs about 35 seconds)
-  if (!f.giveUp && f.t > FINALE_GIVE_UP && !st.anim) { f.giveUp = true; if (!path(st.g, st.player.id, doorRoom())) carve(); sayLine(FINALE.giveUp); think("house.let(you).go();  // fine"); }
+  if (!f.giveUp && f.t > FINALE_GIVE_UP && !st.anim) { f.giveUp = true; if (!path(st.g, st.player.id, doorRoom())) carve(); sayLine(FINALE.giveUp, true); think("house.let(you).go();  // fine"); }
   if (f.giveUp || f.next > 0 || st.anim) return;
   f.next = FINALE_SLIDE; const me = st.player.id, pm = find(st.g, me), opts = [];
   for (let y = 0; y < H; y++) for (const dir of [-1, 1]) {
@@ -295,7 +295,7 @@ function tearUpdate(dt) {
   if (at(T.out)) { sfx.slide(); sfx.creak(0.6); }
   if (at(T.out + 0.4)) setTitle(tear.windowTitle(t1));
   if (at(T.slam)) { sfx.doorShut(); sfx.breakOut(); sfx.thunder(0.1); }
-  if (t1 >= T.len) { st.tear = null; setTitle(FINALE.title); sayLine(FINALE.start); farShadow(2.5); }
+  if (t1 >= T.len) { st.tear = null; setTitle(FINALE.title); sayLine(FINALE.start, true); farShadow(2.5); }
 }
 
 // Last floor: the lock is open, but the chase only starts once you've got the front door in reach, so the floor's
@@ -455,7 +455,7 @@ function farShadow(wait) {
 // In the finale it doesn't drag you back: it grabs, lets go, and is flung to the far side of the house
 function shoved() {
   st.grabs++; farShadow(2); st.shake = 1; st.blackout = 0.25; sfx.caught();
-  think("found(you);  // not yet"); if (!st.finale.saidShove) { st.finale.saidShove = true; sayLine(FINALE.shoved); } const p = walkerPos(st.player); float(p[0] - 20, p[1] - 50, "it let go", RED);
+  think("found(you);  // not yet"); if (!st.finale.saidNo) { st.finale.saidNo = true; sayLine(FINALE.shoved); } const p = walkerPos(st.player); float(p[0] - 20, p[1] - 50, "it let go", RED);
 }
 function dragBack() {
   st.grabs++; st.scene = "play";
@@ -1130,7 +1130,7 @@ function lampLight() {
   const lit = previewLit();
   if (lit.size) { c.fillStyle = `rgba(0,0,0,${0.55 + 0.15 * Math.sin(st.t * 5)})`; for (const id of lit) { if (id === st.player.id) continue; for (const [x, y] of drawPositions(find(st.g, id))) c.fillRect(x + 2, y + 2, CW - 4, CH - 4); } }
   ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(lampCv, 0, 0); ctx.restore();
-  if (st.scene === "play" || st.scene === "caught") blueprint(bolt, new Set([...near, ...lit]), px, py);
+  if ((st.scene === "play" || st.scene === "caught") && !st.anim) blueprint(bolt, new Set([...near, ...lit]), px, py);
   // 3. the flame's colour on everything it reaches
   ctx.save(); ctx.globalCompositeOperation = "lighter";
   g = ctx.createRadialGradient(px, py, 0, px, py, 105 * fl); g.addColorStop(0, `rgba(${hot},${0.55 * fl})`); g.addColorStop(1, `rgba(${hot},0)`);
