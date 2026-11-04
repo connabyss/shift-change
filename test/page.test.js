@@ -480,11 +480,19 @@ test("floor 1 has no counter-moves; floor 3's lock waits for the door; the chase
     const after = await page.evaluate(() => { const st = window.__dh.st(); return { scene: st.scene, me: st.player.id, sh: st.shadow.id }; });
     assert.equal(after.scene, "play", "no drag back");
     assert.equal(after.me, c); assert.notEqual(after.sh, c);
+    // the front door holds shut while it's still chasing
+    await page.evaluate(() => { const st = window.__dh.st(); st.player.id = st.g[2][0].id; st.player.way = null; st.shadow.timer = 99; st.shadow.way = null; window.__dh.walk(st.g[2][0].id, true); });
+    await page.waitForFunction(() => !window.__dh.st().player.way, null, { timeout: 4000 });
+    assert.equal(await page.evaluate(() => window.__dh.st().scene), "play", "the door won't open yet");
+    assert.ok(["Not yet.", "The door's mine too.", "Run a little longer."].includes(await page.evaluate(() => window.__dh.st().voice.text)));
     // and about half a minute in, it gives up and stops sliding
-    await page.evaluate(() => { window.__dh.st().finale.t = 27; });
+    await page.evaluate(() => { window.__dh.st().finale.t = 31; });
     await page.waitForFunction(() => window.__dh.st().finale.giveUp, null, { timeout: 4000 });
     assert.equal(await page.evaluate(() => window.__dh.st().voice.text), "Fine. Go. I'll keep the light on.");
     assert.ok(await page.evaluate(() => { const st = window.__dh.st(); return !!window.__dh.path(st.g, st.player.id, st.g[2][0].id); }), "a way to the door is open");
+    // now the door opens
+    await page.evaluate(() => { const st = window.__dh.st(); st.shadow.timer = 99; st.shadow.way = null; window.__dh.walk(st.g[2][0].id, true); });
+    await page.waitForFunction(() => window.__dh.st().scene === "end", null, { timeout: 8000 });
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });

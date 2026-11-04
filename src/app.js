@@ -51,6 +51,8 @@ function nextFloor() {
   newGame(st.floor + 1 === 3 ? null : (Math.random() * 1e9) | 0, st.floor + 1, carry);
 }
 function floorDone() {
+  // the chase: the front door holds shut until the house lets you go (about half a minute)
+  if (st.finale && !st.finale.giveUp) { const p = walkerPos(st.player); float(p[0] + 30, p[1] - 50, "frontDoor.open = \"not yet\";", RED); sayLine(pick(FINALE.notYet)); sfx.doorShut(); st.shake = 0.5; return; }
   st.total.moves += st.moves; st.total.par += st.h.par;
   if (st.floor < FLOORS) { st.scene = "floor"; st.endT = 0; } else { st.scene = "end"; st.endT = 0; }
   sfx.frontDoor();
@@ -240,7 +242,7 @@ function carve() {
   while (p.x > 0) { const a = st.g[p.y][p.x], b = st.g[p.y][p.x - 1]; a.l = true; b.r = true; p = { x: p.x - 1, y: p.y }; }
   think("house.open(a.way);  // run");
 }
-const doorRoom = () => st.g[H - 1][0].id, FINALE_GIVE_UP = 26;
+const doorRoom = () => st.g[H - 1][0].id, FINALE_GIVE_UP = 30;
 function finaleUpdate(dt) {
   const f = st.finale; f.t += dt; f.next -= dt;
   st.finalePath = path(st.g, st.player.id, doorRoom());
@@ -270,7 +272,7 @@ function tearUpdate(dt) {
   if (at(T.out)) { sfx.slide(); sfx.creak(0.6); }
   if (at(T.out + 0.4)) setTitle(tear.windowTitle(t1));
   if (at(T.slam)) { sfx.doorShut(); sfx.breakOut(); sfx.thunder(0.1); }
-  if (t1 >= T.len) { st.tear = null; setTitle(FINALE.title); sayLine(FINALE.start); }
+  if (t1 >= T.len) { st.tear = null; setTitle(FINALE.title); sayLine(FINALE.start); farShadow(2.5); }
 }
 
 // Last floor: the lock is open, but the chase only starts once you've got the front door in reach, so the floor's
@@ -414,11 +416,15 @@ function unseal() {
   if (p.x > 0) st.g[p.y][p.x - 1].r = true; if (p.x < W - 1) st.g[p.y][p.x + 1].l = true;
   think("house.open(this);  // not yet");
 }
+// put the shadow in the room farthest from you, and give it a moment before it moves
+function farShadow(wait) {
+  const sh = st.shadow, b = find(st.g, st.player.id); let best = null, bd = -1;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const r = st.g[y][x]; if (r.id === st.player.id) continue; const d = Math.abs(x - b.x) + Math.abs(y - b.y) + Math.random() * 0.5; if (d > bd) { bd = d; best = r; } }
+  sh.way = null; sh.id = best.id; sh.fx = 0.5; sh.timer = wait; sh.noPath = 0;
+}
 // In the finale it doesn't drag you back: it grabs, lets go, and is flung to the far side of the house
 function shoved() {
-  st.grabs++; const sh = st.shadow, b = find(st.g, st.player.id); let best = null, bd = -1;
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const r = st.g[y][x]; if (r.id === st.player.id) continue; const d = Math.abs(x - b.x) + Math.abs(y - b.y) + Math.random() * 0.5; if (d > bd) { bd = d; best = r; } }
-  sh.way = null; sh.id = best.id; sh.fx = 0.5; sh.timer = 2; sh.noPath = 0; st.shake = 1; st.blackout = 0.25; sfx.caught();
+  st.grabs++; farShadow(2); st.shake = 1; st.blackout = 0.25; sfx.caught();
   think("found(you);  // not yet"); sayLine(FINALE.shoved); const p = walkerPos(st.player); float(p[0] - 20, p[1] - 50, "it let go", RED);
 }
 function dragBack() {

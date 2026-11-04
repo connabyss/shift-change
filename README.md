@@ -30,7 +30,7 @@ afterwards light up green), then click it. `M` turns the sound off and on.
   all drawn inside the game (`src/tear.js`), so it looks the same on Windows, Mac and Linux and touches nothing real.
   A click skips it. Then the house turns itself over, then slides its rows every few seconds
   while the shadow runs you down faster. The way to the door is always lit. If it grabs you, it lets go (it wants to
-  watch you run), and after about half a minute it stops and lets you leave. The browser tab and the code's file name
+  watch you run), and the front door holds shut until, about half a minute in, it stops and lets you leave. The browser tab and the code's file name
   change as it happens. At the very end, the camera pulls back from the house.
 - **Trap the shadow.** Slide its room away or shut it in, and it has to claw through a wall to get out. A bar shows how long you have.
 - **Beat the house.** Floor 1 needs 1 move, floor 2 needs 2, floor 3 needs 3. The top of the screen shows your moves

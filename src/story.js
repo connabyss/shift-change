@@ -58,6 +58,7 @@ export const FINALE = {
   title: "you.trapped = true",
   shoved: "Not yet. I want to watch you run.",
   giveUp: "Fine. Go. I'll keep the light on.",
+  notYet: ["Not yet.", "The door's mine too.", "Run a little longer."],
 };
 
 // The house has a sense of humour. It never says so.
