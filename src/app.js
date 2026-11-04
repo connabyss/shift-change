@@ -148,6 +148,7 @@ function doEdit(li, dir = 1) {
 function performEdit(id, li, dir, byHouse) {
   settle(st.player); settle(st.shadow); st.player.pending = null;
   const res = applyEdit(st.g, id, li, st, dir); unseal();
+  if (byHouse && st.hint && st.hint.text && st.hint.text.startsWith("Hint:")) { const t = st.hint.t; doHint(false); st.hint.t = t; } // the house moved: the hint follows
   if (st.shadow.mode !== "sleep" && !path(st.g, st.shadow.id, st.player.id) && st.shadow.noPath === 0) { trapped(!byHouse); st.shadow.noPath = 0.01; }
   st.glitch = 0.5; st.shake = res.kind === "row" || res.kind === "col" ? 0.6 : 0.25;
   st.alert = 4; st.preview = null; st.previewKey = "";
@@ -174,7 +175,16 @@ function pickHouseMove() {
   const moves = houseMoves(st.g, me, sh.id, sh.mode !== "sleep");
   for (const m of moves) { m.reuse = st.floor > 1 && st.used.has(m.kind); m.score += (m.reuse ? 1.5 : 0) + Math.random() * 0.9; }
   moves.sort((a, b) => b.score - a.score);
-  for (const m of moves.slice(0, 6)) if (solve(m.g, me, st.h.lockIds, st.unlocked, 3)) return m;
+  // It never shuts you in, and never hands you the exit: no move of its own may make your way out shorter, or let you
+  // skip this floor's new word.
+  const L = st.h.lockIds, U = st.unlocked, base = solve(st.g, me, L, U, 3), need = base ? base.length : 4;
+  const nw = NEW_WORD[st.floor] && NEW_WORD[st.floor].kind, guarded = nw && base && need > 0 && !solve(st.g, me, L, U, need, nw);
+  for (const m of moves.slice(0, 6)) {
+    const p = solve(m.g, me, L, U, 3);
+    if (!p || p.length < need) continue;
+    if (guarded && solve(m.g, me, L, U, p.length, nw)) continue;
+    return m;
+  }
   return null;
 }
 function houseCode(m) {
@@ -265,13 +275,20 @@ function tearUpdate(dt) {
 function gags() {
   if (st.finale) return;
   if (st.floor === 1 && !st.gag && st.sinceStart > 12) { st.gag = true; st.shake = 0.9; dustBurst({ kind: "row", i: 0 }); dustBurst({ kind: "row", i: 2 }); sfx.breakOut(); sayLine(JOKES.sneeze); }
-  if (st.floor === 1 && !st.nudged && st.moves === 0 && st.sinceStart > 30) { st.nudged = true; doHint(); st.total.hints--; sayLine(JOKES.nudge); }
+  // floor 1: lost, whether sitting still or clicking around? It points the way (and keeps doing it)
+  if (st.floor === 1 && !st.unlocked) {
+    const nz = st.nudge || (st.nudge = { at: 0, moves: 0, n: 0 }), since = st.sinceStart - nz.at, R = reach(st.g, st.player.id);
+    const lost = !st.h.lockIds.some((l) => R.has(l));
+    if (lost && ((nz.n === 0 && st.sinceStart > 30 && st.moves === 0) || (nz.n === 0 && st.moves >= st.h.par + 4 && st.sinceStart > 10) || (nz.n > 0 && (since > 25 || (st.moves - nz.moves >= 4 && since > 8))))) {
+      nz.at = st.sinceStart; nz.moves = st.moves; nz.n++; st.nudged = true; doHint(false); sayLine(JOKES.nudges[Math.min(nz.n, JOKES.nudges.length) - 1]);
+    }
+  }
   if (st.floor === 2 && !st.gag && st.sinceStart > 8 && st.shadow.mode !== "sleep") { st.gag = true; st.sign = { t: 0 }; }
 }
 // house.hint(): the next word of the shortest way out
-function doHint() {
+function doHint(asked = true) {
   const plan = solve(st.g, st.player.id, st.h.lockIds, st.unlocked, 4);
-  st.total.hints++; sfx.hint();
+  if (asked) { st.total.hints++; sfx.hint(); }
   if (!plan) st.hint = { text: "Hint: even the house is lost. Try sliding a row back the way it came." };
   else if (!plan.length) st.hint = { text: st.unlocked ? "Hint: the way is open. Click the front door, bottom left." : "Hint: a red lock is in reach. Walk there and click true." };
   else {
@@ -279,8 +296,8 @@ function doHint() {
     st.hint = { ...m, text: m.id === st.player.id ? `Hint: click "${word}" in this room's code.` : `Hint: walk to the ${room.name} (yellow frame), then click "${word}" in its code.` };
   }
   // it runs out of patience before it runs out of hints (the real hint still follows)
-  if (st.total.hints === 5) st.hint.text = `${JOKES.hint5} ${JOKES.fine} ${st.hint.text.replace(/^Hint: /, "")}`;
-  if (st.total.hints === 7) { st.hint.text = `${JOKES.hint7} ${JOKES.fine} ${st.hint.text.replace(/^Hint: /, "")}`; st.crayon = { t: 0 }; }
+  if (asked && st.total.hints === 5) st.hint.text = `${JOKES.hint5} ${JOKES.fine} ${st.hint.text.replace(/^Hint: /, "")}`;
+  if (asked && st.total.hints === 7) { st.hint.text = `${JOKES.hint7} ${JOKES.fine} ${st.hint.text.replace(/^Hint: /, "")}`; st.crayon = { t: 0 }; }
   st.hint.t = 0;
 }
 
@@ -1245,6 +1262,6 @@ requestAnimationFrame(frame);
 
 // hooks for automated checks
 window.__dh = {
-  st: () => st, begin: () => { st.scene = "play"; }, choose: (w) => choose(w), say: (k) => say(k), choiceRects: () => choiceRects, nextFloor: () => nextFloor(), solve, hint: () => doHint(), edit: (li, d) => doEdit(li, d), edits, path, walk: (id, exit) => walkTo(id, exit, 0, 0),
+  pickHouseMove: () => pickHouseMove(), houseMove: (m) => performEdit(m.id, m.li, m.dir, true), houseMoves, st: () => st, begin: () => { st.scene = "play"; }, choose: (w) => choose(w), say: (k) => say(k), choiceRects: () => choiceRects, nextFloor: () => nextFloor(), solve, hint: () => doHint(), edit: (li, d) => doEdit(li, d), edits, path, walk: (id, exit) => walkTo(id, exit, 0, 0),
   reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(), sticky: () => sticky, gag: () => ({ gag: !!st.gag, nudged: !!st.nudged, sign: !!st.sign, sticker: !!st.sticker }), undone: () => undone, undo: () => undo(), deskHit: desk.deskHit, shiftK: () => shiftK, goneFor, openDesk: () => openDesk(), trapped: (b) => trapped(b), awayLine: () => awayLine,
 };

@@ -388,3 +388,59 @@ test("one absurd thing per floor early on, and floor 1 nudges you if you sit sti
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+
+test("the house never hands you the exit: its moves don't shorten your way out or let you skip the floor's new word", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    const bad = await page.evaluate(() => {
+      const D = window.__dh, out = [];
+      for (const [floor, seeds] of [[2, [1, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31]], [3, [null]]]) for (const seed of seeds) {
+        D.newGame(seed, floor); D.begin(); const st = D.st(); st.shadow.mode = "hunt";
+        const nw = floor === 2 ? "swap" : "flip";
+        // try each of your own first moves, then see what the house would answer with
+        const first = D.edits(D.byId(st.g, st.player.id));
+        const g0 = D.clone(st.g);
+        for (const [li, dir] of first) {
+          st.g = D.clone(g0); D.applyEdit(st.g, st.player.id, li, null, dir);
+          const base = D.solve(st.g, st.player.id, st.h.lockIds, false, 3), need = base ? base.length : 4;
+          const m = D.pickHouseMove(); if (!m) continue;
+          const p = D.solve(m.g, st.player.id, st.h.lockIds, false, 3);
+          if (!p || p.length < need) out.push({ floor, seed, li, dir, need, got: p && p.length });
+          else if (base && need > 0 && !D.solve(st.g, st.player.id, st.h.lockIds, false, need, nw) && D.solve(m.g, st.player.id, st.h.lockIds, false, p.length, nw)) out.push({ floor, seed, li, dir, skip: nw });
+        }
+      }
+      return out;
+    });
+    assert.deepEqual(bad, []);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("floor 1 keeps nudging a lost player, and a hint follows the house's moves", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    await page.evaluate(() => { window.__dh.begin(); const st = window.__dh.st(); st.moves = st.h.par + 4; st.sinceStart = 11; st.gag = true; });
+    await page.waitForTimeout(150);
+    assert.equal(await page.evaluate(() => window.__dh.st().nudge.n), 1, "clicking around but lost still gets a nudge");
+    await page.evaluate(() => { window.__dh.st().sinceStart += 26; }); await page.waitForTimeout(150);
+    assert.equal(await page.evaluate(() => window.__dh.st().nudge.n), 2, "and again later");
+    assert.equal(await page.evaluate(() => window.__dh.st().voice.text), "Still lost? That one. The yellow frame. I'm not helping.");
+    // ask for a hint, then the house makes a move that cuts you off from the room it named: the hint follows
+    const r = await page.evaluate(() => {
+      const D = window.__dh;
+      for (const seed of [99, 1, 2, 3, 5, 7, 11, 13]) {
+        D.newGame(seed, 1); D.begin(); const st = D.st(); D.hint(); const h = st.hint;
+        if (!h || h.id == null || h.id === st.player.id) continue;
+        const m = D.houseMoves(st.g, st.player.id, st.shadow.id, false).find((m) => !D.reach(m.g, st.player.id).has(h.id));
+        if (!m) continue;
+        D.houseMove(m); st.anim = null;
+        return { tried: true, ok: st.hint.id == null || D.reach(st.g, st.player.id).has(st.hint.id) };
+      }
+      return { tried: false };
+    });
+    assert.ok(r.tried, "found a house move that cuts the hinted room off");
+    const ok = r.ok;
+    assert.ok(ok, "the hint points somewhere you can go");
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
