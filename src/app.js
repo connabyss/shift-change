@@ -42,6 +42,7 @@ function newGame(seed, floor = 1, carry = null) {
     used: carry ? carry.used : new Set(), playerEdits: 0, houseNext: null, finale: null, finalePath: null,
     voice: null, pageShow: null, started: false, blackout: 0, faceBolt: false, faced: false, typed: null, ending: null, endT2: 0, idleSaid: false,
   };
+  st.g0 = clone(h.g); // the floor as it began, in case the house ever leaves no way out
   if (carry) { st.grabs = carry.grabs; st.scene = "play"; st.shadow.mode = "sleep"; }
   setTitle("The Shifting House");
 }
@@ -54,7 +55,7 @@ function floorDone() {
   // the chase: the front door holds shut until the house lets you go (about half a minute)
   if (st.finale && !st.finale.giveUp) {
     st.player.fx = 0.15; st.player.way = null; // pushed back in off the doorstep, where the shadow can still get at you
-    if (!(st.finale.bounced > st.finale.t - 1.5)) { st.finale.bounced = st.finale.t; float(HX + 150, HY + HH - 50, "frontDoor.open = \"not yet\";", RED); sayLine(pick(FINALE.notYet)); sfx.doorShut(); st.shake = 0.5; }
+    if (!(st.finale.bounced > st.finale.t - 1.5)) { st.finale.bounced = st.finale.t; float(HX + 150, HY + HH - 50, "frontDoor.open = \"not yet\";", RED); if (!st.finale.saidNo) { st.finale.saidNo = true; sayLine(FINALE.notYet[0]); } sfx.doorShut(); st.shake = 0.5; }
     return;
   }
   st.total.moves += st.moves; st.total.par += st.h.par;
@@ -189,6 +190,8 @@ function pickHouseMove() {
     const p = solve(m.g, me, L, U, 3);
     if (!p || p.length < need) continue;
     if (guarded && solve(m.g, me, L, U, p.length, nw)) continue;
+    // and no cheap grabs: it never slides the shadow right next to you (a grab ~1.5 s after its move felt unfair)
+    if (sh.mode !== "sleep" && steps(path(m.g, sh.id, me)) <= 1 && steps(path(m.g, sh.id, me)) < steps(path(st.g, sh.id, me))) continue;
     return m;
   }
   return null;
@@ -258,7 +261,9 @@ function carve() {
   while (p.x > 0) { const a = st.g[p.y][p.x], b = st.g[p.y][p.x - 1]; a.l = true; b.r = true; p = { x: p.x - 1, y: p.y }; }
   think("house.open(a.way);  // run");
 }
-const doorRoom = () => st.g[H - 1][0].id, FINALE_GIVE_UP = 30;
+// the chase: a slide about every 4 s, so you can follow each one, and a few lines said once each
+// (the critic counted 23 slides and 21 lines in one run before)
+const doorRoom = () => st.g[H - 1][0].id, FINALE_GIVE_UP = 30, FINALE_SLIDE = 4, FINALE_TALK = 3;
 function finaleUpdate(dt) {
   const f = st.finale; f.t += dt; f.next -= dt;
   // until it gives up, the door is out of reach and you run from the shadow through the rooms you can reach (lit);
@@ -268,7 +273,7 @@ function finaleUpdate(dt) {
   // about half a minute in, it stops sliding and lets you go (the whole chase runs about 35 seconds)
   if (!f.giveUp && f.t > FINALE_GIVE_UP && !st.anim) { f.giveUp = true; if (!path(st.g, st.player.id, doorRoom())) carve(); sayLine(FINALE.giveUp); think("house.let(you).go();  // fine"); }
   if (f.giveUp || f.next > 0 || st.anim) return;
-  f.next = 3.2; const me = st.player.id, pm = find(st.g, me), opts = [];
+  f.next = FINALE_SLIDE; const me = st.player.id, pm = find(st.g, me), opts = [];
   for (let y = 0; y < H; y++) for (const dir of [-1, 1]) {
     // in the chase it breaks its own rule and slides your row too, carrying you away from the door ("Every room is mine.")
     if (y === pm.y && f.giveUp) continue; const g2 = clone(st.g); g2[y] = g2[y].map((_, x) => g2[y][(x - dir + W * 2) % W]);
@@ -281,7 +286,7 @@ function finaleUpdate(dt) {
   settle(st.player); settle(st.shadow); st.player.pending = null;
   const row = st.g[o.y]; st.g[o.y] = row.map((_, x) => row[(x - o.dir + W * 2) % W]);
   st.anim = { kind: "row", i: o.y, dir: o.dir, t: 0 }; sfx.slide(); dustBurst(st.anim); st.shake = 0.7;
-  if (f.n++ % 2 === 0) sayLine(FINALE.lines[(f.n / 2 | 0) % FINALE.lines.length]);
+  const k = f.n++; if (k % 2 === 0 && k / 2 < FINALE_TALK) sayLine(FINALE.lines[k / 2]);
 }
 
 // While the house is out of its window nothing else moves. Sounds land on the beats; then it says "Then run."
@@ -450,11 +455,14 @@ function farShadow(wait) {
 // In the finale it doesn't drag you back: it grabs, lets go, and is flung to the far side of the house
 function shoved() {
   st.grabs++; farShadow(2); st.shake = 1; st.blackout = 0.25; sfx.caught();
-  think("found(you);  // not yet"); sayLine(FINALE.shoved); const p = walkerPos(st.player); float(p[0] - 20, p[1] - 50, "it let go", RED);
+  think("found(you);  // not yet"); if (!st.finale.saidShove) { st.finale.saidShove = true; sayLine(FINALE.shoved); } const p = walkerPos(st.player); float(p[0] - 20, p[1] - 50, "it let go", RED);
 }
 function dragBack() {
   st.grabs++; st.scene = "play";
   const me = st.player, sh = st.shadow; me.way = null; me.pending = null; me.id = st.h.startId; me.fx = 0.5;
+  // never a dead floor: if no way out is left within a few words, the house puts the floor back as it began
+  // (the critic once saw a floor with no house moves and no way out for 160 s after two grabs)
+  if (!solve(st.g, me.id, st.h.lockIds, st.unlocked, 4)) { if (st.unlocked) carve(); else { st.g = clone(st.g0); st.flipped = false; think("house.reset();  // fair's fair"); } }
   const b = find(st.g, me.id); let best = null, bd = -1;
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { if (x <= 1 && y === H - 1) continue; const d = Math.abs(x - b.x) + Math.abs(y - b.y) + Math.random() * 0.5; if (d > bd) { bd = d; best = st.g[y][x]; } }
   sh.way = null; sh.id = best.id; sh.fx = 0.5; sh.mode = "hunt"; sh.timer = 5; sh.noPath = 0;
@@ -734,7 +742,7 @@ function wrap(text, x, y, maxW, lh) {
 }
 // draws a line; returns a box for each of its words, for clicks
 function codeLine(parts, x, y, size, opts) {
-  const [pre, words, post] = parts, g = st.glitch, rects = [];
+  const [pre, words, post] = parts, g = opts.click ? 0 : st.glitch, rects = []; // the words you click never scramble
   ctx.font = `${size}px ${MONO}`; ctx.fillStyle = opts.dim ? DIM : INK; ctx.fillText(glitchText(pre, g), x, y);
   let cx = x + ctx.measureText(pre).width;
   words.forEach((w, i) => {
@@ -1118,7 +1126,11 @@ function lampLight() {
   const near = st.scene === "play" ? [...reach(st.g, st.player.id)] : [];
   c.fillStyle = "rgba(0,0,0,0.5)";
   for (const id of near) { if (id === st.player.id) continue; const p = find(st.g, id); for (const [x, y] of drawPositions(p)) c.fillRect(x + 2, y + 2, CW - 4, CH - 4); }
+  // pointing at a word lights every room it would move, and the rooms you could walk to after it
+  const lit = previewLit();
+  if (lit.size) { c.fillStyle = `rgba(0,0,0,${0.55 + 0.15 * Math.sin(st.t * 5)})`; for (const id of lit) { if (id === st.player.id) continue; for (const [x, y] of drawPositions(find(st.g, id))) c.fillRect(x + 2, y + 2, CW - 4, CH - 4); } }
   ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(lampCv, 0, 0); ctx.restore();
+  if (st.scene === "play" || st.scene === "caught") blueprint(bolt, new Set([...near, ...lit]), px, py);
   // 3. the flame's colour on everything it reaches
   ctx.save(); ctx.globalCompositeOperation = "lighter";
   g = ctx.createRadialGradient(px, py, 0, px, py, 105 * fl); g.addColorStop(0, `rgba(${hot},${0.55 * fl})`); g.addColorStop(1, `rgba(${hot},0)`);
@@ -1133,6 +1145,39 @@ function lampLight() {
   for (const g2 of glows) g2(); glows.length = 0;
   // 5. it is near: the dark closes in at the edges
   if (fear > 0.3) { ctx.save(); const v = ctx.createRadialGradient(px, py, 60, px, py, 520); v.addColorStop(0, "rgba(40,0,0,0)"); v.addColorStop(1, `rgba(40,0,0,${0.5 * fear})`); ctx.fillStyle = v; ctx.fillRect(0, 0, L, VH); ctx.restore(); }
+}
+// The rooms in the dark still show their bones: faint doorways, ladders and names, so you can plan a move
+// (the critic: "8 or 9 of the 12 rooms are black, and chapel.swap(east) can name a room you can't see")
+function blueprint(bolt, seen, px, py) {
+  const a = 0.32 + 0.3 * bolt;
+  ctx.save(); ctx.strokeStyle = `rgba(150,180,240,${a})`; ctx.fillStyle = `rgba(150,180,240,${a + 0.08})`; ctx.lineWidth = 2; ctx.font = `12px ${MONO}`;
+  for (let y = 0; y < st.g.length; y++) for (let x = 0; x < st.g[y].length; x++) {
+    const room = st.g[y][x]; if (room.id === st.player.id || seen.has(room.id) || (st.finale && st.finalePath && st.finalePath.includes(room.id))) continue;
+    for (const [cx, cy] of drawPositions({ x, y })) {
+      if (Math.hypot(cx + CW / 2 - px, cy + CH / 2 - py) < 120) continue; // the lamp shows this one already
+      const m = 12, top = cy + 26, bot = cy + CH - 10;
+      ctx.beginPath();
+      // walls: a gap where a doorway is open
+      for (const [open, wx] of [[room.l, cx + m], [room.r, cx + CW - m]]) {
+        if (open) { ctx.moveTo(wx, top); ctx.lineTo(wx, top + 10); ctx.moveTo(wx, bot - 4); ctx.lineTo(wx, bot); }
+        else { ctx.moveTo(wx, top); ctx.lineTo(wx, bot); }
+      }
+      ctx.moveTo(cx + m, bot); ctx.lineTo(cx + CW - m, bot);
+      // a ladder up, a hole down
+      const lx = cx + CW * 0.76;
+      if (room.up) { ctx.moveTo(lx, cy + 6); ctx.lineTo(lx, bot); ctx.moveTo(lx + 10, cy + 6); ctx.lineTo(lx + 10, bot); for (let k = cy + 14; k < bot; k += 9) { ctx.moveTo(lx, k); ctx.lineTo(lx + 10, k); } }
+      ctx.stroke();
+      if (room.down) { ctx.beginPath(); ctx.ellipse(lx + 5, bot - 1, 11, 3.5, 0, 0, 7); ctx.stroke(); }
+      ctx.textAlign = "center"; ctx.fillText(room.name, cx + CW / 2, cy + 15); ctx.textAlign = "left";
+    }
+  }
+  ctx.restore();
+}
+function previewLit() {
+  const pv = st.preview, out = new Set(); if (!pv || !pv.g || st.scene !== "play") return out;
+  for (const row of st.g) for (const r of row) { const a = find(st.g, r.id), b = find(pv.g, r.id); if (a.x !== b.x || a.y !== b.y) out.add(r.id); }
+  for (const id of pv.reach || []) out.add(id);
+  return out;
 }
 // something enormous stands behind the house: only the lightning shows it
 function drawWatcher(f) {
@@ -1331,5 +1376,5 @@ requestAnimationFrame(frame);
 // hooks for automated checks
 window.__dh = {
   pickHouseMove: () => pickHouseMove(), houseMove: (m) => performEdit(m.id, m.li, m.dir, true), houseMoves, st: () => st, begin: () => { st.scene = "play"; }, choose: (w) => choose(w), say: (k) => say(k), choiceRects: () => choiceRects, nextFloor: () => nextFloor(), solve, hint: () => doHint(), edit: (li, d) => doEdit(li, d), edits, path, walk: (id, exit) => walkTo(id, exit, 0, 0),
-  reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(), sticky: () => sticky, gag: () => ({ gag: !!st.gag, nudged: !!st.nudged, sign: !!st.sign, sticker: !!st.sticker }), undone: () => undone, undo: () => undo(), say: (t) => sayLine(t), hush: () => { st.voice = null; st.voiceQ = []; st.quiet = 99; st.sign = st.sticker = null; }, lift: () => lift(), junk: () => junk.length, deskHit: desk.deskHit, shiftK: () => shiftK, goneFor, openDesk: () => openDesk(), trapped: (b) => trapped(b), awayLine: () => awayLine,
+  reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(), sticky: () => sticky, gag: () => ({ gag: !!st.gag, nudged: !!st.nudged, sign: !!st.sign, sticker: !!st.sticker }), undone: () => undone, undo: () => undo(), line: (t) => sayLine(t), hush: () => { st.voice = null; st.voiceQ = []; st.quiet = 99; st.sign = st.sticker = null; }, lift: () => lift(), junk: () => junk.length, tick: (dt, n) => { for (let i = 0; i < n; i++) update(dt); }, dragBack: () => dragBack(), previewLit: () => [...previewLit()], deskHit: desk.deskHit, shiftK: () => shiftK, goneFor, openDesk: () => openDesk(), trapped: (b) => trapped(b), awayLine: () => awayLine,
 };
