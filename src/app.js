@@ -54,7 +54,7 @@ function floorDone() {
   // the chase: the front door holds shut until the house lets you go (about half a minute)
   if (st.finale && !st.finale.giveUp) {
     st.player.fx = 0.15; st.player.way = null; // pushed back in off the doorstep, where the shadow can still get at you
-    if (!(st.finale.bounced > st.finale.t - 1.5)) { st.finale.bounced = st.finale.t; float(HX + 90, HY + HH - 110, "frontDoor.open = \"not yet\";", RED); sayLine(pick(FINALE.notYet)); sfx.doorShut(); st.shake = 0.5; }
+    if (!(st.finale.bounced > st.finale.t - 1.5)) { st.finale.bounced = st.finale.t; float(HX + 150, HY + HH - 50, "frontDoor.open = \"not yet\";", RED); sayLine(pick(FINALE.notYet)); sfx.doorShut(); st.shake = 0.5; }
     return;
   }
   st.total.moves += st.moves; st.total.par += st.h.par;
@@ -425,8 +425,12 @@ function unseal() {
 // put the shadow in the room farthest from you, and give it a moment before it moves
 function farShadow(wait) {
   const sh = st.shadow, b = find(st.g, st.player.id); let best = null, bd = -1;
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const r = st.g[y][x]; if (r.id === st.player.id) continue; const d = Math.abs(x - b.x) + Math.abs(y - b.y) + Math.random() * 0.5; if (d > bd) { bd = d; best = r; } }
-  sh.way = null; sh.id = best.id; sh.fx = 0.5; sh.timer = wait; sh.noPath = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const r = st.g[y][x]; if (r.id === st.player.id) continue;
+    // far away, but somewhere it can get to you from, so it's never shut in for the whole chase
+    const d = Math.abs(x - b.x) + Math.abs(y - b.y) + Math.random() * 0.5 + (path(st.g, r.id, st.player.id) ? 10 : 0); if (d > bd) { bd = d; best = r; }
+  }
+  sh.way = null; sh.id = best.id; sh.fx = 0.5; sh.timer = wait; sh.noPath = 0; sh.mode = "hunt"; // never sits out the chase shut in
 }
 // In the finale it doesn't drag you back: it grabs, lets go, and is flung to the far side of the house
 function shoved() {

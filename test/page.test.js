@@ -473,6 +473,7 @@ test("floor 1 has no counter-moves; floor 3's lock waits for the door; the chase
     await page.waitForFunction(() => !!window.__dh.st().finale, null, { timeout: 4000 });
     await page.evaluate(() => { window.__dh.st().tear.t = 99; });
     await page.waitForFunction(() => !window.__dh.st().tear, null, { timeout: 4000 });
+    assert.ok(await page.evaluate(() => { const st = window.__dh.st(); return !!window.__dh.path(st.g, st.shadow.id, st.player.id); }), "the chase starts with the shadow able to reach you");
     // caught in the chase: you stay put, it's flung away
     await page.waitForFunction(() => !window.__dh.st().anim, null, { timeout: 4000 }); // the house finishes turning over
     const c = await page.evaluate(() => { const st = window.__dh.st(); const me = st.player.id; st.player.way = null; st.shadow.id = me; st.shadow.fx = st.player.fx; st.shadow.way = null; return me; });
