@@ -882,7 +882,7 @@ function drawScenes() {
     if (k > 0.4) {
       centerText(`Floor ${st.floor} of ${FLOORS}: out.`, 120, `44px ${MONO}`, INK);
       const best = st.moves <= st.h.par;
-      centerText(`You used ${st.moves} move${st.moves === 1 ? "" : "s"}. The house's best: ${st.h.par}.${best ? " You matched it." : ""}`, 164, `22px ${MONO}`, best ? GRN : INK);
+      centerText(`You used ${st.moves} move${st.moves === 1 ? "" : "s"}. The house's best: ${st.h.par}.${st.moves < st.h.par ? " " + JOKES.beatPar : best ? " You matched it." : ""}`, 164, `22px ${MONO}`, best ? GRN : INK);
       // the page you found on this floor, read now, between floors, not while it's hunting you
       if (st.page.got) { centerText(`a torn page (${st.pages} of 3)`, 230, `18px ${MONO}`, "#e8dcc0"); centerWrap(PAGES[st.floor], 262, 620, 26, `italic 21px ${SERIF}`, "#e8dcc0"); }
       else centerText("You didn't find this floor's torn page.", 246, `italic 19px ${SERIF}`, DIM);
@@ -945,7 +945,15 @@ function drawWorld() {
   drawHouse(); ctx.restore();
   const f = flash(); if (f > 0) { ctx.fillStyle = `rgba(210,220,255,${f * 0.22})`; ctx.fillRect(0, 0, PX - 14, VH); }
   drawPanel(); scanlines(); drawOverlay();
-  if (st.scene === "play") { if (st.crayon) drawCrayonDoor(st.crayon.t); if (st.note) drawNote(st.note.t); }
+  if (st.scene === "play") { if (st.crayon) drawCrayonDoor(st.crayon.t); if (st.note) drawNote(st.note.t); if (st.floorT < 4) drawYou(st.floorT); }
+}
+// the first few seconds of each floor: a marker over you, so you can find yourself
+function drawYou(t) {
+  const [x, y] = walkerPos(st.player), a = Math.min(1, t * 3, (4 - t) / 0.6), bob = Math.sin(t * 6) * 3;
+  ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = YEL; ctx.strokeStyle = "rgba(0,0,0,0.7)"; ctx.lineWidth = 3;
+  ctx.font = `22px ${MONO}`; ctx.textAlign = "center"; ctx.strokeText("you", x, y - 62 + bob); ctx.fillText("you", x, y - 62 + bob);
+  ctx.beginPath(); ctx.moveTo(x - 7, y - 54 + bob); ctx.lineTo(x + 7, y - 54 + bob); ctx.lineTo(x, y - 44 + bob); ctx.closePath(); ctx.fill();
+  ctx.textAlign = "left"; ctx.restore();
 }
 // Hint 7: a terrible crayon drawing of a door, next to the real one
 function drawCrayonDoor(t) {
@@ -1097,7 +1105,10 @@ cv.addEventListener("pointerdown", (e) => {
   if (st.scene !== "play") return;
   if (st.tear) { st.tear.t = Math.max(st.tear.t, tear.TEAR.hold); return; } // a click skips to the slam
   if (shiftK > 0) return; // while you hold the house over, clicks would land in the wrong room
-  const h = hitTest(x, y); st.hover = h;
+  const prev = st.hover, h = hitTest(x, y);
+  // a finger can't point, so on touch the first tap on a word previews it and a second tap changes it
+  if (e.pointerType === "touch" && h && h.type === "word" && !(prev && prev.type === "word" && prev.li === h.li && prev.dir === h.dir)) { st.hover = h; refreshPreview(); return; }
+  st.hover = h;
   if (!h) return;
   if (h.type === "word") doEdit(h.li, h.dir);
   else if (h.type === "hint") doHint();

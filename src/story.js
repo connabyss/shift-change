@@ -68,6 +68,7 @@ export const JOKES = {
   console: "I can see you reading this.",
   notesEmpty: "(empty. You didn't pick any up.)",
   desk: "Click house.js to build a new house.",
+  beatPar: "You beat it. It helped. It won't say so.",
 };
 
 // Hold Shift and the house slides over a room, then snaps back when you let go. It doesn't like it.

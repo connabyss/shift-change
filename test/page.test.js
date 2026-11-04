@@ -344,3 +344,24 @@ test("holding Shift slides the house over a room and snaps back; the puzzle does
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+
+test("on touch, the first tap on a word previews it and the second changes it", { skip }, async () => {
+  const server = await serve(), browser = await chromium.launch();
+  try {
+    const context = await browser.newContext({ viewport: { width: 960, height: 600 }, hasTouch: true });
+    const page = await context.newPage(), errors = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    await page.goto(`http://127.0.0.1:${server.address().port}/?seed=4242`);
+    await page.waitForFunction(() => window.__dh);
+    await page.evaluate(() => window.__dh.begin()); await page.waitForTimeout(100);
+    const wr = await page.evaluate(() => window.__dh.st().wordRects[0]);
+    const xy = await page.evaluate(([x, y]) => { const r = document.getElementById("game").getBoundingClientRect(); return [r.left + x * r.width / 960, r.top + y * r.height / 600]; }, [wr.x + wr.w / 2, wr.y + wr.h / 2]);
+    await page.touchscreen.tap(...xy);
+    let s = await page.evaluate(() => ({ moves: window.__dh.st().moves, preview: !!window.__dh.st().preview }));
+    assert.deepEqual(s, { moves: 0, preview: true }, "first tap previews");
+    await page.touchscreen.tap(...xy);
+    assert.equal(await page.evaluate(() => window.__dh.st().moves), 1, "second tap changes it");
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); server.close(); }
+});
