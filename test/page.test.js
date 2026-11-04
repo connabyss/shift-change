@@ -484,6 +484,7 @@ test("floor 1 has no counter-moves; floor 3's lock waits for the door; the chase
     await page.evaluate(() => { const st = window.__dh.st(); st.player.id = st.g[2][0].id; st.player.way = null; st.shadow.timer = 99; st.shadow.way = null; window.__dh.walk(st.g[2][0].id, true); });
     await page.waitForFunction(() => !window.__dh.st().player.way, null, { timeout: 4000 });
     assert.equal(await page.evaluate(() => window.__dh.st().scene), "play", "the door won't open yet");
+    assert.ok(await page.evaluate(() => window.__dh.st().player.fx >= 0), "pushed back inside, not left on the doorstep");
     assert.ok(["Not yet.", "The door's mine too.", "Run a little longer."].includes(await page.evaluate(() => window.__dh.st().voice.text)));
     // a second try right away doesn't stack a second label
     await page.evaluate(() => { const st = window.__dh.st(); window.__dh.walk(st.g[2][0].id, true); });

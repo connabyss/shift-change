@@ -53,6 +53,7 @@ function nextFloor() {
 function floorDone() {
   // the chase: the front door holds shut until the house lets you go (about half a minute)
   if (st.finale && !st.finale.giveUp) {
+    st.player.fx = 0.15; st.player.way = null; // pushed back in off the doorstep, where the shadow can still get at you
     if (!(st.finale.bounced > st.finale.t - 1.5)) { st.finale.bounced = st.finale.t; float(HX + 90, HY + HH - 110, "frontDoor.open = \"not yet\";", RED); sayLine(pick(FINALE.notYet)); sfx.doorShut(); st.shake = 0.5; }
     return;
   }
@@ -257,7 +258,8 @@ function finaleUpdate(dt) {
   if (f.giveUp || f.next > 0 || st.anim) return;
   f.next = 3.2; const me = st.player.id, pm = find(st.g, me), opts = [];
   for (let y = 0; y < H; y++) for (const dir of [-1, 1]) {
-    if (y === pm.y) continue; const g2 = clone(st.g); g2[y] = g2[y].map((_, x) => g2[y][(x - dir + W * 2) % W]);
+    // in the chase it breaks its own rule and slides your row too, carrying you away from the door ("Every room is mine.")
+    if (y === pm.y && f.giveUp) continue; const g2 = clone(st.g); g2[y] = g2[y].map((_, x) => g2[y][(x - dir + W * 2) % W]);
     // keep the door out of reach for now, then bring the shadow closer
     const open = path(g2, me, g2[H - 1][0].id) ? 0 : 10;
     opts.push({ y, dir, score: open + steps(path(st.g, st.shadow.id, me)) - steps(path(g2, st.shadow.id, me)) + Math.random() });
