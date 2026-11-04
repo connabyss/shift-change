@@ -256,8 +256,8 @@ test("the jokes: Ctrl+Z undoes the moon, then gravity, then your undo; hints 5 a
     await page.keyboard.press("Control+z"); assert.equal(await page.evaluate(() => window.__dh.undone()), 0); assert.equal(await voice(), "I undid your undo. You're welcome.");
     // hints: the fifth says leave, the seventh draws a door, the rest are real
     const hints = await page.evaluate(() => { const out = []; for (let i = 0; i < 8; i++) { window.__dh.hint(); out.push(window.__dh.st().hint.text); } return { out, crayon: !!window.__dh.st().crayon }; });
-    assert.equal(hints.out[4], "Hint: leave.");
-    assert.equal(hints.out[6], "Hint: I'm out of hints. Here's a drawing of a door.");
+    assert.match(hints.out[4], /^Hint: leave\. \.\.\.Fine\. (click|walk|the way|a red|even)/, "the joke, then the real hint");
+    assert.match(hints.out[6], /^Hint: I'm out of hints\. Here's a drawing of a door\. \.\.\.Fine\. (click|walk|the way|a red|even)/);
     assert.match(hints.out[5], /^Hint: (click|walk|the way|a red|even)/);
     assert.ok(hints.crayon, "the crayon door is drawn");
     // shut the shadow in: it slides a note under the wall, once
@@ -299,6 +299,7 @@ test("the house remembers: come back and it says how long you were gone, and the
   try {
     assert.equal(await page.evaluate(() => window.__dh.goneFor(3 * 3600e3 + 5 * 60e3)), "3 hours, 5 minutes");
     assert.equal(await page.evaluate(() => window.__dh.goneFor(1000)), "1 second");
+    assert.equal(await page.evaluate(() => window.__dh.awayLine()), null, "a reload isn't leaving");
     assert.equal(await page.evaluate(() => window.__dh.goneFor(2 * 86400e3 + 3600e3)), "2 days, 1 hour");
     // you left 2 hours ago (only the time and the house's seed are kept)
     // (set as the next page loads: leaving this one saves a fresh time, as it should)
@@ -364,4 +365,26 @@ test("on touch, the first tap on a word previews it and the second changes it", 
     assert.equal(await page.evaluate(() => window.__dh.st().moves), 1, "second tap changes it");
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
+});
+
+test("one absurd thing per floor early on, and floor 1 nudges you if you sit still", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    const G = () => page.evaluate(() => window.__dh.gag());
+    const voice = () => page.evaluate(() => window.__dh.st().voice && window.__dh.st().voice.text);
+    await page.evaluate(() => window.__dh.begin());
+    await page.evaluate(() => { window.__dh.st().sinceStart = 12.5; }); await page.waitForTimeout(150);
+    assert.equal((await G()).gag, true); assert.equal(await voice(), "Achoo. ...Sorry. Dust.");
+    await page.evaluate(() => { window.__dh.st().sinceStart = 31; }); await page.waitForTimeout(150);
+    assert.equal((await G()).nudged, true); assert.equal(await voice(), "Psst. The yellow words. Click one. I never said that.");
+    assert.match(await page.evaluate(() => window.__dh.st().hint.text), /^Hint: /, "and the hint frames the word to click");
+    assert.equal(await page.evaluate(() => window.__dh.st().total.hints), 0, "the nudge isn't counted as a hint you asked for");
+    // floor 2: the shadow wakes and holds up a sign
+    await page.evaluate(() => { window.__dh.newGame(99, 2); window.__dh.begin(); const st = window.__dh.st(); window.__dh.edit(window.__dh.byId(st.g, st.player.id).lines.findIndex((l) => l.kind === "row" || l.kind === "swap"), 1); st.sinceStart = 9; });
+    await page.waitForFunction(() => window.__dh.gag().sign, null, { timeout: 4000 });
+    // floor 3: your first flip gets the sticker
+    await page.evaluate(() => { window.__dh.newGame(null, 3); window.__dh.begin(); const D = window.__dh, st = D.st(); D.edit(D.byId(st.g, st.player.id).lines.findIndex((l) => l.kind === "flip"), 1); });
+    assert.equal((await G()).sticker, true);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
 });

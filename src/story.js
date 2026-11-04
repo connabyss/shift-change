@@ -64,6 +64,12 @@ export const JOKES = {
   undo: ["Undo: the moon.", "Undo: gravity.", "I undid your undo. You're welcome."],
   hint5: "Hint: leave.",
   hint7: "Hint: I'm out of hints. Here's a drawing of a door.",
+  fine: "...Fine.",
+  // one absurd thing on each floor, early
+  sneeze: "Achoo. ...Sorry. Dust.",            // floor 1: the house sneezes
+  nudge: "Psst. The yellow words. Click one. I never said that.", // floor 1, if you haven't moved in 30 seconds
+  sign: "hi :)",                                // floor 2: the shadow wakes up and holds up a sign
+  sticker: "THIS SIDE UP",                      // floor 3: the first time you turn it over
   note: ["can i come out", "yes", "no", "maybe"],
   console: "I can see you reading this.",
   notesEmpty: "(empty. You didn't pick any up.)",

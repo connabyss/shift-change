@@ -153,7 +153,7 @@ function performEdit(id, li, dir, byHouse) {
   st.alert = 4; st.preview = null; st.previewKey = "";
   if (res.kind === "row" || res.kind === "col") { st.anim = { ...res, t: 0 }; sfx.slide(); dustBurst(res); }
   else if (res.kind === "swap") { st.anim = { ...res, t: 0 }; sfx.swap(); }
-  else if (res.kind === "flip") { st.anim = { ...res, t: 0, slow: true }; sfx.flip(); st.shake = 1; }
+  else if (res.kind === "flip") { st.anim = { ...res, t: 0, slow: true }; sfx.flip(); st.shake = 1; if (!byHouse && !st.gag) { st.gag = true; st.sticker = { t: 0 }; } }
   else if (res.kind === "door") (res.open ? sfx.doorOpen : sfx.doorShut)();
   else if (res.kind === "lights") sfx.lights(res.on);
   return res;
@@ -261,19 +261,26 @@ function tearUpdate(dt) {
   if (t1 >= T.len) { st.tear = null; setTitle(FINALE.title); sayLine(FINALE.start); }
 }
 
+// One absurd moment per floor, early, and on floor 1 a nudge so nobody sits stuck
+function gags() {
+  if (st.finale) return;
+  if (st.floor === 1 && !st.gag && st.sinceStart > 12) { st.gag = true; st.shake = 0.9; dustBurst({ kind: "row", i: 0 }); dustBurst({ kind: "row", i: 2 }); sfx.breakOut(); sayLine(JOKES.sneeze); }
+  if (st.floor === 1 && !st.nudged && st.moves === 0 && st.sinceStart > 30) { st.nudged = true; doHint(); st.total.hints--; sayLine(JOKES.nudge); }
+  if (st.floor === 2 && !st.gag && st.sinceStart > 8 && st.shadow.mode !== "sleep") { st.gag = true; st.sign = { t: 0 }; }
+}
 // house.hint(): the next word of the shortest way out
 function doHint() {
   const plan = solve(st.g, st.player.id, st.h.lockIds, st.unlocked, 4);
   st.total.hints++; sfx.hint();
-  // it runs out of patience before it runs out of hints
-  if (st.total.hints === 5) { st.hint = { text: JOKES.hint5, t: 0 }; return; }
-  if (st.total.hints === 7) { st.hint = { text: JOKES.hint7, t: 0 }; st.crayon = { t: 0 }; return; }
   if (!plan) st.hint = { text: "Hint: even the house is lost. Try sliding a row back the way it came." };
   else if (!plan.length) st.hint = { text: st.unlocked ? "Hint: the way is open. Click the front door, bottom left." : "Hint: a red lock is in reach. Walk there and click true." };
   else {
     const m = plan[0], room = byId(st.g, m.id), word = lineParts(room, room.lines[m.li], true)[1].find((w) => (w.dir ?? 1) === m.dir).text;
     st.hint = { ...m, text: m.id === st.player.id ? `Hint: click "${word}" in this room's code.` : `Hint: walk to the ${room.name} (yellow frame), then click "${word}" in its code.` };
   }
+  // it runs out of patience before it runs out of hints (the real hint still follows)
+  if (st.total.hints === 5) st.hint.text = `${JOKES.hint5} ${JOKES.fine} ${st.hint.text.replace(/^Hint: /, "")}`;
+  if (st.total.hints === 7) { st.hint.text = `${JOKES.hint7} ${JOKES.fine} ${st.hint.text.replace(/^Hint: /, "")}`; st.crayon = { t: 0 }; }
   st.hint.t = 0;
 }
 
@@ -289,6 +296,8 @@ function update(dt) {
   if (st.writeBack) { st.writeBack.t += dt; if (st.writeBack.t > 2.2) st.writeBack = null; }
   if (st.crayon && (st.crayon.t += dt) > 9) st.crayon = null;
   if (st.note && (st.note.t += dt) > 6) st.note = null;
+  if (st.sign && (st.sign.t += dt) > 4) st.sign = null;
+  if (st.sticker && (st.sticker.t += dt) > 5) st.sticker = null;
   if (st.desk) { st.desk.t += dt; if (st.desk.bin != null) st.desk.bin += dt; }
   st.floats = st.floats.filter((f) => (f.t += dt) < 1.4);
   st.dust = st.dust.filter((d) => { d.t += dt; d.x += d.vx * dt; d.y += d.vy * dt; d.vy += 40 * dt; return d.t < d.life; });
@@ -306,6 +315,7 @@ function update(dt) {
   // floor 3: lightning, and for a moment something enormous behind the house
   if (st.floor === 3 && !st.faced && st.sinceStart > 7) { st.faced = true; st.faceBolt = true; st.bolt = { t: 0, next: 20, x: HCX }; sfx.thunder(0.7); say("face"); }
   st.sinceStart += dt; st.floorT += dt; st.alert = Math.max(0, st.alert - dt);
+  gags();
   if (st.anim) { st.anim.t += dt / (st.anim.slow ? 1.3 : 0.7); if (st.anim.t >= 1) st.anim = null; else return; }
 
   houseUpdate(dt);
@@ -945,7 +955,7 @@ function drawWorld() {
   drawHouse(); ctx.restore();
   const f = flash(); if (f > 0) { ctx.fillStyle = `rgba(210,220,255,${f * 0.22})`; ctx.fillRect(0, 0, PX - 14, VH); }
   drawPanel(); scanlines(); drawOverlay();
-  if (st.scene === "play") { if (st.crayon) drawCrayonDoor(st.crayon.t); if (st.note) drawNote(st.note.t); if (st.floorT < 4) drawYou(st.floorT); }
+  if (st.scene === "play") { if (st.crayon) drawCrayonDoor(st.crayon.t); if (st.note) drawNote(st.note.t); if (st.floorT < 4) drawYou(st.floorT); if (st.sign) drawSign(st.sign.t); if (st.sticker) drawSticker(st.sticker.t); }
 }
 // the first few seconds of each floor: a marker over you, so you can find yourself
 function drawYou(t) {
@@ -954,6 +964,20 @@ function drawYou(t) {
   ctx.font = `22px ${MONO}`; ctx.textAlign = "center"; ctx.strokeText("you", x, y - 62 + bob); ctx.fillText("you", x, y - 62 + bob);
   ctx.beginPath(); ctx.moveTo(x - 7, y - 54 + bob); ctx.lineTo(x + 7, y - 54 + bob); ctx.lineTo(x, y - 44 + bob); ctx.closePath(); ctx.fill();
   ctx.textAlign = "left"; ctx.restore();
+}
+// floor 2: the shadow, newly awake, holds up a little sign
+function drawSign(t) {
+  const [x, y] = walkerPos(st.shadow), a = Math.min(1, t * 3, (4 - t) / 0.5), up = Math.min(1, t * 2.5) * 16;
+  ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = "#040305"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x + 10, y - 30); ctx.lineTo(x + 14, y - 52 - up); ctx.stroke();
+  ctx.translate(x + 14, y - 70 - up); ctx.rotate(0.06); ctx.fillStyle = "#efe6cf"; ctx.fillRect(-26, -16, 52, 26);
+  ctx.fillStyle = "#2b2119"; ctx.font = `italic 18px ${SERIF}`; ctx.textAlign = "center"; ctx.fillText(JOKES.sign, 0, 3); ctx.textAlign = "left"; ctx.restore();
+}
+// floor 3: the first time you turn it over, a shipping sticker, now upside down
+function drawSticker(t) {
+  const a = Math.min(1, t * 3, (5 - t) / 0.6);
+  ctx.save(); ctx.globalAlpha = a; ctx.translate(HX + 130, HY - 14); ctx.rotate(Math.PI - 0.12); // on the roof
+  ctx.fillStyle = "#e8c35a"; ctx.fillRect(-82, -20, 164, 40); ctx.strokeStyle = "#7a4a10"; ctx.lineWidth = 2; ctx.strokeRect(-78, -16, 156, 32);
+  ctx.fillStyle = "#5a3208"; ctx.font = `22px ${MONO}`; ctx.textAlign = "center"; ctx.fillText(JOKES.sticker, 0, 7); ctx.textAlign = "left"; ctx.restore();
 }
 // Hint 7: a terrible crayon drawing of a door, next to the real one
 function drawCrayonDoor(t) {
@@ -968,7 +992,9 @@ function drawCrayonDoor(t) {
 // The shadow, shut in, slides a note under the wall
 function drawNote(t) {
   const sp = walkerPos(st.shadow), a = Math.min(1, t * 3, (6 - t) / 0.5), slide = Math.min(1, t * 2.5);
-  const [l1, ...boxes] = JOKES.note, x = sp[0] + 18 + slide * 26, y = sp[1] - 74;
+  // beside it, clear of the "you shut it in" words (which rise on its right) and of the line along the bottom
+  const [l1, ...boxes] = JOKES.note, left = sp[0] > HX + 140, x = left ? sp[0] - 136 - slide * 12 : sp[0] + 24 + slide * 12;
+  const y = Math.min(left ? sp[1] - 96 : sp[1] - 24, VH - 172);
   ctx.save(); ctx.globalAlpha = a; ctx.translate(x, y); ctx.rotate(-0.08);
   ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = 10; ctx.fillStyle = "#efe6cf"; ctx.fillRect(0, 0, 118, 92); ctx.shadowBlur = 0;
   ctx.fillStyle = "#2b2119"; ctx.font = `italic 17px ${SERIF}`; ctx.fillText(l1, 9, 22);
@@ -1211,7 +1237,7 @@ function drawCredits(t) {
 console.log(`%c${JOKES.console}`, "color:#ff5a4e;font:20px monospace");
 const urlSeed = Number(new URLSearchParams(location.search).get("seed")), visit = urlSeed ? null : lastVisit();
 let awayLine = null;
-if (visit && visit.seed) { newGame(visit.seed); st.decor = true; st.shuffle = { t: 0, done: false }; awayLine = AWAY(goneFor(Date.now() - visit.t)); }
+if (visit && visit.seed && Date.now() - visit.t >= 60e3) { /* a reload isn't leaving */ newGame(visit.seed); st.decor = true; st.shuffle = { t: 0, done: false }; awayLine = AWAY(goneFor(Date.now() - visit.t)); }
 else newGame(urlSeed || ((Math.random() * 1e9) | 0));
 let last = performance.now();
 function frame(now) { const dt = Math.min(0.05, (now - last) / 1000); last = now; if (sticky && (sticky.t += dt) > 6) sticky = null; update(dt); render(); requestAnimationFrame(frame); }
@@ -1220,5 +1246,5 @@ requestAnimationFrame(frame);
 // hooks for automated checks
 window.__dh = {
   st: () => st, begin: () => { st.scene = "play"; }, choose: (w) => choose(w), say: (k) => say(k), choiceRects: () => choiceRects, nextFloor: () => nextFloor(), solve, hint: () => doHint(), edit: (li, d) => doEdit(li, d), edits, path, walk: (id, exit) => walkTo(id, exit, 0, 0),
-  reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(), sticky: () => sticky, undone: () => undone, undo: () => undo(), deskHit: desk.deskHit, shiftK: () => shiftK, goneFor, openDesk: () => openDesk(), trapped: (b) => trapped(b), awayLine: () => awayLine,
+  reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(), sticky: () => sticky, gag: () => ({ gag: !!st.gag, nudged: !!st.nudged, sign: !!st.sign, sticker: !!st.sticker }), undone: () => undone, undo: () => undo(), deskHit: desk.deskHit, shiftK: () => shiftK, goneFor, openDesk: () => openDesk(), trapped: (b) => trapped(b), awayLine: () => awayLine,
 };

@@ -43,8 +43,8 @@ afterwards light up green), then click it. `M` turns the sound off and on.
   left on the house's desktop: open `notes.txt` (the torn pages you found), click the Bin, or click `house.js` to
   build a new house.
 - **It has a sense of humour.** Try `Ctrl+Z` (`Cmd+Z` on a Mac) three times. Hold `Shift`. Ask for a lot of hints.
-  Shut the shadow in. Leave and come back later: it counts. Open the browser's developer console. Nothing is saved
-  except the time you left and which house you were in, only in your own browser.
+  Shut the shadow in. Leave and come back later: it counts. Open the browser's developer console. Only three things
+  are saved, in your own browser: the time you left, which house you were in, and which ending you got last.
 - **The story.** The house talks back now and then, in a line typed under it. Each floor starts with a note from its
   commit log, and each floor hides one torn page in your handwriting, in a room you can reach on the way out. Find all
   three and the last line of the game becomes a word you can change: `house.keep(shadow|nobody)`. All of the story's
