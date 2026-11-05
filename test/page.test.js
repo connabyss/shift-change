@@ -253,9 +253,18 @@ test("the jokes: Ctrl+Z undoes the moon, then gravity, then your undo; hints 5 a
     assert.ok(logs.some((l) => l.includes("I can see you reading this.")), "a line for whoever opens the console");
     await page.evaluate(() => window.__dh.begin()); await page.waitForTimeout(100);
     const voice = () => page.evaluate(() => window.__dh.st().voice && window.__dh.st().voice.text);
-    await page.keyboard.press("Control+z"); assert.equal(await page.evaluate(() => window.__dh.undone()), 1); assert.equal(await voice(), "Undo: the moon.");
-    await page.keyboard.press("Meta+z"); assert.equal(await page.evaluate(() => window.__dh.undone()), 2); assert.equal(await voice(), "Undo: gravity.");
-    await page.keyboard.press("Control+z"); assert.equal(await page.evaluate(() => window.__dh.undone()), 0); assert.equal(await voice(), "I undid your undo. You're welcome.");
+    const U = () => page.evaluate(() => window.__dh.undone());
+    await page.keyboard.press("Control+z"); assert.equal(await U(), 1); assert.equal(await voice(), "Undo: the moon.");
+    await page.keyboard.press("Control+z"); assert.equal(await U(), 1, "a quick second press waits: each step holds long enough to see");
+    await page.waitForTimeout(2300);
+    await page.keyboard.press("Meta+z"); assert.equal(await U(), 2); assert.equal(await voice(), "Undo: gravity. Hold on.");
+    await page.waitForTimeout(1500);
+    const g = await page.evaluate(() => ({ lift: window.__dh.lift(), junk: window.__dh.junk() }));
+    assert.ok(g.lift > 6, `the house floats off the ground (lift ${g.lift})`); assert.ok(g.junk > 0, "loose things drift up");
+    await page.waitForTimeout(900);
+    await page.keyboard.press("Control+z"); assert.equal(await U(), 0); assert.equal(await voice(), "I undid your undo. You're welcome.");
+    assert.ok(await page.evaluate(() => window.__dh.st().shake > 0), "and it lands with a thump");
+    await page.waitForTimeout(400); assert.ok(await page.evaluate(() => window.__dh.lift()) < 1, "back on the ground");
     // hints: the fifth says leave, the seventh draws a door, the rest are real
     const hints = await page.evaluate(() => { const out = []; for (let i = 0; i < 8; i++) { window.__dh.hint(); out.push(window.__dh.st().hint.text); } return { out, crayon: !!window.__dh.st().crayon }; });
     assert.match(hints.out[4], /^Hint: leave\. \.\.\.Fine\. (click|walk|the way|a red|even)/, "the joke, then the real hint");
@@ -369,21 +378,40 @@ test("on touch, the first tap on a word previews it and the second changes it", 
   } finally { await browser.close(); server.close(); }
 });
 
+test("the house speaks one line at a time: a new line waits its turn, and each stays up long enough to read", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    await page.evaluate(() => { window.__dh.begin(); window.__dh.hush(); window.__dh.line("Achoo. ...Sorry. Dust."); window.__dh.line("Psst. The yellow words. Click one. I never said that."); });
+    const v = () => page.evaluate(() => { const x = window.__dh.st().voice; return x && { text: x.text, len: x.len }; });
+    const first = await v();
+    assert.equal(first.text, "Achoo. ...Sorry. Dust.", "the second line didn't cut off the first");
+    assert.ok(first.len >= 4, "at least four seconds on screen");
+    await page.evaluate(() => { window.__dh.st().voice.t = 99; });
+    await page.waitForFunction(() => { const x = window.__dh.st().voice; return x && x.text.startsWith("Psst"); }, null, { timeout: 4000 });
+    assert.ok((await v()).len > first.len, "a longer line stays up longer");
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
 test("one absurd thing per floor early on, and floor 1 nudges you if you sit still", { skip }, async () => {
   const { page, errors, close } = await open("/?seed=4242");
   try {
     const G = () => page.evaluate(() => window.__dh.gag());
     const voice = () => page.evaluate(() => window.__dh.st().voice && window.__dh.st().voice.text);
     await page.evaluate(() => window.__dh.begin());
-    await page.evaluate(() => { window.__dh.st().sinceStart = 12.5; }); await page.waitForTimeout(150);
+    // a joke never lands on top of another line: with the house still talking, the sneeze waits
+    await page.evaluate(() => { const st = window.__dh.st(); window.__dh.hush(); window.__dh.line("You come back. You always come back."); st.sinceStart = 12.5; }); await page.waitForTimeout(150);
+    assert.equal((await G()).gag, false, "no sneeze while a line is up");
+    await page.evaluate(() => { window.__dh.hush(); window.__dh.st().sinceStart = 12.5; }); await page.waitForTimeout(150);
     assert.equal((await G()).gag, true); assert.equal(await voice(), "Achoo. ...Sorry. Dust.");
-    await page.evaluate(() => { window.__dh.st().sinceStart = 31; }); await page.waitForTimeout(150);
+    await page.evaluate(() => { window.__dh.hush(); window.__dh.st().sinceStart = 31; }); await page.waitForTimeout(150);
     assert.equal((await G()).nudged, true); assert.equal(await voice(), "Psst. The yellow words. Click one. I never said that.");
     assert.match(await page.evaluate(() => window.__dh.st().hint.text), /^Hint: /, "and the hint frames the word to click");
     assert.equal(await page.evaluate(() => window.__dh.st().total.hints), 0, "the nudge isn't counted as a hint you asked for");
     // floor 2: the shadow wakes and holds up a sign
-    await page.evaluate(() => { window.__dh.newGame(99, 2); window.__dh.begin(); const st = window.__dh.st(); window.__dh.edit(window.__dh.byId(st.g, st.player.id).lines.findIndex((l) => l.kind === "row" || l.kind === "swap"), 1); st.sinceStart = 9; });
-    await page.waitForFunction(() => window.__dh.gag().sign, null, { timeout: 4000 });
+    await page.evaluate(() => { window.__dh.newGame(99, 2); window.__dh.begin(); const st = window.__dh.st(); window.__dh.edit(window.__dh.byId(st.g, st.player.id).lines.findIndex((l) => l.kind === "row" || l.kind === "swap"), 1); st.sinceStart = 9; window.__dh.hush(); });
+    // it waits for the shadow's wake-up line to finish first
+    await page.waitForFunction(() => window.__dh.gag().sign, null, { timeout: 12000 });
     // floor 3: your first flip gets the sticker
     await page.evaluate(() => { window.__dh.newGame(null, 3); window.__dh.begin(); const D = window.__dh, st = D.st(); D.edit(D.byId(st.g, st.player.id).lines.findIndex((l) => l.kind === "flip"), 1); });
     assert.equal((await G()).sticker, true);
@@ -421,10 +449,11 @@ test("the house never hands you the exit: its moves don't shorten your way out o
 test("floor 1 keeps nudging a lost player, and a hint follows the house's moves", { skip }, async () => {
   const { page, errors, close } = await open("/?seed=4242");
   try {
-    await page.evaluate(() => { window.__dh.begin(); const st = window.__dh.st(); st.moves = st.h.par + 4; st.sinceStart = 11; st.gag = true; });
+    await page.evaluate(() => window.__dh.begin()); await page.waitForTimeout(150);
+    await page.evaluate(() => { const st = window.__dh.st(); st.moves = st.h.par + 4; st.sinceStart = 11; st.gag = true; window.__dh.hush(); });
     await page.waitForTimeout(150);
     assert.equal(await page.evaluate(() => window.__dh.st().nudge.n), 1, "clicking around but lost still gets a nudge");
-    await page.evaluate(() => { window.__dh.st().sinceStart += 26; }); await page.waitForTimeout(150);
+    await page.evaluate(() => { window.__dh.hush(); window.__dh.st().sinceStart += 26; }); await page.waitForTimeout(150);
     assert.equal(await page.evaluate(() => window.__dh.st().nudge.n), 2, "and again later");
     assert.equal(await page.evaluate(() => window.__dh.st().voice.text), "Still lost? That one. The yellow frame. I'm not helping.");
     // ask for a hint, then the house makes a move that cuts you off from the room it named: the hint follows
@@ -486,7 +515,7 @@ test("floor 1 has no counter-moves; floor 3's lock waits for the door; the chase
     await page.waitForFunction(() => !window.__dh.st().player.way, null, { timeout: 4000 });
     assert.equal(await page.evaluate(() => window.__dh.st().scene), "play", "the door won't open yet");
     assert.ok(await page.evaluate(() => window.__dh.st().player.fx >= 0), "pushed back inside, not left on the doorstep");
-    assert.ok(["Not yet.", "The door's mine too.", "Run a little longer."].includes(await page.evaluate(() => window.__dh.st().voice.text)));
+    assert.ok(await page.evaluate(() => window.__dh.st().floats.some((f) => f.text.includes("not yet"))), "the door says not yet");
     // a second try right away doesn't stack a second label
     await page.evaluate(() => { const st = window.__dh.st(); window.__dh.walk(st.g[2][0].id, true); });
     await page.waitForFunction(() => !window.__dh.st().player.way, null, { timeout: 4000 });
@@ -503,4 +532,211 @@ test("floor 1 has no counter-moves; floor 3's lock waits for the door; the chase
     await page.waitForFunction(() => window.__dh.st().scene === "end", null, { timeout: 8000 });
     assert.deepEqual(errors, []);
   } finally { await close(); }
+});
+
+// The critic's pass (11-04): a chase you can follow, no cheap grabs, words that never scramble, no dead floor,
+// and the dark rooms still show their doorways and names.
+test("the chase: a slide about every 4 s, and each line said once, six at most", { skip }, async () => {
+  const { page, errors, close } = await open("/");
+  try {
+    for (let run = 0; run < 4; run++) {
+    const r = await page.evaluate(() => {
+      const D = window.__dh; D.newGame(null, 3); D.begin(); const st = D.st(); st.gag = true; st.faced = true; st.floorT = 9; st.player.id = st.h.lockIds[0];
+      D.edit(D.byId(st.g, st.player.id).lines.findIndex((l) => l.kind === "lock"), 1); st.player.id = st.g[2][0].id; st.anim = null;
+      D.tick(0.05, 2); if (!st.finale) return { started: false };
+      st.tear.t = 99; D.tick(0.05, 1);
+      // you keep trying the front door the whole time (it says "not yet")
+      const said = [], at = [], shown = []; let v = null, a = null;
+      for (let i = 0; i < 800 && !st.finale.giveUp; i++) {
+        if (!st.player.way && !st.anim) D.walk(st.g[2][0].id, true);
+        D.tick(0.05, 1); if (st.voice && st.voice !== v) { if (v) shown.push(v.t); v = st.voice; said.push(v.text); } if (st.anim && st.anim !== a) { a = st.anim; if (a.kind === "row") at.push(st.finale.t); }
+      }
+      const gaps = at.slice(1).map((t, i) => t - at[i]);
+      return { started: true, said, slides: at.length, gap: Math.min(...gaps), giveUp: !!st.finale.giveUp, shortest: Math.min(99, ...shown) };
+    });
+    assert.ok(r.started, "the finale started");
+    assert.ok(r.giveUp, "and it lets you go");
+    assert.ok(r.gap >= 3.9, `slides at least ~4 s apart (closest ${r.gap.toFixed(2)} s)`);
+    assert.ok(r.slides >= 5, `slides ${r.slides}: it still chases`);
+    const dupes = r.said.filter((t, i) => r.said.indexOf(t) !== i);
+    assert.deepEqual(dupes, [], `no line twice: ${r.said.join(" | ")}`);
+    assert.ok(r.said.length <= 6, `at most six lines in the chase: ${r.said.join(" | ")}`);
+    assert.ok(r.said.filter((t) => t.startsWith("Not yet")).length <= 1, "it says \"not yet\" once");
+    assert.ok(r.shortest >= 2.5, `each line stays up to be read (shortest ${r.shortest.toFixed(2)} s)`);
+    }
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("no cheap grabs: the house never slides the shadow right up next to you", { skip }, async () => {
+  const { page, errors, close } = await open("/");
+  try {
+    const bad = await page.evaluate(() => {
+      const D = window.__dh, out = []; let tried = 0;
+      for (let seed = 1; seed < 40; seed++) for (let mix = 0; mix < 6; mix++) {
+        D.newGame(seed, 2); D.begin(); const st = D.st(); st.shadow.mode = "hunt";
+        // a few of your own words first, so the house is in all sorts of states
+        for (let e = 0; e < mix; e++) { const room = D.byId(st.g, st.player.id), es = D.edits(room); if (!es.length) break; const [li, d] = es[(e * 7 + seed) % es.length]; D.applyEdit(st.g, room.id, li, null, d); }
+        // the shadow two rooms or more away, in each room it could be
+        for (const row of st.g) for (const room of row) {
+          if (room.id === st.player.id) continue; st.shadow.id = room.id;
+          const before = D.path(st.g, st.shadow.id, st.player.id), b = before ? before.length - 1 : 9; if (b < 2) continue;
+          const m = D.pickHouseMove(); if (!m) continue; tried++; const p = D.path(m.g, st.shadow.id, st.player.id), a = p ? p.length - 1 : 9; if (a <= 1) out.push(seed);
+        }
+      }
+      return { out, tried };
+    });
+    assert.ok(bad.tried > 500, "picked plenty of house moves");
+    assert.deepEqual(bad.out, []);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("the yellow words you click never scramble when the house glitches", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    await page.evaluate(() => { window.__dh.begin(); const st = window.__dh.st(); st.floorT = 9; st.gag = true; window.__dh.hush(); });
+    await page.mouse.move(5, 5); await page.waitForTimeout(200);
+    // record every string drawn while the glitch is at full strength
+    const drawn = await page.evaluate(async () => {
+      const P = CanvasRenderingContext2D.prototype, orig = P.fillText, out = [];
+      window.__dh.st().glitch = 999; await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      P.fillText = function (t, ...a) { out.push(String(t)); return orig.call(this, t, ...a); };
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      P.fillText = orig; return out;
+    });
+    const room = await page.evaluate(() => { const st = window.__dh.st(); return st.g.flat().find((r) => r.id === st.player.id).lines.map((l) => l.kind); });
+    assert.ok(room.includes("row"), "this room has a row line");
+    assert.ok(drawn.includes("west") && drawn.includes("east"), `the words come out as written (${drawn.filter((t) => t.length < 8).slice(0, 12).join(",")})`);
+    assert.ok(await page.evaluate(() => window.__dh.st().glitch > 100), "and the glitch was on the whole time");
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("never a dead floor: after a grab, if no way out is left, the house puts the floor back", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    const r = await page.evaluate(() => {
+      const D = window.__dh; D.newGame(99, 2); D.begin(); const st = D.st();
+      for (const row of st.g) for (const room of row) { room.l = room.r = room.up = room.down = false; room.lines = room.lines.filter((l) => l.kind === "lock"); }
+      const dead = !D.solve(st.g, st.h.startId, st.h.lockIds, false, 4);
+      D.dragBack();
+      return { dead, ok: !!D.solve(st.g, st.player.id, st.h.lockIds, false, 4) };
+    });
+    assert.ok(r.dead, "the test floor really had no way out");
+    assert.ok(r.ok, "after the grab there is a way out again");
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("in the dark, rooms still show their walls and names, and pointing at a word lights the rooms it moves", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    await page.evaluate(() => { const D = window.__dh; D.newGame(99, 2); D.begin(); const st = D.st(); st.floorT = 9; st.gag = true; D.hush(); });
+    await page.mouse.move(5, 5); await page.waitForTimeout(300);
+    // a dark room far from you and out of reach: its bottom wall is drawn in chalk blue
+    const px = await page.evaluate(() => {
+      const D = window.__dh, st = D.st(), me = D.find(st.g, st.player.id), R = D.reach(st.g, st.player.id);
+      let best = null; for (let y = 0; y < 3; y++) for (let x = 0; x < 4; x++) { const r = st.g[y][x]; if (R.has(r.id) || Math.abs(x - me.x) + Math.abs(y - me.y) < 2) continue; best = { x, y }; }
+      const cv = document.getElementById("game"), c = cv.getContext("2d"), k = cv.width / 960;
+      // the house's box: rooms 150 x 146 from (44, 74) (HX, HY, CW, CH in src/app.js)
+      const X = Math.round((44 + best.x * 150 + 75) * k), Y = Math.round((74 + best.y * 146 + 146 - 10) * k), A = Math.round((74 + best.y * 146 + 80) * k);
+      const at = (x, y) => [...c.getImageData(x, y, 1, 1).data];
+      return { wall: at(X, Y), inside: at(X, A) };
+    });
+    assert.ok(px.wall[2] > px.inside[2] + 25, `the wall line shows (${px.wall} vs ${px.inside})`);
+    const wr = await page.evaluate(() => window.__dh.st().wordRects[0]);
+    await page.mouse.move(wr.x + wr.w / 2, wr.y + wr.h / 2); await page.waitForTimeout(200);
+    const lit = await page.evaluate(() => window.__dh.previewLit().length);
+    assert.ok(lit >= 3, `the rooms the word moves light up (${lit})`);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+// Critic round 2 (11-05): phones held upright, colour-blind players, doorways at a glance, the tear's frame cost
+test("a phone held upright gets the house's \"I'm wider than this.\" card, and the game waits until it's turned", { skip }, async () => {
+  const server = await serve(), browser = await chromium.launch();
+  try {
+    const ctx = await browser.newContext({ ...createRequire(import.meta.url)("playwright").devices["iPhone 13"] });
+    const page = await ctx.newPage(), errors = []; page.on("pageerror", (e) => errors.push(String(e)));
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    await page.goto(`http://127.0.0.1:${server.address().port}/?seed=4242`); await page.waitForFunction(() => window.__dh);
+    const look = () => page.evaluate(() => ({ card: getComputedStyle(document.getElementById("turn")).display, canvas: getComputedStyle(document.getElementById("game")).display, t: window.__dh.st().t, up: window.__dh.upright() }));
+    const a = await look(); await page.waitForTimeout(400); const b = await look();
+    assert.equal(a.card, "flex"); assert.equal(a.canvas, "none"); assert.ok(a.up);
+    assert.equal(b.t, a.t, "the house waits");
+    assert.match(await page.textContent("#turn"), /I'm wider than this\./);
+    await page.setViewportSize({ width: 664, height: 390 }); await page.waitForTimeout(400);
+    const c = await look();
+    assert.equal(c.card, "none"); assert.equal(c.canvas, "block"); assert.ok(c.t > b.t, "turned sideways, it plays");
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); server.close(); }
+});
+
+test("a lock in reach in the preview is tagged in words, not only in red", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    await page.evaluate(() => { const D = window.__dh; D.newGame(99, 2); D.begin(); D.st().floorT = 9; D.hush(); });
+    await page.mouse.move(5, 5); await page.waitForTimeout(300);
+    const hit = await page.evaluate(() => { const D = window.__dh, st = D.st(), room = D.byId(st.g, st.player.id); for (const r of st.wordRects) { const g2 = D.clone(st.g); D.applyEdit(g2, room.id, r.li, null, r.dir); if (st.h.lockIds.some((l) => D.reach(g2, room.id).has(l))) return r; } return null; });
+    assert.ok(hit, "a word on this floor brings a lock into reach");
+    await page.mouse.move(hit.x + hit.w / 2, hit.y + hit.h / 2); await page.waitForTimeout(200);
+    const drawn = await page.evaluate(async () => {
+      const P = CanvasRenderingContext2D.prototype, orig = P.fillText, out = [];
+      P.fillText = function (t, ...a) { out.push(String(t)); return orig.call(this, t, ...a); };
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); P.fillText = orig; return out;
+    });
+    assert.ok(drawn.includes("lock in reach"));
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("in the dark, an open doorway has a bright threshold you can spot at a glance", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    await page.evaluate(() => { const D = window.__dh; D.newGame(99, 2); D.begin(); const st = D.st(); st.floorT = 9; D.hush(); });
+    await page.mouse.move(5, 5); await page.waitForTimeout(300);
+    const r = await page.evaluate(() => {
+      const D = window.__dh, st = D.st(), me = D.find(st.g, st.player.id), R = D.reach(st.g, st.player.id);
+      let best = null; for (let y = 0; y < 3; y++) for (let x = 0; x < 4; x++) { const room = st.g[y][x]; if (!room.l || R.has(room.id) || Math.abs(x - me.x) + Math.abs(y - me.y) < 2) continue; best = { x, y }; }
+      if (!best) return null;
+      const cv = document.getElementById("game"), c = cv.getContext("2d"), k = cv.width / 960, at = (x, y) => [...c.getImageData(Math.round(x * k), Math.round(y * k), 1, 1).data];
+      const cx = 44 + best.x * 150, bot = 74 + best.y * 146 + 146 - 10; // HX, HY, CW, CH in src/app.js; the chalk floor line
+      return { door: at(cx + 12 + 8, bot), floor: at(cx + 75, bot) };
+    });
+    assert.ok(r, "a dark room with an open west doorway");
+    assert.ok(r.door[2] > r.floor[2] + 30, `the threshold is brighter than the floor line (${r.door} vs ${r.floor})`);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("the screen break draws the game once, not every frame, so the WOW moment stays smooth", { skip }, async () => {
+  const { page, errors, close } = await open("/");
+  try {
+    const r = await page.evaluate(() => {
+      const D = window.__dh; D.newGame(null, 3); D.begin(); const st = D.st(); st.gag = true; st.faced = true; st.floorT = 9;
+      const time = (n) => { const a = performance.now(); for (let i = 0; i < n; i++) D.render(); return (performance.now() - a) / n; };
+      time(3); const play = time(12);
+      st.player.id = st.h.lockIds[0]; D.edit(D.byId(st.g, st.player.id).lines.findIndex((l) => l.kind === "lock"), 1); st.player.id = st.g[2][0].id; st.anim = null; D.tick(0.05, 2);
+      if (!st.tear) return null; st.tear.t = 3; D.render(); return { play, tear: time(12) };
+    });
+    assert.ok(r, "the tear started");
+    assert.ok(r.tear < r.play * 0.7, `a tear frame (${r.tear.toFixed(1)} ms) costs well under a play frame (${r.play.toFixed(1)} ms)`);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("a desktop window that's tall and narrow still plays (the sideways card is for phones only)", { skip }, async () => {
+  const server = await serve(), browser = await chromium.launch();
+  try {
+    for (const vp of [{ width: 760, height: 900 }, { width: 768, height: 1024, hasTouch: true, isMobile: true }]) {
+      const { width, height, ...rest } = vp;
+      const ctx = await browser.newContext({ viewport: { width, height }, ...rest }); const page = await ctx.newPage();
+      await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+      await page.goto(`http://127.0.0.1:${server.address().port}/?seed=4242`); await page.waitForFunction(() => window.__dh);
+      const r = await page.evaluate(() => ({ card: getComputedStyle(document.getElementById("turn")).display, canvas: getComputedStyle(document.getElementById("game")).display, up: window.__dh.upright() }));
+      assert.deepEqual(r, { card: "none", canvas: "block", up: false }, `${width}x${height}`);
+      await ctx.close();
+    }
+  } finally { await browser.close(); server.close(); }
 });

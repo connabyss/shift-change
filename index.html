@@ -9,11 +9,19 @@
 :root{color-scheme:dark;--bg:#07060a;--ink:#d9cdb8}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);overflow:hidden}
 body{display:grid;place-items:center;font:16px "IM Fell English",Georgia,serif}
+/* a phone held upright: the house won't fit, so it asks you to turn it (the game waits) */
+#turn{display:none;position:fixed;inset:0;flex-direction:column;justify-content:center;text-align:center;padding:0 24px}
+#turn .say{font-style:italic;font-size:30px;color:#ff8c78;margin:0 0 14px}
+#turn .how{font:22px VT323,monospace;color:#9a917f;margin:0}
+#turn .phone{width:46px;height:78px;border:3px solid #d9cdb8;border-radius:9px;margin:0 auto 26px;animation:turn 2.4s ease-in-out infinite}
+@keyframes turn{0%,30%{transform:rotate(0)}55%,100%{transform:rotate(-90deg)}}
 canvas{display:block;width:min(100vw,160vh);aspect-ratio:8/5;height:auto;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+@media (orientation:portrait) and (max-width:600px) and (pointer:coarse){canvas{display:none}#turn{display:flex}}
 </style>
 </head>
 <body>
 <canvas id="game" aria-label="The Shifting House: a doll's house cut open. Click rooms to walk, and click words in the house's code to change it."></canvas>
+<div id="turn" role="status"><div class="phone"></div><p class="say">I'm wider than this.</p><p class="how">turn your phone sideways</p></div>
 <script type="module" src="./src/app.js"></script>
 </body>
 </html>
