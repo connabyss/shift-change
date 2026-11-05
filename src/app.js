@@ -1388,7 +1388,7 @@ if (visit && visit.seed && Date.now() - visit.t >= 60e3) { /* a reload isn't lea
 else newGame(urlSeed || ((Math.random() * 1e9) | 0));
 let last = performance.now();
 // a phone held upright shows the "turn me sideways" card (index.html), and the house waits for you
-const upright = typeof matchMedia === "function" ? matchMedia("(orientation: portrait) and (max-width: 900px)") : { matches: false };
+const upright = typeof matchMedia === "function" ? matchMedia("(orientation: portrait) and (max-width: 600px) and (pointer: coarse)") : { matches: false };
 function frame(now) { if (upright.matches) { last = now; requestAnimationFrame(frame); return; } const dt = Math.min(0.05, (now - last) / 1000); last = now; if (sticky && (sticky.t += dt) > 6) sticky = null; update(dt); render(); requestAnimationFrame(frame); }
 requestAnimationFrame(frame);
 

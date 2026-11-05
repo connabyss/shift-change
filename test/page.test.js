@@ -725,3 +725,18 @@ test("the screen break draws the game once, not every frame, so the WOW moment s
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+
+test("a desktop window that's tall and narrow still plays (the sideways card is for phones only)", { skip }, async () => {
+  const server = await serve(), browser = await chromium.launch();
+  try {
+    for (const vp of [{ width: 760, height: 900 }, { width: 768, height: 1024, hasTouch: true, isMobile: true }]) {
+      const { width, height, ...rest } = vp;
+      const ctx = await browser.newContext({ viewport: { width, height }, ...rest }); const page = await ctx.newPage();
+      await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+      await page.goto(`http://127.0.0.1:${server.address().port}/?seed=4242`); await page.waitForFunction(() => window.__dh);
+      const r = await page.evaluate(() => ({ card: getComputedStyle(document.getElementById("turn")).display, canvas: getComputedStyle(document.getElementById("game")).display, up: window.__dh.upright() }));
+      assert.deepEqual(r, { card: "none", canvas: "block", up: false }, `${width}x${height}`);
+      await ctx.close();
+    }
+  } finally { await browser.close(); server.close(); }
+});
