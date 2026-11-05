@@ -596,13 +596,19 @@ test("the yellow words you click never scramble when the house glitches", { skip
   const { page, errors, close } = await open("/?seed=4242");
   try {
     await page.evaluate(() => { window.__dh.begin(); const st = window.__dh.st(); st.floorT = 9; st.gag = true; window.__dh.hush(); });
-    await page.mouse.move(5, 5); await page.waitForTimeout(300);
-    const wr = await page.evaluate(() => { const r = window.__dh.st().wordRects[0]; return { x: Math.floor(r.x), y: Math.floor(r.y), width: Math.ceil(r.w), height: Math.ceil(r.h) }; });
-    const shot = () => page.screenshot({ clip: wr });
-    const calm = await shot();
-    await page.evaluate(() => { window.__dh.st().glitch = 999; }); await page.waitForTimeout(150);
-    const glitched = await shot();
-    assert.ok(calm.equals(glitched), "the word looks the same mid-glitch");
+    await page.mouse.move(5, 5); await page.waitForTimeout(200);
+    // record every string drawn while the glitch is at full strength
+    const drawn = await page.evaluate(async () => {
+      const P = CanvasRenderingContext2D.prototype, orig = P.fillText, out = [];
+      window.__dh.st().glitch = 999; await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      P.fillText = function (t, ...a) { out.push(String(t)); return orig.call(this, t, ...a); };
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      P.fillText = orig; return out;
+    });
+    const room = await page.evaluate(() => { const st = window.__dh.st(); return st.g.flat().find((r) => r.id === st.player.id).lines.map((l) => l.kind); });
+    assert.ok(room.includes("row"), "this room has a row line");
+    assert.ok(drawn.includes("west") && drawn.includes("east"), `the words come out as written (${drawn.filter((t) => t.length < 8).slice(0, 12).join(",")})`);
+    assert.ok(await page.evaluate(() => window.__dh.st().glitch > 100), "and the glitch was on the whole time");
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
