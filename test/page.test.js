@@ -652,3 +652,76 @@ test("in the dark, rooms still show their walls and names, and pointing at a wor
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+
+// Critic round 2 (11-05): phones held upright, colour-blind players, doorways at a glance, the tear's frame cost
+test("a phone held upright gets the house's \"I'm wider than this.\" card, and the game waits until it's turned", { skip }, async () => {
+  const server = await serve(), browser = await chromium.launch();
+  try {
+    const ctx = await browser.newContext({ ...createRequire(import.meta.url)("playwright").devices["iPhone 13"] });
+    const page = await ctx.newPage(), errors = []; page.on("pageerror", (e) => errors.push(String(e)));
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    await page.goto(`http://127.0.0.1:${server.address().port}/?seed=4242`); await page.waitForFunction(() => window.__dh);
+    const look = () => page.evaluate(() => ({ card: getComputedStyle(document.getElementById("turn")).display, canvas: getComputedStyle(document.getElementById("game")).display, t: window.__dh.st().t, up: window.__dh.upright() }));
+    const a = await look(); await page.waitForTimeout(400); const b = await look();
+    assert.equal(a.card, "flex"); assert.equal(a.canvas, "none"); assert.ok(a.up);
+    assert.equal(b.t, a.t, "the house waits");
+    assert.match(await page.textContent("#turn"), /I'm wider than this\./);
+    await page.setViewportSize({ width: 664, height: 390 }); await page.waitForTimeout(400);
+    const c = await look();
+    assert.equal(c.card, "none"); assert.equal(c.canvas, "block"); assert.ok(c.t > b.t, "turned sideways, it plays");
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); server.close(); }
+});
+
+test("a lock in reach in the preview is tagged in words, not only in red", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    await page.evaluate(() => { const D = window.__dh; D.newGame(99, 2); D.begin(); D.st().floorT = 9; D.hush(); });
+    await page.mouse.move(5, 5); await page.waitForTimeout(300);
+    const hit = await page.evaluate(() => { const D = window.__dh, st = D.st(), room = D.byId(st.g, st.player.id); for (const r of st.wordRects) { const g2 = D.clone(st.g); D.applyEdit(g2, room.id, r.li, null, r.dir); if (st.h.lockIds.some((l) => D.reach(g2, room.id).has(l))) return r; } return null; });
+    assert.ok(hit, "a word on this floor brings a lock into reach");
+    await page.mouse.move(hit.x + hit.w / 2, hit.y + hit.h / 2); await page.waitForTimeout(200);
+    const drawn = await page.evaluate(async () => {
+      const P = CanvasRenderingContext2D.prototype, orig = P.fillText, out = [];
+      P.fillText = function (t, ...a) { out.push(String(t)); return orig.call(this, t, ...a); };
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); P.fillText = orig; return out;
+    });
+    assert.ok(drawn.includes("lock in reach"));
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("in the dark, an open doorway has a bright threshold you can spot at a glance", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    await page.evaluate(() => { const D = window.__dh; D.newGame(99, 2); D.begin(); const st = D.st(); st.floorT = 9; D.hush(); });
+    await page.mouse.move(5, 5); await page.waitForTimeout(300);
+    const r = await page.evaluate(() => {
+      const D = window.__dh, st = D.st(), me = D.find(st.g, st.player.id), R = D.reach(st.g, st.player.id);
+      let best = null; for (let y = 0; y < 3; y++) for (let x = 0; x < 4; x++) { const room = st.g[y][x]; if (!room.l || R.has(room.id) || Math.abs(x - me.x) + Math.abs(y - me.y) < 2) continue; best = { x, y }; }
+      if (!best) return null;
+      const cv = document.getElementById("game"), c = cv.getContext("2d"), k = cv.width / 960, at = (x, y) => [...c.getImageData(Math.round(x * k), Math.round(y * k), 1, 1).data];
+      const cx = 44 + best.x * 150, bot = 74 + best.y * 146 + 146 - 10; // HX, HY, CW, CH in src/app.js; the chalk floor line
+      return { door: at(cx + 12 + 8, bot), floor: at(cx + 75, bot) };
+    });
+    assert.ok(r, "a dark room with an open west doorway");
+    assert.ok(r.door[2] > r.floor[2] + 30, `the threshold is brighter than the floor line (${r.door} vs ${r.floor})`);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("the screen break draws the game once, not every frame, so the WOW moment stays smooth", { skip }, async () => {
+  const { page, errors, close } = await open("/");
+  try {
+    const r = await page.evaluate(() => {
+      const D = window.__dh; D.newGame(null, 3); D.begin(); const st = D.st(); st.gag = true; st.faced = true; st.floorT = 9;
+      const time = (n) => { const a = performance.now(); for (let i = 0; i < n; i++) D.render(); return (performance.now() - a) / n; };
+      time(3); const play = time(12);
+      st.player.id = st.h.lockIds[0]; D.edit(D.byId(st.g, st.player.id).lines.findIndex((l) => l.kind === "lock"), 1); st.player.id = st.g[2][0].id; st.anim = null; D.tick(0.05, 2);
+      if (!st.tear) return null; st.tear.t = 3; D.render(); return { play, tear: time(12) };
+    });
+    assert.ok(r, "the tear started");
+    assert.ok(r.tear < r.play * 0.7, `a tear frame (${r.tear.toFixed(1)} ms) costs well under a play frame (${r.play.toFixed(1)} ms)`);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});

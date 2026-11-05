@@ -654,7 +654,17 @@ function drawHouse() {
   }
   lampLight();
   // reach outlines
-  if (pv && pv.reach) for (const id of pv.reach) { const p = find(pv.g, id); outlineSlot(p.x, p.y, st.h.lockIds.includes(id) && !st.unlocked ? RED : GRN, true); }
+  // rooms you could walk to after the word: dashed. A lock in reach gets a solid double frame and a tag, so it
+  // reads without telling red from green (about 1 in 12 men can't)
+  if (pv && pv.reach) for (const id of pv.reach) {
+    const p = find(pv.g, id), lock = st.h.lockIds.includes(id) && !st.unlocked;
+    if (!lock) { outlineSlot(p.x, p.y, GRN, true); continue; }
+    outlineSlot(p.x, p.y, RED, false); ctx.save(); ctx.strokeStyle = RED; ctx.lineWidth = 2; ctx.strokeRect(HX + p.x * CW + 10, HY + p.y * CH + 10, CW - 20, CH - 20);
+    const tx = HX + p.x * CW + CW / 2, ty = HY + p.y * CH + CH - 22, bob = Math.sin(st.t * 6) * 2;
+    ctx.font = `15px ${MONO}`; ctx.textAlign = "center"; const w = ctx.measureText("lock in reach").width + 14;
+    ctx.fillStyle = "rgba(10,6,8,0.85)"; ctx.fillRect(tx - w / 2, ty - 14 + bob, w, 20); ctx.strokeRect(tx - w / 2, ty - 14 + bob, w, 20);
+    ctx.fillStyle = "#ffd0c8"; ctx.fillText("lock in reach", tx, ty + 1 + bob); ctx.textAlign = "left"; ctx.restore();
+  }
   if (st.reachFlash > 0) { ctx.save(); ctx.globalAlpha = Math.min(1, st.reachFlash); for (const id of reach(st.g, st.player.id)) { const p = find(st.g, id); outlineSlot(p.x, p.y, "rgba(240,230,210,0.7)", true); } ctx.restore(); }
   if (st.hover && st.hover.type === "room" && !pv && st.scene === "play") {
     const p = find(st.g, st.hover.id), ok = reach(st.g, st.player.id).has(st.hover.id);
@@ -978,6 +988,10 @@ function drawScenes() {
 
 function render() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  // The screen break: nothing in the house moves while it's out of its window, so it draws the game once into a
+  // snapshot (again a few times while the house's line types out) instead of every frame. That keeps the WOW
+  // moment smooth on slow machines (the critic measured ~83 ms a frame before).
+  if (st.tear && st.finale && st.scene === "play" && st.tear.snap && !(st.tear.t < 1.4 && (st.tear.n = (st.tear.n || 0) + 1) % 4 === 0)) { drawTear(false); drawSticky(); return; }
   if (st.scene === "credits") { drawCredits(st.credT); drawSticky(); return; }
   if (st.scene === "desk") { deskClock(); desk.drawDesk(ctx, TG, st.desk, st.found.map((f) => PAGES[f]), JOKES); drawSticky(); return; }
   const z = pullK();
@@ -1031,9 +1045,9 @@ function stickyKey(e) {
 }
 // the screen break works on a copy of the frame just drawn
 const tearCv = document.createElement("canvas"), TG = { VW, VH, DPR, HX, HY, CW, CH, HW, HH, W, H, MONO, clock: ["", ""] };
-function drawTear() {
+function drawTear(snap = true) {
   if (tearCv.width !== cv.width) { tearCv.width = cv.width; tearCv.height = cv.height; }
-  const b = tearCv.getContext("2d"); b.setTransform(1, 0, 0, 1, 0, 0); b.clearRect(0, 0, cv.width, cv.height); b.drawImage(cv, 0, 0);
+  if (snap) { const b = tearCv.getContext("2d"); b.setTransform(1, 0, 0, 1, 0, 0); b.clearRect(0, 0, cv.width, cv.height); b.drawImage(cv, 0, 0); st.tear.snap = true; }
   deskClock();
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.clearRect(0, 0, VW, VH); tear.draw(ctx, tearCv, st.tear.t, TG);
 }
@@ -1157,9 +1171,10 @@ function blueprint(bolt, seen, px, py) {
       if (Math.hypot(cx + CW / 2 - px, cy + CH / 2 - py) < 120) continue; // the lamp shows this one already
       const m = 12, top = cy + 26, bot = cy + CH - 10;
       ctx.beginPath();
-      // walls: a gap where a doorway is open
-      for (const [open, wx] of [[room.l, cx + m], [room.r, cx + CW - m]]) {
-        if (open) { ctx.moveTo(wx, top); ctx.lineTo(wx, top + 10); ctx.moveTo(wx, bot - 4); ctx.lineTo(wx, bot); }
+      // walls: an open doorway is a doorframe (a lintel and a gap down to the floor), a shut one a solid wall
+      const doors = [];
+      for (const [open, wx, inn] of [[room.l, cx + m, 1], [room.r, cx + CW - m, -1]]) {
+        if (open) { ctx.moveTo(wx, top); ctx.lineTo(wx, bot - 52); ctx.lineTo(wx + inn * 12, bot - 52); ctx.moveTo(wx + inn * 12, bot - 52); ctx.lineTo(wx + inn * 12, bot - 44); doors.push([wx, inn]); }
         else { ctx.moveTo(wx, top); ctx.lineTo(wx, bot); }
       }
       ctx.moveTo(cx + m, bot); ctx.lineTo(cx + CW - m, bot);
@@ -1168,6 +1183,8 @@ function blueprint(bolt, seen, px, py) {
       if (room.up) { ctx.moveTo(lx, cy + 6); ctx.lineTo(lx, bot); ctx.moveTo(lx + 10, cy + 6); ctx.lineTo(lx + 10, bot); for (let k = cy + 14; k < bot; k += 9) { ctx.moveTo(lx, k); ctx.lineTo(lx + 10, k); } }
       ctx.stroke();
       if (room.down) { ctx.beginPath(); ctx.ellipse(lx + 5, bot - 1, 11, 3.5, 0, 0, 7); ctx.stroke(); }
+      // a bright threshold where you can walk through
+      if (doors.length) { ctx.save(); ctx.strokeStyle = `rgba(200,220,255,${Math.min(1, a + 0.35)})`; ctx.lineWidth = 3; ctx.beginPath(); for (const [wx, inn] of doors) { ctx.moveTo(wx - inn * 12, bot); ctx.lineTo(wx + inn * 14, bot); } ctx.stroke(); ctx.restore(); }
       ctx.textAlign = "center"; ctx.fillText(room.name, cx + CW / 2, cy + 15); ctx.textAlign = "left";
     }
   }
@@ -1370,11 +1387,13 @@ let awayLine = null;
 if (visit && visit.seed && Date.now() - visit.t >= 60e3) { /* a reload isn't leaving */ newGame(visit.seed); st.decor = true; st.shuffle = { t: 0, done: false }; awayLine = AWAY(goneFor(Date.now() - visit.t)); }
 else newGame(urlSeed || ((Math.random() * 1e9) | 0));
 let last = performance.now();
-function frame(now) { const dt = Math.min(0.05, (now - last) / 1000); last = now; if (sticky && (sticky.t += dt) > 6) sticky = null; update(dt); render(); requestAnimationFrame(frame); }
+// a phone held upright shows the "turn me sideways" card (index.html), and the house waits for you
+const upright = typeof matchMedia === "function" ? matchMedia("(orientation: portrait) and (max-width: 900px)") : { matches: false };
+function frame(now) { if (upright.matches) { last = now; requestAnimationFrame(frame); return; } const dt = Math.min(0.05, (now - last) / 1000); last = now; if (sticky && (sticky.t += dt) > 6) sticky = null; update(dt); render(); requestAnimationFrame(frame); }
 requestAnimationFrame(frame);
 
 // hooks for automated checks
 window.__dh = {
   pickHouseMove: () => pickHouseMove(), houseMove: (m) => performEdit(m.id, m.li, m.dir, true), houseMoves, st: () => st, begin: () => { st.scene = "play"; }, choose: (w) => choose(w), say: (k) => say(k), choiceRects: () => choiceRects, nextFloor: () => nextFloor(), solve, hint: () => doHint(), edit: (li, d) => doEdit(li, d), edits, path, walk: (id, exit) => walkTo(id, exit, 0, 0),
-  reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(), sticky: () => sticky, gag: () => ({ gag: !!st.gag, nudged: !!st.nudged, sign: !!st.sign, sticker: !!st.sticker }), undone: () => undone, undo: () => undo(), line: (t) => sayLine(t), hush: () => { st.voice = null; st.voiceQ = []; st.quiet = 99; st.sign = st.sticker = null; }, lift: () => lift(), junk: () => junk.length, tick: (dt, n) => { for (let i = 0; i < n; i++) update(dt); }, dragBack: () => dragBack(), previewLit: () => [...previewLit()], deskHit: desk.deskHit, shiftK: () => shiftK, goneFor, openDesk: () => openDesk(), trapped: (b) => trapped(b), awayLine: () => awayLine,
+  reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(), sticky: () => sticky, gag: () => ({ gag: !!st.gag, nudged: !!st.nudged, sign: !!st.sign, sticker: !!st.sticker }), undone: () => undone, undo: () => undo(), line: (t) => sayLine(t), hush: () => { st.voice = null; st.voiceQ = []; st.quiet = 99; st.sign = st.sticker = null; }, lift: () => lift(), junk: () => junk.length, tick: (dt, n) => { for (let i = 0; i < n; i++) update(dt); }, render: () => render(), upright: () => upright.matches, dragBack: () => dragBack(), previewLit: () => [...previewLit()], deskHit: desk.deskHit, shiftK: () => shiftK, goneFor, openDesk: () => openDesk(), trapped: (b) => trapped(b), awayLine: () => awayLine,
 };
