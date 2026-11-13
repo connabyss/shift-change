@@ -3,7 +3,7 @@
 Our entry for [GitHub Game Off 2026](https://itch.io/jam/game-off-2026). The theme is **SHIFT**.
 
 You wrote this house. Now it won't let you leave. You see it cut open like a doll's house, every room at once, and
-beside it is the house's own source code. Every yellow word in it is a choice: change `east` to `west` and a whole row
+beside it is the house's own source code. Every word circled in red pencil is a choice: change `east` to `west` and a whole row
 of rooms grinds past with you inside. Reach a room with a red lock, change its word, and get to the front door before
 the shadow finds you.
 
@@ -50,6 +50,8 @@ afterwards light up green), then click it. `M` turns the sound off and on.
   commit log, and each floor hides one torn page in your handwriting, in a room you can reach on the way out. Find all
   three and the last line of the game becomes a word you can change: `house.keep(shadow|nobody)`. All of the story's
   words are in `src/story.js`.
+
+**The look.** The house is a wooden doll's house at night; rooms you can't reach sit in cold moonlight, and your lamp warms the one you're in. Its source code is typed on an old page clipped beside it, and every choice is circled in red pencil. The title and the between-floor notes are typed pages too. Floor, moves and pages sit on a brass plate under the house. All of it lives in `src/look.js`.
 
 Everything you see and hear is drawn and played by code: no image or sound files. Rain, wind, thunder, a music box
 that plays a slow, wrong little tune, and whispers when it's in the next room. Headphones help.

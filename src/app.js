@@ -6,8 +6,7 @@ import * as sfx from "./sound.js";
 import * as art from "./art.js";
 import * as tear from "./tear.js";
 import * as desk from "./desk.js";
-import { pickLook, woodFrame, beam } from "./look.js";
-const LOOK = pickLook();
+import { LOOK, woodFrame, beam, paper, pencil } from "./look.js";
 
 
 // ---------- layout ----------
@@ -16,10 +15,10 @@ const CW = 150, CH = 146, HX = 44, HY = 74, HW = W * CW, HH = H * CH;
 const HCX = HX + HW / 2, HCY = HY + HH / 2, PX = 664, PW = 278;
 const cv = document.getElementById("game"), ctx = cv.getContext("2d");
 cv.width = VW * DPR; cv.height = VH * DPR;
-let MONO = 'VT323, "Courier New", monospace'; const SERIF = '"IM Fell English", Georgia, serif';
-if (LOOK) MONO = LOOK.mono;
-const TITLE = LOOK ? LOOK.title : MONO;
-let INK = "#d6ccb6", DIM = "rgba(214,204,182,0.45)", YEL = "#ffd36a", RED = "#ff5a4e"; const GRN = "#8fe39a";
+const MONO = LOOK.mono, SERIF = '"IM Fell English", Georgia, serif', TITLE = LOOK.title;
+let INK = "#d6ccb6", DIM = "rgba(214,204,182,0.45)", YEL = "#ffd36a", RED = "#ff5a4e", GRN = "#8fe39a";
+// draw fn in ink on paper: the panel's colours stand in for the night's while it runs
+function inInk(fn) { const keep = [INK, DIM, YEL, RED, GRN]; ({ INK, DIM, YEL, RED, GRN } = LOOK.panel); try { fn(); } finally { [INK, DIM, YEL, RED, GRN] = keep; } }
 
 // ---------- helpers ----------
 const { lerp, clamp, shade } = art;
@@ -511,7 +510,7 @@ function drawRoom(room, cx, cy, o) {
   let lit = room.lights ? 1 : 0;
   if (o.lightPreview) lit = lerp(lit, 1 - lit, o.lightPreview);
   if (st.finale && st.scene === "play") lit = room.id === st.player.id || (st.finalePath && st.finalePath.includes(room.id)) ? 1 : 0;
-  let L = lerp(LOOK ? 0.3 : 0.17, 1, lit) * (0.95 + 0.05 * Math.sin(st.t * 11 + room.id * 7) * Math.sin(st.t * 3.3 + room.id));
+  let L = lerp(0.3, 1, lit) * (0.95 + 0.05 * Math.sin(st.t * 11 + room.id * 7) * Math.sin(st.t * 3.3 + room.id));
   if (shHere && Math.random() < 0.18) L *= 0.55;
   if (st.scene === "title") L *= 0.55;
   if (st.blackout > 0) L *= st.blackout > 0.4 ? 0.12 : lerp(1, 0.12, st.blackout / 0.4);
@@ -599,7 +598,7 @@ function drawRoom(room, cx, cy, o) {
   // corners fall into shadow
   const vg = ctx.createRadialGradient(cx + CW / 2, cy + CH * 0.45, CW * 0.25, cx + CW / 2, cy + CH * 0.45, CW * 0.8);
   vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.45)"); ctx.fillStyle = vg; ctx.fillRect(ox, oy, ow, oh);
-  if (LOOK && lit < 0.5) { ctx.save(); ctx.globalCompositeOperation = "multiply"; ctx.fillStyle = "rgba(120,150,220,1)"; ctx.fillRect(ox, oy, ow, oh); ctx.restore(); ctx.save(); ctx.globalCompositeOperation = "lighter"; const mg = ctx.createLinearGradient(ox + ow, oy, ox, oy + oh); mg.addColorStop(0, "rgba(90,120,200,0.16)"); mg.addColorStop(1, "rgba(90,120,200,0)"); ctx.fillStyle = mg; ctx.fillRect(ox, oy, ow, oh); ctx.restore(); }
+  if (lit < 0.5) { ctx.save(); ctx.globalCompositeOperation = "multiply"; ctx.fillStyle = "rgba(120,150,220,1)"; ctx.fillRect(ox, oy, ow, oh); ctx.restore(); ctx.save(); ctx.globalCompositeOperation = "lighter"; const mg = ctx.createLinearGradient(ox + ow, oy, ox, oy + oh); mg.addColorStop(0, "rgba(90,120,200,0.16)"); mg.addColorStop(1, "rgba(90,120,200,0)"); ctx.fillStyle = mg; ctx.fillRect(ox, oy, ow, oh); ctx.restore(); }
   // name on the ceiling's front edge
   ctx.font = `14px ${MONO}`; ctx.textAlign = "center"; ctx.fillStyle = `rgba(235,215,185,${0.28 + 0.3 * lit})`; ctx.fillText(room.name, cx + CW / 2, oy + 11);
   ctx.textAlign = "left";
@@ -703,13 +702,7 @@ function drawHouse() {
   if (pv && pv.band && (pv.band.kind === "row" || pv.band.kind === "col")) chalkArrow(pv.band, YEL);
   ctx.restore();
   // beams between rooms
-  if (LOOK) { drawLookFrame(); } else {
-  ctx.fillStyle = "#17131a";
-  for (let x = 0; x <= W; x++) ctx.fillRect(HX + x * CW - 2, HY, 4, HH);
-  for (let y = 0; y <= H; y++) ctx.fillRect(HX, HY + y * CH - 2, HW, 4);
-  ctx.font = `20px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText(`floor ${st.floor} of ${FLOORS}`, HX - 30, 32);
-  ctx.font = `16px ${MONO}`; ctx.fillStyle = st.pages ? "#e8dcc0" : DIM; ctx.fillText(`torn pages ${st.pages} of 3`, HX + 110, VH - 12);
-  ctx.textAlign = "right"; ctx.fillStyle = st.moves > st.h.par ? DIM : GRN; ctx.fillText(`moves ${st.moves}   house's best ${st.h.par}`, HX + HW + 10, 32); ctx.textAlign = "left"; }
+  drawLookFrame();
   // front door, in the house's frame (bottom left)
   const fx = HX - 30, fy = HY + HH - 64, hov = st.hover && st.hover.type === "door";
   ctx.fillStyle = "#1c1820"; ctx.fillRect(fx - 4, fy - 4, 34, 68);
@@ -731,10 +724,15 @@ function drawLookFrame() {
   for (let y = 1; y < H; y++) beam(ctx, HX, HY + y * CH - 3, HW, 6);
   woodFrame(ctx, HX, HY, HW, HH, 14);
   const txt = `Floor ${st.floor} of ${FLOORS}   ·   moves ${st.moves} / house's best ${st.h.par}   ·   pages ${st.pages} of 3`;
+  // it steps aside while the house is talking (the house's line is typed in the same spot)
+  const v = st.voice, talk = v && (st.scene === "play" || st.scene === "caught") ? clamp(Math.min(v.t * 4, (v.len - v.t) / 0.6), 0, 1) : 0;
+  if (talk >= 1) return;
+  ctx.save(); ctx.globalAlpha = 1 - talk;
   ctx.font = `italic 16px ${SERIF}`; const tw = ctx.measureText(txt).width + 40, px = HCX - tw / 2, py = HY + HH + 18;
   const b = ctx.createLinearGradient(0, py, 0, py + 24); b.addColorStop(0, "#d9b86c"); b.addColorStop(1, "#8e6a2c"); ctx.fillStyle = b; ctx.beginPath(); ctx.roundRect(px, py, tw, 24, 4); ctx.fill();
   ctx.strokeStyle = "rgba(60,40,10,0.7)"; ctx.lineWidth = 1; ctx.stroke();
   ctx.fillStyle = "#2b1c08"; ctx.textAlign = "center"; ctx.fillText(txt, HCX, py + 17); ctx.textAlign = "left";
+  ctx.restore();
 }
 // ---------- the code panel ----------
 const DIR = { row: { 1: "east", [-1]: "west" }, col: { 1: "down", [-1]: "up" } };
@@ -773,14 +771,10 @@ function codeLine(parts, x, y, size, opts) {
   ctx.font = `${size}px ${MONO}`; ctx.fillStyle = opts.dim ? DIM : INK; ctx.fillText(glitchText(pre, g), x, y);
   let cx = x + ctx.measureText(pre).width;
   words.forEach((w, i) => {
-    if (i) { ctx.fillStyle = DIM; ctx.fillText("|", cx, y); cx += ctx.measureText("|").width; }
+    if (i) { const pad = opts.click ? 7 : 0; cx += pad; ctx.fillStyle = DIM; ctx.fillText("|", cx, y); cx += ctx.measureText("|").width + pad; }
     const ww = ctx.measureText(w.text).width, hot = opts.hot && opts.hot(w);
-    if (opts.click && LOOK) LOOK.mark(ctx, { x: cx - 3, y: y - size * 0.82, w: ww + 6, h: size * 1.06 }, hot, st.t);
-    else if (opts.click) {
-      ctx.fillStyle = hot ? "rgba(255,211,106,0.28)" : "rgba(255,211,106,0.1)"; ctx.fillRect(cx - 2, y - size * 0.78, ww + 4, size * 0.98);
-      ctx.strokeStyle = hot ? YEL : "rgba(255,211,106,0.55)"; ctx.lineWidth = 1.5; ctx.strokeRect(cx - 2, y - size * 0.78, ww + 4, size * 0.98);
-    }
-    ctx.fillStyle = opts.spent ? DIM : opts.click ? (LOOK && LOOK.markInk && LOOK.markInk(hot)) || YEL : opts.dim ? (LOOK ? DIM : "rgba(255,211,106,0.5)") : YEL; ctx.fillText(glitchText(w.text, g), cx, y);
+    if (opts.click) LOOK.mark(ctx, { x: cx - 3, y: y - size * 0.82, w: ww + 6, h: size * 1.06 }, hot);
+    ctx.fillStyle = opts.spent ? DIM : opts.click ? YEL : opts.dim ? DIM : YEL; ctx.fillText(glitchText(w.text, g), cx, y);
     rects.push({ x: cx - 4, y: y - size * 0.85, w: ww + 8, h: size * 1.15, dir: w.dir ?? 1 });
     cx += ww;
   });
@@ -788,15 +782,15 @@ function codeLine(parts, x, y, size, opts) {
   return rects;
 }
 function drawPanel() {
-  if (LOOK) { const keep = [INK, DIM, YEL, RED]; ({ INK, DIM, YEL, RED } = LOOK.panel); LOOK.panelBg(ctx, PX - 16, 22, PW + 26, VH - 44); ctx.save(); if (LOOK.glow) { ctx.shadowColor = LOOK.glow; ctx.shadowBlur = 6; } if (LOOK.engrave) { ctx.shadowColor = "rgba(255,240,200,0.7)"; ctx.shadowOffsetY = 1; } panelBody(); ctx.restore(); [INK, DIM, YEL, RED] = keep; return; }
-  const x = PX, w = PW - 6;
-  ctx.fillStyle = "#0e0c12"; ctx.fillRect(x - 12, 16, w + 24, VH - 32);
-  ctx.strokeStyle = "rgba(214,204,182,0.12)"; ctx.lineWidth = 1; ctx.strokeRect(x - 12, 16, w + 24, VH - 32);
-  // an editor tab: this is the house's source file
-  ctx.fillStyle = "#0e0c12"; ctx.fillRect(x - 12, 0, 92, 17); ctx.strokeRect(x - 12, 0, 92, 17);
-  const yours = !!st.finale || (st.scene === "end" && st.floor === FLOORS);
-  ctx.font = `15px ${MONO}`; ctx.fillStyle = yours ? RED : YEL; ctx.fillText(yours ? glitchText("● you.js", st.finale && st.finale.t < 1 ? 0.6 : 0) : "● house.js", x - 4, 13);
-  panelBody();
+  // the house's source: a typewritten page clipped beside the house
+  LOOK.panelBg(ctx, PX - 16, 22, PW + 26, VH - 44);
+  inInk(() => {
+    // the file's name, typed at the top right; in the finale it becomes yours
+    const yours = !!st.finale || (st.scene === "end" && st.floor === FLOORS);
+    ctx.font = `15px ${MONO}`; ctx.textAlign = "right"; ctx.fillStyle = yours ? RED : DIM;
+    ctx.fillText(yours ? glitchText("you.js", st.finale && st.finale.t < 1 ? 0.6 : 0) : "house.js", PX + PW - 8, 44); ctx.textAlign = "left";
+    panelBody();
+  });
 }
 function panelBody() {
   const x = PX, w = PW - 6;
@@ -805,13 +799,13 @@ function panelBody() {
   if (hn) {
     // the house's next move, typed out in red before it happens
     const k = hn.t, n = Math.floor(clamp(k * 40, 0, hn.code.length)), blink = Math.sin(st.t * 14) > 0;
-    ctx.fillStyle = `rgba(255,90,78,${0.12 + 0.08 * Math.sin(st.t * 10)})`; ctx.fillRect(x - 6, 24, w + 12, 54);
+    ctx.fillStyle = `rgba(179,38,30,${0.08 + 0.05 * Math.sin(st.t * 10)})`; ctx.fillRect(x - 6, 24, w + 12, 54);
     ctx.font = `16px ${MONO}`; ctx.fillStyle = RED; ctx.fillText("// the house writes", x, 42);
     fitFont(hn.code, w - 10, 24); ctx.fillStyle = RED; ctx.fillText(hn.code.slice(0, n) + (blink ? "_" : ""), x, 68);
   } else {
     // between its moves: the house's last move, faded
     ctx.font = `16px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText("// the house", x, 42);
-    if (st.lastHouse) { fitFont(st.lastHouse, w, 22); ctx.fillStyle = "rgba(255,90,78,0.35)"; ctx.fillText(st.lastHouse, x, 68); }
+    if (st.lastHouse) { fitFont(st.lastHouse, w, 22); ctx.fillStyle = "rgba(179,38,30,0.45)"; ctx.fillText(st.lastHouse, x, 68); }
   }
   // your room
   const room = byId(st.g, st.player.id);
@@ -819,11 +813,11 @@ function panelBody() {
   st.wordRects = [];
   let y = 144;
   room.lines.forEach((c, li) => {
-    const parts = lineParts(room, c, true), size = fitFont(flat(parts), w, 28);
+    const parts = lineParts(room, c, true), size = fitFont(flat(parts).replace("|", " | "), w, 28);
     const spent = c.kind === "lock" && st.unlocked;
     const hot = (wd) => (st.hover && st.hover.type === "word" && st.hover.li === li && st.hover.dir === (wd.dir ?? 1)) ||
       (st.hint && st.hint.id === room.id && st.hint.li === li && st.hint.dir === (wd.dir ?? 1) && Math.sin(st.t * 6) > 0);
-    ctx.font = `11px ${MONO}`; ctx.fillStyle = "rgba(214,204,182,0.3)"; ctx.textAlign = "right"; ctx.fillText(String(room.id * 4 + li + 7), x - 2, y); ctx.textAlign = "left";
+    ctx.font = `11px ${MONO}`; ctx.fillStyle = "rgba(60,46,34,0.4)"; ctx.textAlign = "right"; ctx.fillText(String(room.id * 4 + li + 7), x - 2, y); ctx.textAlign = "left";
     const rs = codeLine(parts, x, y, size, { click: !spent, hot, spent }); if (!spent) for (const r of rs) st.wordRects.push({ ...r, li });
     y += room.lines.length > 3 ? 33 : 38;
   });
@@ -836,11 +830,11 @@ function panelBody() {
   if (hw) ty = wrap(plain(room, hw, st.hover.dir), x, y, w, 18);
   else if (!hv && st.edits === 0 && st.scene === "play") {
     ctx.fillStyle = YEL; const nw = NEW_WORD[st.floor];
-    ty = wrap(nw ? `New on this floor: ${nw.code} ${nw.text} The house's best way out uses it.` : "Every yellow word is a choice. Point at one to see what it does. Click it to change the house.", x, y, w, 18);
+    ty = wrap(nw ? `New on this floor: ${nw.code} ${nw.text} The house's best way out uses it.` : "Every circled word is a choice. Point at one to see what it does. Click it to change the house.", x, y, w, 18);
   }
   // below: the room you're pointing at, or the hint
   const sep = Math.max(330, ty + 2);
-  ctx.fillStyle = "rgba(214,204,182,0.12)"; ctx.fillRect(x, sep, w, 1);
+  ctx.fillStyle = "rgba(60,46,34,0.18)"; ctx.fillRect(x, sep, w, 1);
   st.hintRect = null;
   if (hv) {
     ctx.font = `16px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText(`// the ${hv.name}`, x, sep + 22);
@@ -850,23 +844,22 @@ function panelBody() {
   } else if (st.hint && !hw) {
     ctx.font = `italic 16px ${SERIF}`; ctx.fillStyle = YEL; wrap(st.hint.text, x, sep + 24, w, 19);
   } else if (!hw) {
-    ctx.font = `16px ${MONO}`; ctx.fillStyle = "rgba(214,204,182,0.25)"; ctx.fillText("// point at a room to read it", x, sep + 22);
+    ctx.font = `16px ${MONO}`; ctx.fillStyle = "rgba(60,46,34,0.42)"; ctx.fillText("// point at a room to read it", x, sep + 22);
     if (st.floorT > 20 && st.scene === "play") {
       ctx.font = `22px ${MONO}`; const hot = st.hover && st.hover.type === "hint";
-      ctx.fillStyle = hot ? YEL : "rgba(255,211,106,0.6)"; ctx.fillText("house.hint();", x, sep + 60);
+      ctx.fillStyle = hot ? YEL : "rgba(163,38,27,0.75)"; ctx.fillText("house.hint();", x, sep + 60);
       ctx.font = `italic 15px ${SERIF}`; ctx.fillStyle = DIM; ctx.fillText("stuck? click it", x + 130, sep + 58);
       st.hintRect = { x: x - 4, y: sep + 40, w: 128, h: 26 };
     }
   }
   // goal
-  ctx.fillStyle = "rgba(214,204,182,0.12)"; ctx.fillRect(x, 470, w, 1);
+  ctx.fillStyle = "rgba(60,46,34,0.18)"; ctx.fillRect(x, 470, w, 1);
   ctx.font = `16px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText("// to leave", x, 494);
   codeLine(["frontDoor.locked = ", [{ text: st.unlocked ? "false" : "true" }], ";"], x, 524, fitFont("frontDoor.locked = false;", w, 26), { dim: !st.unlocked });
-  ctx.font = `italic 16px ${SERIF}`; ctx.fillStyle = st.unlocked ? "#cfe0ff" : INK;
+  ctx.font = `italic 16px ${SERIF}`; ctx.fillStyle = st.unlocked ? "#1f4f7a" : INK;
   wrap(st.unlocked ? "The front door is open. Click it, bottom left." : "Reach either room with a red lock and change its word.", x, 552, w, 19);
 }
 
-function scanlines() { if (LOOK && !LOOK.scan) return; ctx.fillStyle = "rgba(0,0,0,0.16)"; for (let yy = 18; yy < VH - 16; yy += 3) ctx.fillRect(PX - 11, yy, PW + 16, 1); }
 function drawOverlay() {
   // closeness: darker edges as it nears
   const a = find(st.g, st.player.id), b = find(st.g, st.shadow.id), d = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
@@ -916,19 +909,20 @@ function drawEnd() {
   if (k > 4.4) {
     const [pre, words, post] = ENDING.choice, open = st.pages >= 3;
     ctx.font = `34px ${MONO}`; const shown = open ? words : [words[0]];
-    const full = pre + shown.join("|") + post; let cx = VW / 2 - ctx.measureText(full).width / 2; const y = VH / 2 + 10;
+    const full = pre + shown.join(open ? " | " : "|") + post; let cx = VW / 2 - ctx.measureText(full).width / 2; const y = VH / 2 + 10; const keepInk = [INK, DIM, YEL, RED, GRN]; if (open) { paper(ctx, VW / 2 - 300, y - 56, 600, 136, { seed: 5, clip: false, margin: false }); ({ INK, DIM, YEL, RED, GRN } = LOOK.panel); }
     ctx.fillStyle = INK; ctx.fillText(pre, cx, y); cx += ctx.measureText(pre).width;
     shown.forEach((w, i) => {
-      if (i) { ctx.fillStyle = DIM; ctx.fillText("|", cx, y); cx += ctx.measureText("|").width; }
+      if (i) { const pad = open ? 9 : 0; cx += pad; ctx.fillStyle = DIM; ctx.fillText("|", cx, y); cx += ctx.measureText("|").width + pad; }
       const ww = ctx.measureText(w).width, hot = st.hover && st.hover.type === "choice" && st.hover.word === w;
-      if (open) { ctx.fillStyle = hot ? "rgba(255,211,106,0.28)" : "rgba(255,211,106,0.1)"; ctx.fillRect(cx - 3, y - 27, ww + 6, 34); ctx.strokeStyle = hot ? YEL : "rgba(255,211,106,0.55)"; ctx.lineWidth = 1.5; ctx.strokeRect(cx - 3, y - 27, ww + 6, 34); }
+      if (open) pencil(ctx, { x: cx - 6, y: y - 30, w: ww + 12, h: 38 }, hot);
       ctx.fillStyle = open ? YEL : DIM; ctx.fillText(w, cx, y); choiceRects.push({ x: cx - 5, y: y - 30, w: ww + 10, h: 40, word: w }); cx += ww;
     });
     ctx.fillStyle = INK; ctx.fillText(post, cx, y);
     if (open) {
       centerText("One word left, and all three pages say it's yours to change.", y + 44, `italic 20px ${SERIF}`, INK);
-      const left = clamp((16.5 - k) / 12, 0, 1); ctx.fillStyle = "rgba(214,204,182,0.25)"; ctx.fillRect(VW / 2 - 120, y + 64, 240 * left, 3);
+      const left = clamp((16.5 - k) / 12, 0, 1); ctx.fillStyle = DIM; ctx.fillRect(VW / 2 - 120, y + 64, 240 * left, 3);
     } else { centerText(`${ENDING.locked} You found ${st.pages}.`, y + 44, `italic 20px ${SERIF}`, DIM); choiceRects = []; }
+    [INK, DIM, YEL, RED, GRN] = keepInk;
   }
 }
 // the room around the doll's house: a wall, a desk lamp, the desk, and who (if anyone) is sitting there
@@ -977,15 +971,24 @@ function centerWrap(text, y, maxW, lh, font, color) {
 function centerText(text, y, font, color) { ctx.font = font; ctx.fillStyle = color; ctx.textAlign = "center"; ctx.fillText(text, VW / 2, y); ctx.textAlign = "left"; }
 function drawScenes() {
   if (st.scene === "title") {
-    ctx.fillStyle = "rgba(5,4,7,0.72)"; ctx.fillRect(0, 0, VW, VH);
+    // the title card: a typed sheet held up in front of the dark house
+    ctx.fillStyle = "rgba(5,4,7,0.66)"; ctx.fillRect(0, 0, VW, VH);
     const back = lastEnding();
-    centerText(commitText(1, 99), 120, `20px ${MONO}`, DIM);
-    centerText(LOOK ? "The Shifting House" : "THE SHIFTING HOUSE", 210, LOOK ? `72px ${TITLE}` : `64px ${MONO}`, INK);
-    if (awayLine) centerText(awayLine, 248, `italic 20px ${SERIF}`, RED); else centerText(back === "free" ? "Nobody home. Or so it says." : back === "keep" ? "Welcome back. It kept your room just as you left it." : "You wrote this house. It never let you leave.", 248, `italic 20px ${SERIF}`, back ? RED : DIM);
-    centerText("Mouse only, three floors. Click a room to walk there.", 318, `22px ${SERIF}`, INK);
-    centerText("The house's code is on the right. Every yellow word changes the house.", 348, `22px ${SERIF}`, INK);
-    centerText("Then the house changes something back. Watch for its move in red.", 378, `22px ${SERIF}`, INK);
-    centerText("Click to begin", 450, `30px ${MONO}`, Math.sin(st.t * 3) > -0.3 ? YEL : DIM);
+    centerText(commitText(1, 99), 64, `17px ${MONO}`, DIM);
+    paper(ctx, 190, 96, 580, 440, { seed: 7 });
+    inInk(() => {
+      centerText("The Shifting House", 192, `58px ${TITLE}`, INK);
+      ctx.fillStyle = "rgba(60,46,34,0.35)"; ctx.fillRect(330, 220, 300, 1);
+      if (awayLine) centerText(awayLine, 254, `italic 21px ${SERIF}`, RED); else centerText(back === "free" ? "Nobody home. Or so it says." : back === "keep" ? "Welcome back. It kept your room just as you left it." : "You wrote this house. It never let you leave.", 254, `italic 21px ${SERIF}`, back ? RED : DIM);
+      centerText("Mouse only, three floors. Click a room to walk there.", 318, `20px ${MONO}`, INK);
+      centerText("The house's code is on the right.", 350, `20px ${MONO}`, INK);
+      centerText("Every circled word changes the house.", 376, `20px ${MONO}`, INK);
+      centerText("Then the house changes something back.", 408, `20px ${MONO}`, INK);
+      centerText("Watch for its move in red.", 434, `20px ${MONO}`, RED);
+      ctx.font = `28px ${MONO}`; const bw = ctx.measureText("Click to begin").width;
+      centerText("Click to begin", 494, `28px ${MONO}`, RED);
+      pencil(ctx, { x: VW / 2 - bw / 2 - 34, y: 468, w: bw + 68, h: 38 }, Math.sin(st.t * 3) > -0.3);
+    });
   } else if (st.scene === "caught") {
     const k = st.caughtT;
     ctx.fillStyle = k < 0.15 ? "rgba(160,20,20,0.6)" : `rgba(0,0,0,${Math.min(0.94, k * 1.5)})`; ctx.fillRect(0, 0, VW, VH);
@@ -993,19 +996,19 @@ function drawScenes() {
     if (k > 1.1) centerText("It drags you back. It's slower now.", VH / 2 + 44, `italic 20px ${SERIF}`, DIM);
   } else if (st.scene === "floor") {
     const k = st.endT; ctx.fillStyle = `rgba(0,0,0,${Math.min(0.92, k * 1.5)})`; ctx.fillRect(0, 0, VW, VH);
-    if (k > 0.4) {
-      centerText(`Floor ${st.floor} of ${FLOORS}: out.`, 120, `44px ${MONO}`, INK);
+    if (k > 0.4) { ctx.globalAlpha = clamp((k - 0.4) * 3, 0, 1); paper(ctx, 150, 66, 660, 448, { seed: st.floor * 13, clip: false }); inInk(() => {
+      centerText(`Floor ${st.floor} of ${FLOORS}: out.`, 120, `46px ${TITLE}`, INK);
       const best = st.moves <= st.h.par;
-      centerText(`You used ${st.moves} move${st.moves === 1 ? "" : "s"}. The house's best: ${st.h.par}.${st.moves < st.h.par ? " " + JOKES.beatPar : best ? " You matched it." : ""}`, 164, `22px ${MONO}`, best ? GRN : INK);
+      centerWrap(`You used ${st.moves} move${st.moves === 1 ? "" : "s"}. The house's best: ${st.h.par}.${st.moves < st.h.par ? " " + JOKES.beatPar : best ? " You matched it." : ""}`, 166, 560, 26, `20px ${MONO}`, best ? GRN : INK);
       // the page you found on this floor, read now, between floors, not while it's hunting you
-      if (st.page.got) { centerText(`a torn page (${st.pages} of 3)`, 230, `18px ${MONO}`, "#e8dcc0"); centerWrap(PAGES[st.floor], 262, 620, 26, `italic 21px ${SERIF}`, "#e8dcc0"); }
+      if (st.page.got) { centerText(`a torn page (${st.pages} of 3)`, 230, `18px ${MONO}`, INK); centerWrap(PAGES[st.floor], 262, 560, 26, `italic 21px ${SERIF}`, INK); }
       else centerText("You didn't find this floor's torn page.", 246, `italic 19px ${SERIF}`, DIM);
       centerText(commitText(st.floor + 1, (k - 0.4) * 30), 352, `18px ${MONO}`, DIM);
       const nw = NEW_WORD[st.floor + 1];
       centerText(st.floor === 1 ? "Next floor: the shadow wakes up." : "Next floor: the last one.", 396, `22px ${SERIF}`, INK);
       if (nw) centerText(`New word: ${nw.code}`, 428, `24px ${MONO}`, YEL);
       if (k > 1.2) centerText("Click to go down", 478, `28px ${MONO}`, Math.sin(st.t * 3) > -0.3 ? YEL : DIM);
-    }
+    }); ctx.globalAlpha = 1; }
   } else if (st.scene === "end") drawEnd();
 }
 
@@ -1084,7 +1087,7 @@ function drawWorld() {
   const L = lift(); if (L) { ctx.translate(HCX, HY + HH); ctx.rotate(Math.sin(st.t * 1.1) * 0.012 * grav); ctx.translate(-HCX, -(HY + HH) - L); }
   drawHouse(); ctx.restore(); if (junk.length) drawJunk();
   const f = flash(); if (f > 0) { ctx.fillStyle = `rgba(210,220,255,${f * 0.22})`; ctx.fillRect(0, 0, PX - 14, VH); }
-  drawPanel(); scanlines(); drawOverlay();
+  drawPanel(); drawOverlay();
   if (st.scene === "play") { if (st.crayon) drawCrayonDoor(st.crayon.t); if (st.note) drawNote(st.note.t); if (st.floorT < 4) drawYou(st.floorT); if (st.sign) drawSign(st.sign.t); if (st.sticker) drawSticker(st.sticker.t); }
 }
 // the first few seconds of each floor: a marker over you, so you can find yourself
@@ -1154,7 +1157,7 @@ function lampLight() {
   // 2. the dark, with a hole where your lamp is (lightning thins it for a moment)
   if (!lampCv) { lampCv = document.createElement("canvas"); lampCv.width = VW * DPR; lampCv.height = VH * DPR; }
   const c = lampCv.getContext("2d"); c.setTransform(DPR, 0, 0, DPR, 0, 0); c.clearRect(0, 0, VW, VH);
-  c.globalCompositeOperation = "source-over"; c.fillStyle = `rgba(2,5,16,${(LOOK ? 0.84 : 0.965) - 0.55 * bolt})`; c.fillRect(0, 0, L, VH);
+  c.globalCompositeOperation = "source-over"; c.fillStyle = `rgba(2,5,16,${0.84 - 0.55 * bolt})`; c.fillRect(0, 0, L, VH);
   c.globalCompositeOperation = "destination-out";
   const R = 128 * fl;
   let g = c.createRadialGradient(px, py, 6, px, py, R); g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(0.45, "rgba(0,0,0,0.9)"); g.addColorStop(1, "rgba(0,0,0,0)");
@@ -1393,7 +1396,7 @@ function stepText(list, t, at) {
 function drawCredits(t) {
   ctx.fillStyle = "#050407"; ctx.fillRect(0, 0, VW, VH);
   const a = clamp(t * 2, 0, 1); ctx.globalAlpha = a;
-  centerText(CREDITS.title, 150, `52px ${MONO}`, INK);
+  centerText(CREDITS.title, 150, `56px ${TITLE}`, INK);
   const sh = stepText(CREDITS.shadow, t, [2.6, 4.0]), yo = stepText(CREDITS.you, t, [5.4, 6.6]);
   const ss = [24, 38, 64][Math.min(2, sh.i)], ys = [24, 17, 12][Math.min(2, yo.i)];
   centerText(yo.text + (yo.editing ? "_" : ""), 230, `${ys}px ${MONO}`, sh.i ? DIM : INK);

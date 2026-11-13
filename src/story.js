@@ -70,8 +70,8 @@ export const JOKES = {
   fine: "...Fine.",
   // one absurd thing on each floor, early
   sneeze: "Achoo. ...Sorry. Dust.",            // floor 1: the house sneezes
-  nudge: "Psst. The yellow words. Click one. I never said that.", // floor 1, if you're lost (first time)
-  nudges: ["Psst. The yellow words. Click one. I never said that.", "Still lost? That one. The yellow frame. I'm not helping.", "Look, just click the framed word. I have a reputation."],
+  nudge: "Psst. The circled words. Click one. I never said that.", // floor 1, if you're lost (first time)
+  nudges: ["Psst. The circled words. Click one. I never said that.", "Still lost? That one. The yellow frame. I'm not helping.", "Look, just click the framed word. I have a reputation."],
   sign: "hi :)",                                // floor 2: the shadow wakes up and holds up a sign
   sticker: "THIS SIDE UP",                      // floor 3: the first time you turn it over
   note: ["can i come out", "yes", "no", "maybe"],
