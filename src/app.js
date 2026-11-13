@@ -6,6 +6,8 @@ import * as sfx from "./sound.js";
 import * as art from "./art.js";
 import * as tear from "./tear.js";
 import * as desk from "./desk.js";
+import { pickLook, woodFrame, beam } from "./look.js";
+const LOOK = pickLook();
 
 
 // ---------- layout ----------
@@ -14,8 +16,10 @@ const CW = 150, CH = 146, HX = 44, HY = 74, HW = W * CW, HH = H * CH;
 const HCX = HX + HW / 2, HCY = HY + HH / 2, PX = 664, PW = 278;
 const cv = document.getElementById("game"), ctx = cv.getContext("2d");
 cv.width = VW * DPR; cv.height = VH * DPR;
-const MONO = 'VT323, "Courier New", monospace', SERIF = '"IM Fell English", Georgia, serif';
-const INK = "#d6ccb6", DIM = "rgba(214,204,182,0.45)", YEL = "#ffd36a", RED = "#ff5a4e", GRN = "#8fe39a";
+let MONO = 'VT323, "Courier New", monospace'; const SERIF = '"IM Fell English", Georgia, serif';
+if (LOOK) MONO = LOOK.mono;
+const TITLE = LOOK ? LOOK.title : MONO;
+let INK = "#d6ccb6", DIM = "rgba(214,204,182,0.45)", YEL = "#ffd36a", RED = "#ff5a4e"; const GRN = "#8fe39a";
 
 // ---------- helpers ----------
 const { lerp, clamp, shade } = art;
@@ -507,7 +511,7 @@ function drawRoom(room, cx, cy, o) {
   let lit = room.lights ? 1 : 0;
   if (o.lightPreview) lit = lerp(lit, 1 - lit, o.lightPreview);
   if (st.finale && st.scene === "play") lit = room.id === st.player.id || (st.finalePath && st.finalePath.includes(room.id)) ? 1 : 0;
-  let L = lerp(0.17, 1, lit) * (0.95 + 0.05 * Math.sin(st.t * 11 + room.id * 7) * Math.sin(st.t * 3.3 + room.id));
+  let L = lerp(LOOK ? 0.3 : 0.17, 1, lit) * (0.95 + 0.05 * Math.sin(st.t * 11 + room.id * 7) * Math.sin(st.t * 3.3 + room.id));
   if (shHere && Math.random() < 0.18) L *= 0.55;
   if (st.scene === "title") L *= 0.55;
   if (st.blackout > 0) L *= st.blackout > 0.4 ? 0.12 : lerp(1, 0.12, st.blackout / 0.4);
@@ -595,6 +599,7 @@ function drawRoom(room, cx, cy, o) {
   // corners fall into shadow
   const vg = ctx.createRadialGradient(cx + CW / 2, cy + CH * 0.45, CW * 0.25, cx + CW / 2, cy + CH * 0.45, CW * 0.8);
   vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.45)"); ctx.fillStyle = vg; ctx.fillRect(ox, oy, ow, oh);
+  if (LOOK && lit < 0.5) { ctx.save(); ctx.globalCompositeOperation = "multiply"; ctx.fillStyle = "rgba(120,150,220,1)"; ctx.fillRect(ox, oy, ow, oh); ctx.restore(); ctx.save(); ctx.globalCompositeOperation = "lighter"; const mg = ctx.createLinearGradient(ox + ow, oy, ox, oy + oh); mg.addColorStop(0, "rgba(90,120,200,0.16)"); mg.addColorStop(1, "rgba(90,120,200,0)"); ctx.fillStyle = mg; ctx.fillRect(ox, oy, ow, oh); ctx.restore(); }
   // name on the ceiling's front edge
   ctx.font = `14px ${MONO}`; ctx.textAlign = "center"; ctx.fillStyle = `rgba(235,215,185,${0.28 + 0.3 * lit})`; ctx.fillText(room.name, cx + CW / 2, oy + 11);
   ctx.textAlign = "left";
@@ -698,12 +703,13 @@ function drawHouse() {
   if (pv && pv.band && (pv.band.kind === "row" || pv.band.kind === "col")) chalkArrow(pv.band, YEL);
   ctx.restore();
   // beams between rooms
+  if (LOOK) { drawLookFrame(); } else {
   ctx.fillStyle = "#17131a";
   for (let x = 0; x <= W; x++) ctx.fillRect(HX + x * CW - 2, HY, 4, HH);
   for (let y = 0; y <= H; y++) ctx.fillRect(HX, HY + y * CH - 2, HW, 4);
   ctx.font = `20px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText(`floor ${st.floor} of ${FLOORS}`, HX - 30, 32);
   ctx.font = `16px ${MONO}`; ctx.fillStyle = st.pages ? "#e8dcc0" : DIM; ctx.fillText(`torn pages ${st.pages} of 3`, HX + 110, VH - 12);
-  ctx.textAlign = "right"; ctx.fillStyle = st.moves > st.h.par ? DIM : GRN; ctx.fillText(`moves ${st.moves}   house's best ${st.h.par}`, HX + HW + 10, 32); ctx.textAlign = "left";
+  ctx.textAlign = "right"; ctx.fillStyle = st.moves > st.h.par ? DIM : GRN; ctx.fillText(`moves ${st.moves}   house's best ${st.h.par}`, HX + HW + 10, 32); ctx.textAlign = "left"; }
   // front door, in the house's frame (bottom left)
   const fx = HX - 30, fy = HY + HH - 64, hov = st.hover && st.hover.type === "door";
   ctx.fillStyle = "#1c1820"; ctx.fillRect(fx - 4, fy - 4, 34, 68);
@@ -719,6 +725,17 @@ function drawHouse() {
   ctx.fillText("front", fx + 13, fy - 18); ctx.fillText("door", fx + 13, fy - 7); ctx.textAlign = "left";
 }
 
+// look prototypes: wooden doll's-house frame, beams, and one brass plaque under the house for floor/moves/pages
+function drawLookFrame() {
+  for (let x = 1; x < W; x++) beam(ctx, HX + x * CW - 3, HY, 6, HH);
+  for (let y = 1; y < H; y++) beam(ctx, HX, HY + y * CH - 3, HW, 6);
+  woodFrame(ctx, HX, HY, HW, HH, 14);
+  const txt = `Floor ${st.floor} of ${FLOORS}   ·   moves ${st.moves} / house's best ${st.h.par}   ·   pages ${st.pages} of 3`;
+  ctx.font = `italic 16px ${SERIF}`; const tw = ctx.measureText(txt).width + 40, px = HCX - tw / 2, py = HY + HH + 18;
+  const b = ctx.createLinearGradient(0, py, 0, py + 24); b.addColorStop(0, "#d9b86c"); b.addColorStop(1, "#8e6a2c"); ctx.fillStyle = b; ctx.beginPath(); ctx.roundRect(px, py, tw, 24, 4); ctx.fill();
+  ctx.strokeStyle = "rgba(60,40,10,0.7)"; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = "#2b1c08"; ctx.textAlign = "center"; ctx.fillText(txt, HCX, py + 17); ctx.textAlign = "left";
+}
 // ---------- the code panel ----------
 const DIR = { row: { 1: "east", [-1]: "west" }, col: { 1: "down", [-1]: "up" } };
 // a line: [before, words, after]; each word {text, dir}
@@ -758,11 +775,12 @@ function codeLine(parts, x, y, size, opts) {
   words.forEach((w, i) => {
     if (i) { ctx.fillStyle = DIM; ctx.fillText("|", cx, y); cx += ctx.measureText("|").width; }
     const ww = ctx.measureText(w.text).width, hot = opts.hot && opts.hot(w);
-    if (opts.click) {
+    if (opts.click && LOOK) LOOK.mark(ctx, { x: cx - 3, y: y - size * 0.82, w: ww + 6, h: size * 1.06 }, hot, st.t);
+    else if (opts.click) {
       ctx.fillStyle = hot ? "rgba(255,211,106,0.28)" : "rgba(255,211,106,0.1)"; ctx.fillRect(cx - 2, y - size * 0.78, ww + 4, size * 0.98);
       ctx.strokeStyle = hot ? YEL : "rgba(255,211,106,0.55)"; ctx.lineWidth = 1.5; ctx.strokeRect(cx - 2, y - size * 0.78, ww + 4, size * 0.98);
     }
-    ctx.fillStyle = opts.spent ? DIM : opts.click ? YEL : opts.dim ? "rgba(255,211,106,0.5)" : YEL; ctx.fillText(glitchText(w.text, g), cx, y);
+    ctx.fillStyle = opts.spent ? DIM : opts.click ? (LOOK && LOOK.markInk && LOOK.markInk(hot)) || YEL : opts.dim ? (LOOK ? DIM : "rgba(255,211,106,0.5)") : YEL; ctx.fillText(glitchText(w.text, g), cx, y);
     rects.push({ x: cx - 4, y: y - size * 0.85, w: ww + 8, h: size * 1.15, dir: w.dir ?? 1 });
     cx += ww;
   });
@@ -770,6 +788,7 @@ function codeLine(parts, x, y, size, opts) {
   return rects;
 }
 function drawPanel() {
+  if (LOOK) { const keep = [INK, DIM, YEL, RED]; ({ INK, DIM, YEL, RED } = LOOK.panel); LOOK.panelBg(ctx, PX - 16, 22, PW + 26, VH - 44); ctx.save(); if (LOOK.glow) { ctx.shadowColor = LOOK.glow; ctx.shadowBlur = 6; } if (LOOK.engrave) { ctx.shadowColor = "rgba(255,240,200,0.7)"; ctx.shadowOffsetY = 1; } panelBody(); ctx.restore(); [INK, DIM, YEL, RED] = keep; return; }
   const x = PX, w = PW - 6;
   ctx.fillStyle = "#0e0c12"; ctx.fillRect(x - 12, 16, w + 24, VH - 32);
   ctx.strokeStyle = "rgba(214,204,182,0.12)"; ctx.lineWidth = 1; ctx.strokeRect(x - 12, 16, w + 24, VH - 32);
@@ -777,6 +796,10 @@ function drawPanel() {
   ctx.fillStyle = "#0e0c12"; ctx.fillRect(x - 12, 0, 92, 17); ctx.strokeRect(x - 12, 0, 92, 17);
   const yours = !!st.finale || (st.scene === "end" && st.floor === FLOORS);
   ctx.font = `15px ${MONO}`; ctx.fillStyle = yours ? RED : YEL; ctx.fillText(yours ? glitchText("● you.js", st.finale && st.finale.t < 1 ? 0.6 : 0) : "● house.js", x - 4, 13);
+  panelBody();
+}
+function panelBody() {
+  const x = PX, w = PW - 6;
   // the shadow's thought
   const hn = st.houseNext && st.houseNext.move ? st.houseNext : null;
   if (hn) {
@@ -843,7 +866,7 @@ function drawPanel() {
   wrap(st.unlocked ? "The front door is open. Click it, bottom left." : "Reach either room with a red lock and change its word.", x, 552, w, 19);
 }
 
-function scanlines() { ctx.fillStyle = "rgba(0,0,0,0.16)"; for (let yy = 18; yy < VH - 16; yy += 3) ctx.fillRect(PX - 11, yy, PW + 16, 1); }
+function scanlines() { if (LOOK && !LOOK.scan) return; ctx.fillStyle = "rgba(0,0,0,0.16)"; for (let yy = 18; yy < VH - 16; yy += 3) ctx.fillRect(PX - 11, yy, PW + 16, 1); }
 function drawOverlay() {
   // closeness: darker edges as it nears
   const a = find(st.g, st.player.id), b = find(st.g, st.shadow.id), d = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
@@ -957,7 +980,7 @@ function drawScenes() {
     ctx.fillStyle = "rgba(5,4,7,0.72)"; ctx.fillRect(0, 0, VW, VH);
     const back = lastEnding();
     centerText(commitText(1, 99), 120, `20px ${MONO}`, DIM);
-    centerText("THE SHIFTING HOUSE", 210, `64px ${MONO}`, INK);
+    centerText(LOOK ? "The Shifting House" : "THE SHIFTING HOUSE", 210, LOOK ? `72px ${TITLE}` : `64px ${MONO}`, INK);
     if (awayLine) centerText(awayLine, 248, `italic 20px ${SERIF}`, RED); else centerText(back === "free" ? "Nobody home. Or so it says." : back === "keep" ? "Welcome back. It kept your room just as you left it." : "You wrote this house. It never let you leave.", 248, `italic 20px ${SERIF}`, back ? RED : DIM);
     centerText("Mouse only, three floors. Click a room to walk there.", 318, `22px ${SERIF}`, INK);
     centerText("The house's code is on the right. Every yellow word changes the house.", 348, `22px ${SERIF}`, INK);
@@ -1131,7 +1154,7 @@ function lampLight() {
   // 2. the dark, with a hole where your lamp is (lightning thins it for a moment)
   if (!lampCv) { lampCv = document.createElement("canvas"); lampCv.width = VW * DPR; lampCv.height = VH * DPR; }
   const c = lampCv.getContext("2d"); c.setTransform(DPR, 0, 0, DPR, 0, 0); c.clearRect(0, 0, VW, VH);
-  c.globalCompositeOperation = "source-over"; c.fillStyle = `rgba(2,5,16,${0.965 - 0.55 * bolt})`; c.fillRect(0, 0, L, VH);
+  c.globalCompositeOperation = "source-over"; c.fillStyle = `rgba(2,5,16,${(LOOK ? 0.84 : 0.965) - 0.55 * bolt})`; c.fillRect(0, 0, L, VH);
   c.globalCompositeOperation = "destination-out";
   const R = 128 * fl;
   let g = c.createRadialGradient(px, py, 6, px, py, R); g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(0.45, "rgba(0,0,0,0.9)"); g.addColorStop(1, "rgba(0,0,0,0)");
