@@ -381,7 +381,7 @@ test("on touch, the first tap on a word previews it and the second changes it", 
 test("the house speaks one line at a time: a new line waits its turn, and each stays up long enough to read", { skip }, async () => {
   const { page, errors, close } = await open("/?seed=4242");
   try {
-    await page.evaluate(() => { window.__dh.begin(); window.__dh.hush(); window.__dh.line("Achoo. ...Sorry. Dust."); window.__dh.line("Psst. The yellow words. Click one. I never said that."); });
+    await page.evaluate(() => { window.__dh.begin(); window.__dh.hush(); window.__dh.line("Achoo. ...Sorry. Dust."); window.__dh.line("Psst. The circled words. Click one. I never said that."); });
     const v = () => page.evaluate(() => { const x = window.__dh.st().voice; return x && { text: x.text, len: x.len }; });
     const first = await v();
     assert.equal(first.text, "Achoo. ...Sorry. Dust.", "the second line didn't cut off the first");
@@ -405,7 +405,7 @@ test("one absurd thing per floor early on, and floor 1 nudges you if you sit sti
     await page.evaluate(() => { window.__dh.hush(); window.__dh.st().sinceStart = 12.5; }); await page.waitForTimeout(150);
     assert.equal((await G()).gag, true); assert.equal(await voice(), "Achoo. ...Sorry. Dust.");
     await page.evaluate(() => { window.__dh.hush(); window.__dh.st().sinceStart = 31; }); await page.waitForTimeout(150);
-    assert.equal((await G()).nudged, true); assert.equal(await voice(), "Psst. The yellow words. Click one. I never said that.");
+    assert.equal((await G()).nudged, true); assert.equal(await voice(), "Psst. The circled words. Click one. I never said that.");
     assert.match(await page.evaluate(() => window.__dh.st().hint.text), /^Hint: /, "and the hint frames the word to click");
     assert.equal(await page.evaluate(() => window.__dh.st().total.hints), 0, "the nudge isn't counted as a hint you asked for");
     // floor 2: the shadow wakes and holds up a sign
@@ -738,5 +738,26 @@ test("a desktop window that's tall and narrow still plays (the sideways card is 
       assert.deepEqual(r, { card: "none", canvas: "block", up: false }, `${width}x${height}`);
       await ctx.close();
     }
+  } finally { await browser.close(); server.close(); }
+});
+
+// The look: the house's code is typed on a cream page beside the house (not a dark editor box), and the title
+// card is a page too. Checks the pixels, so it fails if the panel goes back to the old dark box.
+test("the code panel and the title card are typed paper", { skip }, async () => {
+  const server = await serve(), browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
+    const errors = []; page.on("pageerror", (e) => errors.push(String(e)));
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    await page.goto(`http://127.0.0.1:${server.address().port}/?seed=4242`);
+    await page.waitForFunction(() => window.__dh);
+    const px = (x, y) => page.evaluate(([x, y]) => { window.__dh.render(); const c = document.getElementById("game"); return [...c.getContext("2d").getImageData(x * 2, y * 2, 1, 1).data]; }, [x, y]);
+    const paperish = ([r, g, b]) => r > 170 && g > 150 && b > 110 && r > b;
+    assert.ok(paperish(await px(480, 300)), "the title card is paper"); // middle of the title card
+    await page.evaluate(() => { window.__dh.begin(); window.__dh.hush(); });
+    await page.waitForTimeout(300);
+    assert.ok(paperish(await px(800, 420)), "the code panel is paper"); // an empty stretch of the panel
+    assert.ok(await page.evaluate(() => window.__dh.st().wordRects.length > 0), "its words can still be clicked");
+    assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });
