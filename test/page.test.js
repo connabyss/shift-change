@@ -855,3 +855,26 @@ test("floor 3 fixes: the flip preview draws the flipped house, dead ends are mar
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });
+
+test("with \"reduce motion\" on, no screen shake and lightning is one soft glow, not a hard double flash", { skip }, async () => {
+  const server = await serve(), browser = await chromium.launch();
+  try {
+    const sample = async (reducedMotion) => {
+      const page = await browser.newPage({ reducedMotion }), errors = []; page.on("pageerror", (e) => errors.push(String(e)));
+      await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+      await page.goto(`http://127.0.0.1:${server.address().port}/?seed=4242`); await page.waitForFunction(() => window.__dh);
+      const r = await page.evaluate(() => {
+        const D = window.__dh, st = D.st(), f = [];
+        for (let k = 0; k <= 0.6; k += 0.02) { st.bolt.t = k; f.push(D.flash()); }
+        return { calm: D.calm(), f };
+      });
+      assert.deepEqual(errors, []); await page.close(); return r;
+    };
+    const fast = await sample("no-preference"), calm = await sample("reduce");
+    const rises = (f) => f.some((v, i) => i > 0 && v > f[i - 1] + 1e-9);
+    assert.equal(fast.calm, false); assert.ok(rises(fast.f), "normally the lightning flashes twice");
+    assert.equal(calm.calm, true); assert.ok(!rises(calm.f), "calm: it only fades, never flashes again");
+    assert.ok(Math.max(...calm.f) <= 0.6, "calm: never full white");
+    assert.ok(calm.f[0] > 0.3, "calm: still bright enough to show the shadow for a moment");
+  } finally { await browser.close(); server.close(); }
+});
