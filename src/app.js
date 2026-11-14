@@ -866,8 +866,9 @@ function panelBody() {
     if (st.floorT > 20 && st.scene === "play") {
       ctx.font = `22px ${MONO}`; const hot = st.hover && st.hover.type === "hint";
       ctx.fillStyle = hot ? YEL : "rgba(163,38,27,0.75)"; ctx.fillText("house.hint();", x, sep + 60);
-      ctx.font = `italic 15px ${SERIF}`; ctx.fillStyle = DIM; ctx.fillText("stuck? click it", x + 130, sep + 58);
-      st.hintRect = { x: x - 4, y: sep + 40, w: 128, h: 26 };
+      const hw = ctx.measureText("house.hint();").width; // the typewriter font is wider than the old one: measure, don't guess
+      ctx.font = `italic 15px ${SERIF}`; ctx.fillStyle = DIM; ctx.fillText("stuck? click it", x + hw + 10, sep + 58);
+      st.hintRect = { x: x - 4, y: sep + 40, w: hw + 8, h: 26 };
     }
   }
   // goal
