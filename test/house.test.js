@@ -136,3 +136,11 @@ test("the house's own moves never move the room you're in, and the best ones bri
     assert.ok((after ? after.length : 99) <= (before ? before.length : 99), "its best move doesn't push the shadow away");
   }
 });
+
+test("no room lists the same swap or flip line twice (a fresh player read the double swap as a bug)", () => {
+  for (const floor of [2, 3]) for (let seed = 1; seed <= 300; seed++) {
+    for (const r of makeHouse(seed, floor).g.flat()) for (const k of ["swap", "flip"]) {
+      assert.ok(r.lines.filter((l) => l.kind === k).length <= 1, `floor ${floor} seed ${seed}: ${r.name} has two ${k} lines`);
+    }
+  }
+});
