@@ -761,3 +761,97 @@ test("the code panel and the title card are typed paper", { skip }, async () => 
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });
+
+// A fresh player got stuck on floor 2 (11-13): the open door ignored clicks, the door line read backwards,
+// clicks during the house's moves vanished, and the house moved while they were still reading.
+test("floor 2 fixes: an unreachable door says so, doors read open|shut, clicks mid-move wait, reading pauses the house", { skip }, async () => {
+  const server = await serve(), browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    await page.goto(`http://127.0.0.1:${server.address().port}/?seed=4242`);
+    await page.waitForFunction(() => window.__dh);
+    const r = await page.evaluate(() => {
+      const D = window.__dh; D.newGame(99, 2); D.begin(); const st = D.st(), g = st.g;
+      // 1. the front door is open, but its room is walled off: clicking the door says why, and its room pulses
+      st.unlocked = true; st.player.id = g[0][2].id;
+      g[2][0].r = false; g[2][1].l = false; g[2][0].up = false; g[1][0].down = false;
+      D.walk(g[2][0].id, true);
+      const door = { said: st.floats.map((f) => f.text), nag: st.doorNag, onScreen: st.floats.every((f) => f.x > 0 && f.y > 0) };
+      // 2. a door line shows both words; only the one that isn't true now can be clicked, and clicking it makes it true
+      const me = D.byId(g, st.player.id); me.lines.push({ kind: "door", side: "west" }); const li = me.lines.length - 1, before = me.l;
+      D.render(); const rects = st.wordRects.filter((w) => w.li === li);
+      D.edit(li, rects[0].dir); D.tick(0.05, 30);
+      const doorLine = { rects: rects.length, flipped: me.l === !before };
+      // 3. a word clicked while the rooms are moving happens once they settle, instead of vanishing
+      st.houseNext = null; const ri = me.lines.findIndex((l) => l.kind === "row" || l.kind === "swap");
+      st.anim = { kind: "swap", y: 0, a: 0, b: 1, t: 0 }; const m0 = st.moves; D.edit(ri, 1);
+      const during = st.moves; D.tick(0.05, 30);
+      const queue = { during: during - m0, after: st.moves - m0 };
+      // 4. while you point at something, the house doesn't count you as sitting still
+      st.houseNext = null; st.anim = null; st.houseIdle = 0; st.shadow.mode = "hunt"; st.hover = { type: "room", id: g[0][0].id };
+      D.tick(0.05, 10); const reading = st.houseIdle;
+      st.hover = null; D.tick(0.05, 10); const idle = st.houseIdle;
+      return { door, doorLine, queue, reading, idle };
+    });
+    assert.ok(r.door.said.includes("no way to the door yet"), `the door says why: ${r.door.said}`);
+    assert.ok(r.door.nag > 0 && r.door.onScreen);
+    assert.equal(r.doorLine.rects, 1, "only the other word is a choice");
+    assert.ok(r.doorLine.flipped);
+    assert.equal(r.queue.during, 0); assert.equal(r.queue.after, 1, "the click mid-move still counts");
+    assert.equal(r.reading, 0); assert.ok(r.idle > 0);
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); server.close(); }
+});
+
+// The second fresh player got through, but floor 3 sagged: the flip preview drew its frames on the house as it is,
+// dead-end ladders looked walkable, the hint walked them into the shadow, and the end counted "it let go" as a grab.
+test("floor 3 fixes: the flip preview draws the flipped house, dead ends are marked, the hint warns, grabs count catches", { skip }, async () => {
+  const server = await serve(), browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    await page.goto(`http://127.0.0.1:${server.address().port}/?seed=4242`);
+    await page.waitForFunction(() => window.__dh);
+    const r = await page.evaluate(() => {
+      const D = window.__dh; D.newGame(null, 3); D.begin(); const st = D.st();
+      // 1. point at the flip: while it's drawn, the house drawn is the flipped one, and afterwards it's put back
+      const me = D.byId(st.g, st.player.id); let li = me.lines.findIndex((l) => l.kind === "flip");
+      if (li < 0) { me.lines.push({ kind: "flip" }); li = me.lines.length - 1; }
+      D.render(); const fr = st.wordRects.filter((w) => w.li === li);
+      st.hover = { type: "word", li, dir: fr[0].dir };
+      const g0 = st.g; D.render();
+      return { flipRects: fr.length, g0Same: st.g === g0 };
+    });
+    assert.equal(r.flipRects, 1, "upsideDown shows true|false, only the other word is a choice");
+    assert.ok(r.g0Same, "drawing the preview leaves the real house alone");
+    // the preview itself, through the mouse like a player
+    const peek = await page.evaluate(() => {
+      const D = window.__dh, st = D.st(), li = D.byId(st.g, st.player.id).lines.findIndex((l) => l.kind === "flip");
+      const w = st.wordRects.find((x) => x.li === li); return { x: w.x + w.w / 2, y: w.y + w.h / 2 };
+    });
+    const at = async (x, y) => page.evaluate(([x, y]) => { const r = document.getElementById("game").getBoundingClientRect(); return [r.left + x * r.width / 960, r.top + y * r.height / 600]; }, [x, y]);
+    await page.mouse.move(...(await at(peek.x, peek.y))); await page.waitForTimeout(150);
+    const pv = await page.evaluate(() => { const st = window.__dh.st(); return { flip: !!(st.preview && st.preview.band && st.preview.band.kind === "flip" && st.preview.g) }; });
+    assert.ok(pv.flip, "pointing at the flip makes a flipped preview");
+    const r2 = await page.evaluate(() => {
+      const D = window.__dh, st = D.st();
+      // 2. the hint warns when the shadow is next to you
+      st.hover = null; st.preview = null; st.shadow.mode = "hunt"; const p = D.find(st.g, st.player.id);
+      const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => [p.x + dx, p.y + dy]).find(([x, y]) => x >= 0 && x < 4 && y >= 0 && y < 3 && D.path(st.g, st.g[y][x].id, st.player.id) && D.path(st.g, st.g[y][x].id, st.player.id).length === 2);
+      let warned = null; if (nb) { st.shadow.id = st.g[nb[1]][nb[0]].id; D.hint(); warned = /Careful/.test(st.hint.text); }
+      st.shadow.id = st.g[p.y === 0 ? 2 : 0][p.x === 0 ? 3 : 0].id; st.shadow.mode = "sleep"; D.hint(); const calm = !/Careful/.test(st.hint.text);
+      // 3. a real catch counts; the chase's shove doesn't
+      st.total.caught = 0; D.dragBack(); const caught = st.total.caught;
+      return { warned, calm, caught };
+    });
+    if (r2.warned !== null) assert.ok(r2.warned, "the hint warns with the shadow next door");
+    assert.ok(r2.calm, "no warning while it sleeps");
+    assert.equal(r2.caught, 1);
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); server.close(); }
+});

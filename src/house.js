@@ -103,8 +103,9 @@ export function makeHouse(seed, floor = 1) {
     if (r.lines.length >= 3) r.lines[r.lines.length - 1] = { kind: "flip" }; else r.lines.push({ kind: "flip" });
   }
   // the new word is always in your first room, so you meet it at once
-  if (floor === 2) start.lines.push({ kind: "swap" });
-  if (floor === 3) start.lines.push({ kind: "flip" });
+  // (once: a room never lists the same line twice; a fresh player read the double swap as a bug)
+  if (floor === 2 && !start.lines.some((c) => c.kind === "swap")) start.lines.push({ kind: "swap" });
+  if (floor === 3 && !start.lines.some((c) => c.kind === "flip")) start.lines.push({ kind: "flip" });
   return { g, startId: start.id, lockIds: locks.map((r) => r.id), shadowId: g[H - 1][0].id };
 }
 // every edit you could make in a room: [line index, direction]
