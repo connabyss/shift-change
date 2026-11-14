@@ -761,3 +761,47 @@ test("the code panel and the title card are typed paper", { skip }, async () => 
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });
+
+// A fresh player got stuck on floor 2 (11-13): the open door ignored clicks, the door line read backwards,
+// clicks during the house's moves vanished, and the house moved while they were still reading.
+test("floor 2 fixes: an unreachable door says so, doors read open|shut, clicks mid-move wait, reading pauses the house", { skip }, async () => {
+  const server = await serve(), browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    await page.goto(`http://127.0.0.1:${server.address().port}/?seed=4242`);
+    await page.waitForFunction(() => window.__dh);
+    const r = await page.evaluate(() => {
+      const D = window.__dh; D.newGame(99, 2); D.begin(); const st = D.st(), g = st.g;
+      // 1. the front door is open, but its room is walled off: clicking the door says why, and its room pulses
+      st.unlocked = true; st.player.id = g[0][2].id;
+      g[2][0].r = false; g[2][1].l = false; g[2][0].up = false; g[1][0].down = false;
+      D.walk(g[2][0].id, true);
+      const door = { said: st.floats.map((f) => f.text), nag: st.doorNag, onScreen: st.floats.every((f) => f.x > 0 && f.y > 0) };
+      // 2. a door line shows both words; only the one that isn't true now can be clicked, and clicking it makes it true
+      const me = D.byId(g, st.player.id); me.lines.push({ kind: "door", side: "west" }); const li = me.lines.length - 1, before = me.l;
+      D.render(); const rects = st.wordRects.filter((w) => w.li === li);
+      D.edit(li, rects[0].dir); D.tick(0.05, 30);
+      const doorLine = { rects: rects.length, flipped: me.l === !before };
+      // 3. a word clicked while the rooms are moving happens once they settle, instead of vanishing
+      st.houseNext = null; const ri = me.lines.findIndex((l) => l.kind === "row" || l.kind === "swap");
+      st.anim = { kind: "swap", y: 0, a: 0, b: 1, t: 0 }; const m0 = st.moves; D.edit(ri, 1);
+      const during = st.moves; D.tick(0.05, 30);
+      const queue = { during: during - m0, after: st.moves - m0 };
+      // 4. while you point at something, the house doesn't count you as sitting still
+      st.houseNext = null; st.anim = null; st.houseIdle = 0; st.shadow.mode = "hunt"; st.hover = { type: "room", id: g[0][0].id };
+      D.tick(0.05, 10); const reading = st.houseIdle;
+      st.hover = null; D.tick(0.05, 10); const idle = st.houseIdle;
+      return { door, doorLine, queue, reading, idle };
+    });
+    assert.ok(r.door.said.includes("no way to the door yet"), `the door says why: ${r.door.said}`);
+    assert.ok(r.door.nag > 0 && r.door.onScreen);
+    assert.equal(r.doorLine.rects, 1, "only the other word is a choice");
+    assert.ok(r.doorLine.flipped);
+    assert.equal(r.queue.during, 0); assert.equal(r.queue.after, 1, "the click mid-move still counts");
+    assert.equal(r.reading, 0); assert.ok(r.idle > 0);
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); server.close(); }
+});

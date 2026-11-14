@@ -132,13 +132,20 @@ function walkTo(id, exit, mx, my) {
   const w = st.player;
   if (w.way) { w.pending = { id, exit }; return; }
   const p = path(st.g, w.id, id);
-  if (!p) { float(mx, my, "no way there", RED); st.reachFlash = 1.2; return; }
+  if (!p) {
+    if (!mx && !my) [mx, my] = walkerPos(w); // a queued walk that failed: say it over you, not off the screen
+    if (exit) { float(Math.max(mx, HX + 40), my - 20, "no way to the door yet", RED); st.doorNag = 3; }
+    else float(mx, my, "no way there", RED);
+    st.reachFlash = 1.2; sfx.doorShut(); return;
+  }
   if (p.length === 1 && !exit) { w.way = { pts: [{ id: w.id, fx: w.fx }, { id, fx: 0.5 }], seg: 0, t: 0 }; return; }
   w.way = buildWay(w, p, exit ? { id, fx: -0.32, exit: true } : null);
   w.way.exit = !!exit;
 }
 function doEdit(li, dir = 1) {
-  if (st.anim || st.scene !== "play") return;
+  if (st.scene !== "play") return;
+  if (st.anim) { st.queued = { li, dir, id: st.player.id }; return; } // clicked mid-move: it happens when the rooms settle
+  st.queued = null; st.houseIdle = 0;
   const room = byId(st.g, st.player.id), c = room.lines[li];
   if (c.kind === "lock" && st.unlocked) return;
   st.used.add(c.kind);
@@ -207,7 +214,7 @@ function houseCode(m) {
 const HOUSE_IDLE = [14, 10, 8]; // and if you sit still too long, it moves anyway
 function houseUpdate(dt) {
   if (!st.houseNext && !st.finale && st.shadow.mode !== "sleep") {
-    st.houseIdle = (st.houseIdle || 0) + dt;
+    if (!st.hover) st.houseIdle = (st.houseIdle || 0) + dt; // reading a word or a room isn't sitting still
     if (st.houseIdle > HOUSE_IDLE[st.floor - 1]) { st.houseIdle = 0; st.houseNext = { t: 0, move: null }; }
   }
   const hn = st.houseNext; if (!hn) return;
@@ -328,13 +335,15 @@ function doHint(asked = true) {
   else if (!plan.length) st.hint = { text: st.unlocked ? "Hint: the way is open. Click the front door, bottom left." : "Hint: a red lock is in reach. Walk there and click true." };
   else {
     const m = plan[0], room = byId(st.g, m.id), word = lineParts(room, room.lines[m.li], true)[1].find((w) => (w.dir ?? 1) === m.dir).text;
-    st.hint = { ...m, text: m.id === st.player.id ? `Hint: click "${word}" in this room's code.` : `Hint: walk to the ${room.name} (yellow frame), then click "${word}" in its code.` };
+    st.hint = { ...m, text: m.id === st.player.id ? `Hint: click "${word}" in this room's ${lineName(room.lines[m.li])} line.` : `Hint: walk to the ${room.name} (yellow frame), then click "${word}" in its ${lineName(room.lines[m.li])} line.` };
   }
   // it runs out of patience before it runs out of hints (the real hint still follows)
   if (asked && st.total.hints === 5) st.hint.text = `${JOKES.hint5} ${JOKES.fine} ${st.hint.text.replace(/^Hint: /, "")}`;
   if (asked && st.total.hints === 7) { st.hint.text = `${JOKES.hint7} ${JOKES.fine} ${st.hint.text.replace(/^Hint: /, "")}`; st.crayon = { t: 0 }; }
   st.hint.t = 0;
 }
+
+const lineName = (c) => ({ row: "row.shift", col: "column.shift", door: `door.${c.side}`, swap: "swap", flip: "upsideDown", lights: "lights", lock: "frontDoor" })[c.kind];
 
 // ---------- update ----------
 function update(dt) {
@@ -372,6 +381,8 @@ function update(dt) {
   st.sinceStart += dt; st.floorT += dt; st.alert = Math.max(0, st.alert - dt);
   gags(); finaleWatch();
   if (st.anim) { st.anim.t += dt / (st.anim.slow ? 1.3 : 0.7); if (st.anim.t >= 1) st.anim = null; else return; }
+  if (st.queued) { const q = st.queued; st.queued = null; if (q.id === st.player.id && byId(st.g, q.id).lines[q.li]) doEdit(q.li, q.dir); }
+  st.doorNag = Math.max(0, (st.doorNag || 0) - dt);
 
   houseUpdate(dt);
   if (st.finale) finaleUpdate(dt);
@@ -682,6 +693,8 @@ function drawHouse() {
     }
   }
   if (st.finale && st.finalePath && st.scene === "play") for (const id of st.finalePath) { const p = find(st.g, id); outlineSlot(p.x, p.y, `rgba(207,224,255,${0.35 + 0.25 * Math.sin(st.t * 5)})`, true); }
+  // the door is open but out of reach: its room pulses so you know where you need a way to (always, after a failed click: brighter)
+  if (st.scene === "play" && st.unlocked && !st.finale && !reach(st.g, st.player.id).has(doorRoom())) outlineSlot(0, H - 1, `rgba(143,227,154,${(st.doorNag > 0 ? 0.6 : 0.25) + 0.3 * Math.sin(st.t * 6)})`, false);
   if (st.hint && st.hint.id != null) { const p = find(st.g, st.hint.id); outlineSlot(p.x, p.y, `rgba(255,211,106,${0.5 + 0.4 * Math.sin(st.t * 6)})`, false); }
   // shut in: its room gets a red frame and a bar that drains until it claws out
   if (st.scene === "play" && st.shadow.mode !== "sleep" && st.shadow.noPath > 0 && !st.shadow.way) {
@@ -741,10 +754,11 @@ function lineParts(room, c, self) {
   const who = self ? "this" : room.name;
   if (c.kind === "row") return [`${who}.row.shift(`, [{ text: "west", dir: -1 }, { text: "east", dir: 1 }], ")"];
   if (c.kind === "col") return [`${who}.column.shift(`, [{ text: "up", dir: -1 }, { text: "down", dir: 1 }], ")"];
-  if (c.kind === "door") return [`${who}.door.${c.side} = `, [{ text: room[c.side === "west" ? "l" : "r"] ? "open" : "shut" }], ";"];
+  // doors and lights read like the other lines: both words typed, and the one that's true now is plain ink (not a choice)
+  if (c.kind === "door") { const o = room[c.side === "west" ? "l" : "r"]; return [`${who}.door.${c.side} = `, [{ text: "open", dir: o ? 0 : 1, cur: o }, { text: "shut", dir: o ? 1 : 0, cur: !o }], ";"]; }
   if (c.kind === "swap") return [`${who}.swap(`, [{ text: "west", dir: -1 }, { text: "east", dir: 1 }], ")"];
   if (c.kind === "flip") return ["house.upsideDown = ", [{ text: st.flipped ? "true" : "false" }], ";"];
-  if (c.kind === "lights") return [`${who}.lights = `, [{ text: room.lights ? "on" : "off" }], ";"];
+  if (c.kind === "lights") { const o = room.lights; return [`${who}.lights = `, [{ text: "on", dir: o ? 0 : 1, cur: o }, { text: "off", dir: o ? 1 : 0, cur: !o }], ";"]; }
   if (c.kind === "lock") return ["frontDoor.locked = ", [{ text: st.unlocked ? "false" : "true" }], ";"];
 }
 const flat = (parts) => parts[0] + parts[1].map((w) => w.text).join("|") + parts[2];
@@ -773,6 +787,9 @@ function codeLine(parts, x, y, size, opts) {
   words.forEach((w, i) => {
     if (i) { const pad = opts.click ? 7 : 0; cx += pad; ctx.fillStyle = DIM; ctx.fillText("|", cx, y); cx += ctx.measureText("|").width + pad; }
     const ww = ctx.measureText(w.text).width, hot = opts.hot && opts.hot(w);
+    if (w.cur) { // what it is now: plain ink, underlined, not a choice
+      ctx.fillStyle = opts.dim ? DIM : INK; ctx.fillText(glitchText(w.text, g), cx, y); ctx.fillRect(cx, y + 3, ww, 1.5); cx += ww; return;
+    }
     if (opts.click) LOOK.mark(ctx, { x: cx - 3, y: y - size * 0.82, w: ww + 6, h: size * 1.06 }, hot);
     ctx.fillStyle = opts.spent ? DIM : opts.click ? YEL : opts.dim ? DIM : YEL; ctx.fillText(glitchText(w.text, g), cx, y);
     rects.push({ x: cx - 4, y: y - size * 0.85, w: ww + 8, h: size * 1.15, dir: w.dir ?? 1 });
@@ -840,7 +857,8 @@ function panelBody() {
     ctx.font = `16px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText(`// the ${hv.name}`, x, sep + 22);
     let yy = sep + 46; for (const c of hv.lines) { const parts = lineParts(hv, c, false); codeLine(parts, x, yy, fitFont(flat(parts), w, 22), { dim: true }); yy += 23; }
     ctx.font = `italic 15px ${SERIF}`; ctx.fillStyle = DIM;
-    ctx.fillText(reach(st.g, room.id).has(hv.id) ? "Click the room to walk there." : "No way there right now.", x, yy);
+    if (reach(st.g, room.id).has(hv.id)) ctx.fillText("Click the room to walk there.", x, yy);
+    else wrap("No way there right now. Rooms join through open doorways, a ladder up, or a hole in the floor down.", x, yy, w, 18);
   } else if (st.hint && !hw) {
     ctx.font = `italic 16px ${SERIF}`; ctx.fillStyle = YEL; wrap(st.hint.text, x, sep + 24, w, 19);
   } else if (!hw) {
@@ -857,7 +875,8 @@ function panelBody() {
   ctx.font = `16px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText("// to leave", x, 494);
   codeLine(["frontDoor.locked = ", [{ text: st.unlocked ? "false" : "true" }], ";"], x, 524, fitFont("frontDoor.locked = false;", w, 26), { dim: !st.unlocked });
   ctx.font = `italic 16px ${SERIF}`; ctx.fillStyle = st.unlocked ? "#1f4f7a" : INK;
-  wrap(st.unlocked ? "The front door is open. Click it, bottom left." : "Reach either room with a red lock and change its word.", x, 552, w, 19);
+  const atDoor = st.unlocked && reach(st.g, st.player.id).has(doorRoom());
+  wrap(!st.unlocked ? "Reach either room with a red lock and change its word." : atDoor || st.finale ? "The front door is open. Click it, bottom left." : "The door is open, but no way leads to it yet. Get a way into the bottom-left room.", x, 552, w, 19);
 }
 
 function drawOverlay() {
