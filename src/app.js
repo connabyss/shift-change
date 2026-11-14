@@ -337,6 +337,12 @@ function doHint(asked = true) {
     const m = plan[0], room = byId(st.g, m.id), word = lineParts(room, room.lines[m.li], true)[1].find((w) => (w.dir ?? 1) === m.dir).text;
     st.hint = { ...m, text: m.id === st.player.id ? `Hint: click "${word}" in this room's ${lineName(room.lines[m.li])} line.` : `Hint: walk to the ${room.name} (yellow frame), then click "${word}" in its ${lineName(room.lines[m.li])} line.` };
   }
+  // the hint only knows the house: if the shadow is close to where it sends you, it says so
+  const sh = st.shadow, dest = st.hint.id != null ? st.hint.id : st.unlocked ? doorRoom() : null;
+  if (dest != null && sh.mode !== "sleep" && !st.finale) {
+    const toDest = steps(path(st.g, sh.id, dest)), toMe = steps(path(st.g, sh.id, st.player.id));
+    if ((toDest != null && toDest <= 1) || (toMe != null && toMe <= 1)) st.hint.text += " Careful: it's close. Let it pass, or shut a door on it.";
+  }
   // it runs out of patience before it runs out of hints (the real hint still follows)
   if (asked && st.total.hints === 5) st.hint.text = `${JOKES.hint5} ${JOKES.fine} ${st.hint.text.replace(/^Hint: /, "")}`;
   if (asked && st.total.hints === 7) { st.hint.text = `${JOKES.hint7} ${JOKES.fine} ${st.hint.text.replace(/^Hint: /, "")}`; st.crayon = { t: 0 }; }
@@ -472,7 +478,7 @@ function shoved() {
   think("found(you);  // not yet"); if (!st.finale.saidNo) { st.finale.saidNo = true; sayLine(FINALE.shoved); } const p = walkerPos(st.player); float(p[0] - 20, p[1] - 50, "it let go", RED);
 }
 function dragBack() {
-  st.grabs++; st.scene = "play";
+  st.grabs++; st.total.caught = (st.total.caught || 0) + 1; st.scene = "play";
   const me = st.player, sh = st.shadow; me.way = null; me.pending = null; me.id = st.h.startId; me.fx = 0.5;
   // never a dead floor: if no way out is left within a few words, the house puts the floor back as it began
   // (the critic once saw a floor with no house moves and no way out for 160 s after two grabs)
@@ -635,6 +641,23 @@ function nearness() {
   const p = path(st.g, st.shadow.id, st.player.id); return p ? p.length - 1 : Infinity;
 }
 
+// Ladders and holes only join when both ends line up. A joined one gets a pale line through the floorboards;
+// a dead end (a ladder into a ceiling, a hole onto a floor) gets a plank nailed across it.
+function shafts() {
+  if (st.anim || st.scene !== "play") return;
+  ctx.save(); ctx.lineWidth = 2;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const r = st.g[y][x], lx = HX + x * CW + CW * 0.76 + 5, top = HY + y * CH, bot = top + CH;
+    if (r.down) {
+      const joined = y + 1 < H && st.g[y + 1][x].up;
+      if (joined) { ctx.strokeStyle = "rgba(220,235,255,0.75)"; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(lx, bot - 16); ctx.lineTo(lx, bot + 22); ctx.stroke(); ctx.setLineDash([]); }
+      else plank(lx, bot - 12);
+    }
+    if (r.up && !(y > 0 && st.g[y - 1][x].down)) plank(lx, top + 30);
+  }
+  ctx.restore();
+}
+function plank(x, y) { ctx.strokeStyle = "rgba(200,90,70,0.9)"; ctx.beginPath(); ctx.moveTo(x - 12, y - 5); ctx.lineTo(x + 12, y + 5); ctx.moveTo(x - 12, y + 5); ctx.lineTo(x + 12, y - 5); ctx.stroke(); }
 function outlineSlot(x, y, color, dash) {
   ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 2; if (dash) ctx.setLineDash([6, 5]);
   ctx.strokeRect(HX + x * CW + 5, HY + y * CH + 5, CW - 10, CH - 10); ctx.restore();
@@ -651,7 +674,16 @@ function chalkArrow(b, color) {
   const ang = Math.atan2(y2 - y1, x2 - x1); ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x2 - 18 * Math.cos(ang - 0.5), y2 - 18 * Math.sin(ang - 0.5)); ctx.lineTo(x2 - 18 * Math.cos(ang + 0.5), y2 - 18 * Math.sin(ang + 0.5)); ctx.closePath(); ctx.fill();
   ctx.restore();
 }
+// Pointing at the flip shows the house as it would be after it, so the green frames sit on the right rooms
+// (a fresh player couldn't picture where they'd land from outlines on the house as it is)
+const flipPeek = () => { const pv = st.preview; return pv && pv.g && pv.band && pv.band.kind === "flip" && !st.anim && st.scene === "play" ? pv.g : null; };
 function drawHouse() {
+  drawHouseNow(); if (!flipPeek()) return;
+  ctx.save(); ctx.font = `15px ${MONO}`; ctx.textAlign = "center"; const t = "upside down: where you'd be";
+  const w = ctx.measureText(t).width + 16; ctx.fillStyle = "rgba(10,6,8,0.85)"; ctx.fillRect(HCX - w / 2, HY - 30, w, 22);
+  ctx.fillStyle = YEL; ctx.fillText(t, HCX, HY - 14); ctx.restore();
+}
+function drawHouseNow() {
   art.roof(ctx, { x: HX, y: HY, w: HW, h: HH }, st.t, HX + HW + 8);
   if (st.scene !== "end") { ctx.save(); ctx.fillStyle = `rgba(2,5,16,${0.8 - 0.5 * flash()})`; ctx.beginPath(); ctx.moveTo(HX - 22, HY); ctx.lineTo(HCX, HY - 62); ctx.lineTo(HX + HW + 22, HY); ctx.closePath(); ctx.fill();
     ctx.fillRect(HX + HW * 0.72 - 4, HY - 64, 32, 64); ctx.restore(); }
@@ -668,6 +700,7 @@ function drawHouse() {
     for (const [cx, cy] of drawPositions({ x, y })) drawRoom(room, cx, cy, o);
   }
   lampLight();
+  shafts();
   // reach outlines
   // rooms you could walk to after the word: dashed. A lock in reach gets a solid double frame and a tag, so it
   // reads without telling red from green (about 1 in 12 men can't)
@@ -757,7 +790,7 @@ function lineParts(room, c, self) {
   // doors and lights read like the other lines: both words typed, and the one that's true now is plain ink (not a choice)
   if (c.kind === "door") { const o = room[c.side === "west" ? "l" : "r"]; return [`${who}.door.${c.side} = `, [{ text: "open", dir: o ? 0 : 1, cur: o }, { text: "shut", dir: o ? 1 : 0, cur: !o }], ";"]; }
   if (c.kind === "swap") return [`${who}.swap(`, [{ text: "west", dir: -1 }, { text: "east", dir: 1 }], ")"];
-  if (c.kind === "flip") return ["house.upsideDown = ", [{ text: st.flipped ? "true" : "false" }], ";"];
+  if (c.kind === "flip") { const o = st.flipped; return ["house.upsideDown = ", [{ text: "true", dir: o ? 0 : 1, cur: o }, { text: "false", dir: o ? 1 : 0, cur: !o }], ";"]; }
   if (c.kind === "lights") { const o = room.lights; return [`${who}.lights = `, [{ text: "on", dir: o ? 0 : 1, cur: o }, { text: "off", dir: o ? 1 : 0, cur: !o }], ";"]; }
   if (c.kind === "lock") return ["frontDoor.locked = ", [{ text: st.unlocked ? "false" : "true" }], ";"];
 }
@@ -941,6 +974,7 @@ function drawEnd() {
     if (open) {
       centerText("One word left, and all three pages say it's yours to change.", y + 44, `italic 20px ${SERIF}`, INK);
       const left = clamp((16.5 - k) / 12, 0, 1); ctx.fillStyle = DIM; ctx.fillRect(VW / 2 - 120, y + 64, 240 * left, 3);
+      if (left < 1) centerText(`choose, or the house keeps it (${Math.max(0, Math.ceil(16.5 - k))})`, y + 84, `italic 16px ${SERIF}`, DIM);
     } else { centerText(`${ENDING.locked} You found ${st.pages}.`, y + 44, `italic 20px ${SERIF}`, DIM); choiceRects = []; }
     [INK, DIM, YEL, RED, GRN] = keepInk;
   }
@@ -980,7 +1014,7 @@ function clipFrame() {
   ctx.clip();
 }
 function endStats(k, y1, y2) {
-  if (k > 0) centerText(`3 floors in ${st.total.moves} moves (the house's best: ${st.total.par}), ${st.grabs} grab${st.grabs === 1 ? "" : "s"}, ${st.total.house || 0} move${st.total.house === 1 ? "" : "s"} by the house, ${st.pages} of 3 pages.`, y1, `18px ${MONO}`, INK);
+  if (k > 0) centerText(`3 floors in ${st.total.moves} moves (the house's best: ${st.total.par}), ${st.total.caught || 0} grab${st.total.caught === 1 ? "" : "s"}, ${st.total.house || 0} move${st.total.house === 1 ? "" : "s"} by the house, ${st.pages} of 3 pages.`, y1, `18px ${MONO}`, INK);
   if (k > 1) centerText(st.ending === "free" ? "Click to close the house." : "Click to close the house. It'll wait.", y2, `18px ${MONO}`, DIM);
 }
 function centerWrap(text, y, maxW, lh, font, color) {
@@ -1045,7 +1079,9 @@ function render() {
     drawRealRoom(z); ctx.save(); const T = toDesk(z);
     ctx.translate(T.X(0), T.Y(0)); ctx.scale(T.sc, T.sc); clipFrame();
   }
-  drawWorld();
+  // the flip preview: the whole night (house, lamp, you) is drawn as it would be after the flip, then put back
+  const peekG = flipPeek(), realG = st.g; if (peekG) st.g = peekG;
+  try { drawWorld(); } finally { st.g = realG; }
   slideRows(st.scene === "title" ? shuffleOffsets() : shiftK > 0 ? st.g.map(() => CW * ease(shiftK)) : null);
   if (st.scene === "end") endWorld();
   if (z > 0) { ctx.restore(); drawLaptop(z); }
