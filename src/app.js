@@ -144,7 +144,12 @@ function walkTo(id, exit, mx, my) {
 }
 function doEdit(li, dir = 1) {
   if (st.scene !== "play") return;
-  if (st.anim) { st.queued = { li, dir, id: st.player.id }; return; } // clicked mid-move: it happens when the rooms settle
+  if (st.anim) { // clicked mid-move: it happens when the rooms settle
+    // ...unless it's the second half of a double-click on the word that just moved them (that would undo or repeat it)
+    if (st.lastEdit && st.lastEdit.li === li && st.lastEdit.dir === dir && st.t - st.lastEdit.t < 0.4) return;
+    st.queued = { li, dir, id: st.player.id }; return;
+  }
+  st.lastEdit = { li, dir, t: st.t };
   st.queued = null; st.houseIdle = 0;
   const room = byId(st.g, st.player.id), c = room.lines[li];
   if (c.kind === "lock" && st.unlocked) return;
