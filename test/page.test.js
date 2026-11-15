@@ -790,6 +790,8 @@ test("floor 2 fixes: an unreachable door says so, doors read open|shut, clicks m
       st.anim = { kind: "swap", y: 0, a: 0, b: 1, t: 0 }; const m0 = st.moves; D.edit(ri, 1);
       const during = st.moves; D.tick(0.05, 30);
       const queue = { during: during - m0, after: st.moves - m0 };
+      // ...but a double-click on the word that just moved the house is one click, not two (it would undo itself)
+      st.houseNext = null; const m1 = st.moves; D.edit(ri, 1); D.edit(ri, 1); D.tick(0.05, 30); queue.double = st.moves - m1;
       // 4. while you point at something, the house doesn't count you as sitting still
       st.houseNext = null; st.anim = null; st.houseIdle = 0; st.shadow.mode = "hunt"; st.hover = { type: "room", id: g[0][0].id };
       D.tick(0.05, 10); const reading = st.houseIdle;
@@ -801,6 +803,7 @@ test("floor 2 fixes: an unreachable door says so, doors read open|shut, clicks m
     assert.equal(r.doorLine.rects, 1, "only the other word is a choice");
     assert.ok(r.doorLine.flipped);
     assert.equal(r.queue.during, 0); assert.equal(r.queue.after, 1, "the click mid-move still counts");
+    assert.equal(r.queue.double, 1, "a double-click is one move");
     assert.equal(r.reading, 0); assert.ok(r.idle > 0);
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
