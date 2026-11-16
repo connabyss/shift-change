@@ -17,10 +17,13 @@ export function init() {
   } catch { AC = null; }
 }
 export const isMuted = () => muted;
+// paused: the house goes quiet (the rain keeps on, faintly) until you come back
+let ducked = false;
+export function duck(on) { ducked = on; if (out) out.gain.setTargetAtTime(muted ? 0 : on ? 0.12 : 0.6, AC.currentTime, 0.08); }
 export function toggleMute() {
   muted = !muted;
   try { localStorage.setItem("shift-muted", muted ? "1" : "0"); } catch { /* fine */ }
-  if (out) out.gain.setTargetAtTime(muted ? 0 : 0.6, AC.currentTime, 0.05);
+  if (out) out.gain.setTargetAtTime(muted ? 0 : ducked ? 0.12 : 0.6, AC.currentTime, 0.05);
   return muted;
 }
 

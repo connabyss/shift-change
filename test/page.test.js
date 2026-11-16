@@ -629,26 +629,75 @@ test("never a dead floor: after a grab, if no way out is left, the house puts th
   } finally { await close(); }
 });
 
-test("in the dark, rooms still show their walls and names, and pointing at a word lights the rooms it moves", { skip }, async () => {
+// CH 11-16 ("super unpolished"): the dark rooms used to get a second, flat outline drawing pasted over them, a few
+// pixels off: every name twice, ladders through the ceiling, red X marks. Now each room's bones are drawn once, in
+// its own perspective, and the moon picks them out in the dark.
+test("in the dark, each room's name is drawn once, its open doorways show, and pointing at a word lights the rooms it moves", { skip }, async () => {
   const { page, errors, close } = await open("/?seed=4242");
   try {
     await page.evaluate(() => { const D = window.__dh; D.newGame(99, 2); D.begin(); const st = D.st(); st.floorT = 9; st.gag = true; D.hush(); });
     await page.mouse.move(5, 5); await page.waitForTimeout(300);
-    // a dark room far from you and out of reach: its bottom wall is drawn in chalk blue
+    const names = await page.evaluate(async () => {
+      const P = CanvasRenderingContext2D.prototype, orig = P.fillText, out = [];
+      P.fillText = function (t, ...a) { out.push(String(t)); return orig.call(this, t, ...a); };
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); P.fillText = orig;
+      const st = window.__dh.st(), frames = Math.max(1, out.filter((t) => t === "house.js").length);
+      return st.g.flat().map((r) => [r.name, out.filter((t) => t === r.name).length / frames]);
+    });
+    for (const [name, n] of names) assert.equal(n, 1, `${name} is written ${n} times a frame`);
+    // a dark room far from you with an open west doorway: the doorway's frame is brighter than the wall beside it
     const px = await page.evaluate(() => {
       const D = window.__dh, st = D.st(), me = D.find(st.g, st.player.id), R = D.reach(st.g, st.player.id);
-      let best = null; for (let y = 0; y < 3; y++) for (let x = 0; x < 4; x++) { const r = st.g[y][x]; if (R.has(r.id) || Math.abs(x - me.x) + Math.abs(y - me.y) < 2) continue; best = { x, y }; }
-      const cv = document.getElementById("game"), c = cv.getContext("2d"), k = cv.width / 960;
-      // the house's box: rooms 150 x 146 from (44, 74) (HX, HY, CW, CH in src/app.js)
-      const X = Math.round((44 + best.x * 150 + 75) * k), Y = Math.round((74 + best.y * 146 + 146 - 10) * k), A = Math.round((74 + best.y * 146 + 80) * k);
-      const at = (x, y) => [...c.getImageData(x, y, 1, 1).data];
-      return { wall: at(X, Y), inside: at(X, A) };
+      let best = null; for (let y = 0; y < 3; y++) for (let x = 0; x < 4; x++) { const r = st.g[y][x]; if (!r.l || R.has(r.id) || Math.abs(x - me.x) + Math.abs(y - me.y) < 2) continue; best = { x, y }; }
+      if (!best) return null;
+      const G = D.roomGeo(44 + best.x * 150, 74 + best.y * 146), cv = document.getElementById("game"), c = cv.getContext("2d"), k = cv.width / 960;
+      const at = ([x, y]) => [...c.getImageData(Math.round(x * k), Math.round(y * k), 1, 1).data];
+      return { frame: at(G.side("l", 0.22, 0.4)), wall: at(G.side("l", 0.5, 0.85)) };
     });
-    assert.ok(px.wall[2] > px.inside[2] + 25, `the wall line shows (${px.wall} vs ${px.inside})`);
+    assert.ok(px, "a dark room with an open west doorway");
+    assert.ok(px.frame[2] > px.wall[2] + 25, `the doorway's frame shows in the dark (${px.frame} vs ${px.wall})`);
     const wr = await page.evaluate(() => window.__dh.st().wordRects[0]);
     await page.mouse.move(wr.x + wr.w / 2, wr.y + wr.h / 2); await page.waitForTimeout(200);
     const lit = await page.evaluate(() => window.__dh.previewLit().length);
     assert.ok(lit >= 3, `the rooms the word moves light up (${lit})`);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+// CH 11-16: "shifting house doesnt have a pause or restart button"
+test("pause holds everything still and restart puts the floor back as it began; both are buttons and keys", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    await page.evaluate(() => { const D = window.__dh; D.newGame(99, 2); D.begin(); const st = D.st(); st.floorT = 9; st.gag = true; D.hush(); });
+    await page.waitForTimeout(200);
+    const huds = await page.evaluate(() => window.__dh.hudRects().map((r) => r.id));
+    assert.deepEqual(huds, ["pause", "restart", "hint", "mute"]);
+    // Esc pauses: the clock, the shadow and the house hold still
+    await page.keyboard.press("Escape");
+    const a = await page.evaluate(() => { const st = window.__dh.st(); return { t: st.t, sh: st.shadow.id, fx: st.shadow.fx, p: window.__dh.paused() }; });
+    await page.waitForTimeout(500);
+    const b = await page.evaluate(() => { const st = window.__dh.st(); return { t: st.t, sh: st.shadow.id, fx: st.shadow.fx }; });
+    assert.ok(a.p, "paused"); assert.equal(b.t, a.t, "time stands still"); assert.equal(b.sh, a.sh); assert.equal(b.fx, a.fx);
+    // clicking a room while paused does nothing; the card's Resume button resumes
+    const moves0 = await page.evaluate(() => window.__dh.st().moves);
+    const res = await page.evaluate(() => window.__dh.pauseRects().find((r) => r.id === "resume"));
+    await page.mouse.click(res.x + res.w / 2, res.y + res.h / 2);
+    assert.equal(await page.evaluate(() => window.__dh.paused()), false, "resumed");
+    await page.waitForTimeout(200);
+    assert.ok(await page.evaluate((t) => window.__dh.st().t > t, b.t), "time moves again");
+    // make a move, then R: same house, back as it began, moves 0
+    const before = await page.evaluate(() => { const st = window.__dh.st(); return { g: st.g0.flat().map((r) => r.id), start: st.h.startId, floor: st.floor }; });
+    await page.evaluate(() => { window.__dh.edit(0, 1); window.__dh.tick(0.05, 30); });
+    assert.equal(await page.evaluate(() => window.__dh.st().moves), moves0 + 1);
+    await page.keyboard.press("r");
+    const after = await page.evaluate(() => { const st = window.__dh.st(); return { g: st.g.flat().map((r) => r.id), me: st.player.id, moves: st.moves, floor: st.floor, scene: st.scene }; });
+    assert.deepEqual(after.g, before.g, "the rooms are back where they began");
+    assert.equal(after.me, before.start); assert.equal(after.moves, 0); assert.equal(after.floor, before.floor); assert.equal(after.scene, "play");
+    // the Restart button does the same
+    await page.evaluate(() => { window.__dh.edit(0, 1); window.__dh.tick(0.05, 30); });
+    const rb = await page.evaluate(() => window.__dh.hudRects().find((r) => r.id === "restart"));
+    await page.mouse.click(rb.x + rb.w / 2, rb.y + rb.h / 2);
+    assert.equal(await page.evaluate(() => window.__dh.st().moves), 0, "the button restarts too");
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
@@ -687,25 +736,6 @@ test("a lock in reach in the preview is tagged in words, not only in red", { ski
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); P.fillText = orig; return out;
     });
     assert.ok(drawn.includes("lock in reach"));
-    assert.deepEqual(errors, []);
-  } finally { await close(); }
-});
-
-test("in the dark, an open doorway has a bright threshold you can spot at a glance", { skip }, async () => {
-  const { page, errors, close } = await open("/?seed=4242");
-  try {
-    await page.evaluate(() => { const D = window.__dh; D.newGame(99, 2); D.begin(); const st = D.st(); st.floorT = 9; D.hush(); });
-    await page.mouse.move(5, 5); await page.waitForTimeout(300);
-    const r = await page.evaluate(() => {
-      const D = window.__dh, st = D.st(), me = D.find(st.g, st.player.id), R = D.reach(st.g, st.player.id);
-      let best = null; for (let y = 0; y < 3; y++) for (let x = 0; x < 4; x++) { const room = st.g[y][x]; if (!room.l || R.has(room.id) || Math.abs(x - me.x) + Math.abs(y - me.y) < 2) continue; best = { x, y }; }
-      if (!best) return null;
-      const cv = document.getElementById("game"), c = cv.getContext("2d"), k = cv.width / 960, at = (x, y) => [...c.getImageData(Math.round(x * k), Math.round(y * k), 1, 1).data];
-      const cx = 44 + best.x * 150, bot = 74 + best.y * 146 + 146 - 10; // HX, HY, CW, CH in src/app.js; the chalk floor line
-      return { door: at(cx + 12 + 8, bot), floor: at(cx + 75, bot) };
-    });
-    assert.ok(r, "a dark room with an open west doorway");
-    assert.ok(r.door[2] > r.floor[2] + 30, `the threshold is brighter than the floor line (${r.door} vs ${r.floor})`);
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
