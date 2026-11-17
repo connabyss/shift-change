@@ -558,7 +558,7 @@ export async function init(layout) {
   // models
   const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
   const names = new Set(); for (const list of Object.values(FURNISH)) for (const [n] of list) names.add(n);
-  await Promise.all([...names].map((n) => new Promise((ok) => loader.load(`assets/models/${n}.glb`, (g) => {
+  await Promise.all([...names].map((n) => new Promise((ok) => loader.load(`${/[?&]hi=1/.test(location.search) ? "hi" : "assets/models"}/${n}.glb`, (g) => {
     g.scene.traverse((o) => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; } }); models.set(n, g.scene); ok();
   }, undefined, () => ok()))));
   try { await document.fonts.load('64px "IM Fell English SC"'); } catch { /* fine */ }

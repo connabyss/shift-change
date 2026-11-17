@@ -85,7 +85,7 @@ import hashlib
 for o in sc.objects:
     if o.type == 'LIGHT' and o.data.type in ('POINT', 'SPOT') and abs(o.matrix_world.translation.x) < 7 and -2 < o.matrix_world.translation.z < 11:
         h = int(hashlib.md5(('%.1f%.1f' % (o.matrix_world.translation.x, o.matrix_world.translation.z)).encode()).hexdigest(), 16)
-        o.data.energy *= [0.08, 0.3, 0.6, 1, 1.6, 2.6, 0, 0.45][h % 8]
+        o.data.energy *= [0.05, 0.25, 0.6, 1, 1.9, 3.4, 0, 0.4][h % 8]
 sc.render.engine = 'CYCLES'; sc.cycles.device = 'CPU'; sc.cycles.samples = S; sc.cycles.use_denoising = DN
 sc.cycles.max_bounces = 6; sc.render.resolution_x = W; sc.render.resolution_y = H; sc.render.resolution_percentage = 100
 sc.view_settings.view_transform = 'AgX'; sc.view_settings.look = 'AgX - Medium High Contrast'; sc.view_settings.exposure = 0

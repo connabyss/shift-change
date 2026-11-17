@@ -1,7 +1,7 @@
 // node export.cjs out.glb [query]  -> the game's 3D scene in photo mode, as GLB (+ camera json)
 const { chromium } = require('playwright'); const http=require('http'),fs=require('fs'),path=require('path');
 const ROOT=require('path').resolve(__dirname,'../..'); const MT={'.js':'text/javascript','.html':'text/html','.glb':'model/gltf-binary','.jpg':'image/jpeg'};
-const srv=http.createServer((q,r)=>{if(q.method==='POST'){const n=+new URL(q.url,'http://x').searchParams.get('i');const ws=fs.createWriteStream(process.argv[2]+'.part'+n);q.pipe(ws);ws.on('finish',()=>{r.end('ok')});return;}let p=new URL(q.url,'http://x').pathname;if(p==='/')p='/index.html';fs.readFile(path.join(ROOT,p),(e,b)=>{if(e){r.writeHead(404);r.end();return;}r.writeHead(200,{'content-type':MT[path.extname(p)]||'application/octet-stream'});r.end(b);});}).listen(0);
+const srv=http.createServer((q,r)=>{if(q.method==='POST'){const n=+new URL(q.url,'http://x').searchParams.get('i');const ws=fs.createWriteStream(process.argv[2]+'.part'+n);q.pipe(ws);ws.on('finish',()=>{r.end('ok')});return;}let p=new URL(q.url,'http://x').pathname;if(p==='/')p='/index.html';const HI=process.env.HI_DIR;fs.readFile(HI&&p.startsWith('/hi/')?path.join(HI,p.slice(4)):path.join(ROOT,p),(e,b)=>{if(e){r.writeHead(404);r.end();return;}r.writeHead(200,{'content-type':MT[path.extname(p)]||'application/octet-stream'});r.end(b);});}).listen(0);
 (async()=>{const port=srv.address().port;const b=await chromium.launch();const pg=await b.newPage({viewport:{width:960,height:600}});
 pg.on('pageerror',e=>console.log('ERR',String(e)));
 await pg.addInitScript(()=>{const raf=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=(f)=>{if(window.__stop)return 0;return raf(f);};});
