@@ -217,6 +217,7 @@ export function player(ctx, x, y, t, walking) {
   const lx = x + 8, ly = y - 15, fl = 0.85 + 0.15 * Math.sin(t * 23) * Math.sin(t * 7);
   const g = ctx.createRadialGradient(lx, ly, 2, lx, ly, 60); g.addColorStop(0, `rgba(255,200,120,${0.32 * fl})`); g.addColorStop(1, "rgba(255,200,120,0)");
   ctx.fillStyle = g; ctx.fillRect(lx - 62, ly - 62, 124, 124);
+  ctx.fillStyle = "rgba(0,0,0,0.45)"; ctx.beginPath(); ctx.ellipse(x, y + 0.5, 7, 2, 0, 0, 7); ctx.fill(); // standing on the floor
   ctx.fillStyle = "#cfc3ad"; ctx.beginPath(); ctx.moveTo(x - 6, y - 4); ctx.lineTo(x - 4, y - 22); ctx.lineTo(x + 4, y - 22); ctx.lineTo(x + 6, y - 4); ctx.closePath(); ctx.fill();
   ctx.strokeStyle = "#cfc3ad"; ctx.lineWidth = 2; const sw = walking ? Math.sin(t * 16) * 3 : 0;
   ctx.beginPath(); ctx.moveTo(x - 2, y - 5); ctx.lineTo(x - 2 - sw, y); ctx.moveTo(x + 2, y - 5); ctx.lineTo(x + 2 + sw, y); ctx.stroke();

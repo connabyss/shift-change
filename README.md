@@ -8,7 +8,7 @@ of rooms grinds past with you inside. Reach a room with a red lock, change its w
 the shadow finds you.
 
 Mouse only, one hand. (Press Shift five times and the house has something to say about Sticky Keys.) Click a room to walk there. Point at a word to see what it would do (the rooms you could walk to
-afterwards light up green), then click it. `M` turns the sound off and on.
+afterwards light up green), then click it. Under the house are buttons for Pause (`P` or `Esc`), Restart floor (`R`, the same house back as it began), Hint (`H`) and Sound (`M`).
 
 - **The words:**
   - `this.row.shift(west|east)` / `this.column.shift(up|down)`: that row or column of rooms slides one step, and you ride along.
