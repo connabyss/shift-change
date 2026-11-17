@@ -972,19 +972,19 @@ test("the photographed house: each room's picture sits in its slot, slides with 
   try {
     await page.waitForFunction(() => { const D = window.__dh; D.begin(); return D.plates(); }, null, { timeout: 30000 });
     const grab = () => page.evaluate(() => {
-      const D = window.__dh, P = CanvasRenderingContext2D.prototype, di = P.drawImage, ft = P.fillText, imgs = [], txt = [];
-      P.drawImage = function (im, ...a) { const m = this.getTransform(); if (im && im.src && /plates\/\w+_(lit|dark)\.jpg/.test(im.src)) imgs.push({ k: im.src.match(/plates\/(\w+)_(lit|dark)/).slice(1), x: m.a * a[0] + m.e, y: m.d * a[1] + m.f, sy: m.d }); return di.call(this, im, ...a); };
+      const D = window.__dh, P = CanvasRenderingContext2D.prototype, di = P.drawImage, ft = P.fillText, imgs = [], txt = [], plates = [];
+      P.drawImage = function (im, ...a) { const m = this.getTransform(); if (im && im.src && /plates\/\w+_plate_dark\.png/.test(im.src)) plates.push(im.src.match(/plates\/(\w+)_plate_dark/)[1]); if (im && im.src && /plates\/\w+_(lit|dark)\.jpg/.test(im.src)) imgs.push({ k: im.src.match(/plates\/(\w+)_(lit|dark)/).slice(1), x: m.a * a[0] + m.e, y: m.d * a[1] + m.f, sy: m.d }); return di.call(this, im, ...a); };
       P.fillText = function (t, ...a) { txt.push(String(t)); return ft.call(this, t, ...a); };
       try { D.render(); } finally { P.drawImage = di; P.fillText = ft; }
       const st = D.st(), k = document.getElementById("game").width / 960;
-      return { imgs: imgs.map((i) => ({ ...i, x: i.x / k, y: i.y / k, sy: i.sy / k })), txt, g: st.g.map((r) => r.map((x) => ({ id: x.id, name: x.name, l: x.l }))) };
+      return { imgs: imgs.map((i) => ({ ...i, x: i.x / k, y: i.y / k, sy: i.sy / k })), txt, plates, g: st.g.map((r) => r.map((x) => ({ id: x.id, name: x.name, l: x.l }))) };
     });
     const at = (f, name) => f.imgs.filter((i) => i.k[0] === name && i.k[1] === "dark").map((i) => [Math.round(i.x), Math.round(i.y), Math.sign(i.sy)]);
     const a = await grab();
     for (let y = 0; y < 3; y++) for (let x = 0; x < 4; x++) {
       const r = a.g[y][x], cell = [44 + x * 150, 74 + y * 146];
       assert.deepEqual(at(a, r.name), [[cell[0], cell[1], 1]], `${r.name}'s picture is in its own slot`);
-      assert.equal(a.txt.filter((t) => t === r.name).length, 1, `${r.name}'s plate is written once`);
+      assert.equal(a.plates.filter((t) => t === r.name).length, 1, `${r.name}'s name plate is drawn once`);
     }
     // a row slides east: once it settles, each of its rooms' pictures is one slot along (the end one wraps round)
     const row = await page.evaluate(() => { const D = window.__dh, st = D.st(), p = D.find(st.g, st.player.id), li = D.byId(st.g, st.player.id).lines.findIndex((l) => l.kind === "row"); if (li < 0) return null; D.edit(li, 1); D.tick(1 / 60, 150); return p.y; });

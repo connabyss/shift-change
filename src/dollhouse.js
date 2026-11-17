@@ -352,7 +352,7 @@ function buildVary(g, room, v) {
 function boards(parent, y) { for (const dz of [-0.2, 0, 0.2]) { const b = box(0.74, 0.04, 0.17, M.ladder, LADDER_X, y, -0.25 + dz, parent); b.rotation.y = dz * 0.15; } }
 // a brass padlock hung on the back wall; its enamel badge is red while locked, green once open
 function padlock(open) {
-  const g = new THREE.Group();
+  const g = new THREE.Group(); g.name = "padlock";
   const body = box(0.24, 0.2, 0.08, M.brass, 0, 0, 0, g, true);
   const badge = new THREE.Mesh(new THREE.CircleGeometry(0.055, 20), new THREE.MeshStandardMaterial({ color: open ? 0x2f8a3a : 0xb3261e, emissive: open ? 0x2f8a3a : 0xb3261e, emissiveIntensity: 0.6, roughness: 0.3 }));
   badge.position.set(0, 0, 0.041); g.add(badge);

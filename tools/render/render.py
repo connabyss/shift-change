@@ -110,25 +110,42 @@ sc.render.engine = 'CYCLES'; sc.cycles.device = 'CPU'; sc.cycles.samples = S; sc
 sc.cycles.max_bounces = 6; sc.render.resolution_x = W; sc.render.resolution_y = H; sc.render.resolution_percentage = 100
 sc.view_settings.view_transform = 'AgX'; sc.view_settings.look = 'AgX - Medium High Contrast'; sc.view_settings.exposure = 0
 sc.render.filepath = out; sc.render.threads_mode = 'AUTO'
-if os.environ.get('SPRITE'):  # SPRITE=1: the peg doll alone, cut out (RGBA, the rest of the house kept as a holdout for its light
-    # and shadow), straight on and turned: out_front.png, out_right.png, out_left.png, out_back.png (the turns figure() uses)
+if os.environ.get('SPRITE'):  # one thing alone, cut out (RGBA; the rest of the house stays as a holdout, for its light and
+    # shadow). SPRITE=doll or shadow: the peg doll or the hooded thing, straight on and turned (out_front/right/left/back.png,
+    # the turns figure() uses); SPRITE=padlock: the first padlock, straight on (out.png)
     def kids(o): return [o] + [k for c in o.children for k in kids(c)]
-    roots = [o for o in sc.objects if o.name.split('.')[0] == 'fig' and (o.parent is None or o.parent.name.split('.')[0] != 'fig')]
+    def base(o): return o.name.split('.')[0]
     def box(r):
         pts = [o.matrix_world @ mathutils.Vector(v) for o in kids(r) if o.type == 'MESH' for v in o.bound_box]
         return mathutils.Vector([min(p[i] for p in pts) for i in range(3)]), mathutils.Vector([max(p[i] for p in pts) for i in range(3)])
-    doll = min((r for r in roots if any(o.type == 'MESH' for o in kids(r))), key=lambda r: (box(r)[1] - box(r)[0]).z)
-    mine = {o.name for o in kids(doll)}
+    kind = os.environ['SPRITE']; want = 'padlock' if kind == 'padlock' else 'fig'
+    roots = [o for o in sc.objects if base(o) == want and (o.parent is None or base(o.parent) != want) and any(k.type == 'MESH' for k in kids(o))]
+    hgt = lambda r: (box(r)[1] - box(r)[0]).z
+    one = roots[0] if kind == 'padlock' else (min if kind in ('doll', '1') else max)(roots, key=hgt)
+    mine = {o.name for o in kids(one)}
     for o in sc.objects:
         if o.type == 'MESH' and o.name not in mine: o.is_holdout = True
     sc.render.film_transparent = True; sc.render.image_settings.color_mode = 'RGBA'; sc.render.image_settings.file_format = 'PNG'
-    lo, hi = box(doll); ctr = (lo + hi) / 2; wd = float(os.environ.get('SPRITE_W', '1.5'))
+    lo, hi = box(one); ctr = (lo + hi) / 2; wd = float(os.environ.get('SPRITE_W', '0.7' if kind == 'padlock' else '1.5' if kind in ('doll', '1') else '2.2'))
     c.data.type = 'ORTHO'; c.data.ortho_scale = wd; c.data.sensor_fit = 'HORIZONTAL'; c.data.dof.use_dof = False
-    c.rotation_mode = 'XYZ'; c.rotation_euler = (math.pi / 2, 0, 0); c.location = (ctr.x, -40, lo.z - 0.05 + wd / 2)
-    doll.rotation_mode = 'XYZ'; z0 = doll.rotation_euler.z
-    for tag, a in (('front', 0), ('right', 0.8 * math.pi / 2), ('left', -0.8 * math.pi / 2), ('back', math.pi)):
-        doll.rotation_euler.z = z0 + a; sc.render.filepath = out.replace('.png', '_' + tag + '.png')
-        t0 = time.time(); bpy.ops.render.render(write_still=True); print('sprite', tag, round(time.time() - t0), 's', flush=True)
-    print('sprite at', tuple(round(v, 3) for v in ctr), 'base z', round(lo.z, 3), flush=True)
+    c.rotation_mode = 'XYZ'; c.rotation_euler = (math.pi / 2, 0, 0); c.location = (ctr.x, -40, ctr.z if kind == 'padlock' else lo.z - 0.05 + wd / 2)
+    turns = (('', 0),) if kind == 'padlock' else (('_front', 0), ('_right', 0.8 * math.pi / 2), ('_left', -0.8 * math.pi / 2), ('_back', math.pi))
+    one.rotation_mode = 'XYZ'; z0 = one.rotation_euler.z
+    for tag, a in turns:
+        one.rotation_euler.z = z0 + a; sc.render.filepath = out.replace('.png', tag + '.png')
+        t0 = time.time(); bpy.ops.render.render(write_still=True); print('sprite', kind, tag, round(time.time() - t0), 's', flush=True)
+    print('sprite at', tuple(round(v, 3) for v in ctr), 'base z', round(lo.z, 3), 'size', tuple(round(v, 3) for v in hi - lo), flush=True)
+elif os.environ.get('CUT'):  # CUT=name: render once without those objects (out.png), then them alone, cut out, lit and shadowed
+    # by the house around them (out_cut.png: RGBA, the rest kept as a holdout)
+    def kids(o): return [o] + [k for c in o.children for k in kids(c)]
+    want = os.environ['CUT']; cut = {k.name for o in sc.objects if o.name.split('.')[0] == want for k in kids(o)}
+    for o in sc.objects:
+        if o.name in cut: o.hide_render = True
+    t0 = time.time(); bpy.ops.render.render(write_still=True); print('render', round(time.time() - t0), 's', flush=True)
+    for o in sc.objects:
+        if o.name in cut: o.hide_render = False
+        elif o.type == 'MESH': o.is_holdout = True
+    sc.render.film_transparent = True; sc.render.image_settings.color_mode = 'RGBA'; sc.render.filepath = out.replace('.png', '_cut.png')
+    t0 = time.time(); bpy.ops.render.render(write_still=True); print('cut', round(time.time() - t0), 's', flush=True)
 else:
     t0 = time.time(); bpy.ops.render.render(write_still=True); print('render', round(time.time() - t0), 's', flush=True)

@@ -13,3 +13,9 @@ for tag, src in (('lit', lit), ('dark', dark)):
         x, y = i % 4, i // 4; x0, y0 = 2 * (44 + x * 150), 2 * (74 + y * 146)
         im.crop((x0, y0, x0 + 300, y0 + 292)).save(os.path.join(out, f'{n}_{tag}.jpg'), quality=88)
     os.remove(tmp)
+    cut = src.replace('.png', '_cut.png')  # render.py CUT=nameplate: the brass name plates alone, cut out (bottom 40px of each room)
+    if os.path.exists(cut):
+        ci = Image.open(cut)
+        for i, n in enumerate(names):
+            x, y = i % 4, i // 4; x0, y1 = 2 * (44 + x * 150), 2 * (74 + y * 146) + 292
+            ci.crop((x0, y1 - 40, x0 + 300, y1)).save(os.path.join(out, f'{n}_plate_{tag}.png'), optimize=True)

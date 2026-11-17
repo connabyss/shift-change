@@ -25,8 +25,8 @@ const in3d = () => !FLAT && dh.isReady();
 // The title and the shots between floors stay the live 3D photo camera. ?plates=0 turns the pictures off.
 const PL = { on: !FLAT && !PHOTO && !/[?&]plates=0/.test(location.search), ready: false, img: {} };
 if (PL.on) {
-  const want = ["shell", "wood", ...NAMES.flatMap((n) => [n + "_lit", n + "_dark"])]; let left = want.length;
-  for (const k of want) { const im = new Image(); im.onload = () => { if (--left === 0) PL.ready = true; }; im.onerror = () => { PL.on = false; }; im.src = k === "wood" ? "assets/tex/Wood049/Color.jpg" : `assets/plates/${k}.jpg`; PL.img[k] = im; }
+  const want = ["shell", "wood", "lock_shut", "lock_open", ...NAMES.flatMap((n) => [n + "_lit", n + "_dark", n + "_plate_lit", n + "_plate_dark"])]; let left = want.length;
+  for (const k of want) { const im = new Image(); im.onload = () => { if (--left === 0) PL.ready = true; }; im.onerror = () => { PL.on = false; }; im.src = k === "wood" ? "assets/tex/Wood049/Color.jpg" : `assets/plates/${k}.${/plate_|lock_/.test(k) ? "png" : "jpg"}`; PL.img[k] = im; }
 }
 const plates = () => PL.on && PL.ready && st.scene !== "title" && st.scene !== "floor";
 cv.width = VW * DPR; cv.height = VH * DPR;
@@ -649,7 +649,7 @@ function drawRoom(room, cx, cy, o) {
 // ---------- the photographed rooms ----------
 // One room's picture, lit or dark (cross-faded), turned over with the house; then what changes with the code, drawn
 // where the 3D house has it: doorways in the side posts, the ladder up and its hatch, the hole down, the lock, the page.
-const PS = 3.2 / 150, POST = 0.14 / PS, SLAB = 0.08 / PS, DOORH = 1.5 / PS, LADX = 0.8 / PS;
+const PS = 3.2 / 150, PLATEH = 20, POST = 0.14 / PS, SLAB = 0.08 / PS, DOORH = 1.5 / PS, LADX = 0.8 / PS;
 function drawPlate(room, cx, cy, o, gx, gy) {
   const lit = roomLit(room, o), shHere = st.shadow.mode !== "sleep" && st.shadow.id === room.id;
   ctx.save(); ctx.beginPath(); ctx.rect(cx, cy, CW, CH); ctx.clip();
@@ -685,18 +685,15 @@ function drawPlate(room, cx, cy, o, gx, gy) {
   if (up) { ladder(lx, cyT - (upJ ? SLAB + 2 : 0), fy, L); if (!upJ) planks(lx, cyT + 1, L); else { ctx.fillStyle = "rgba(4,3,6,0.9)"; ctx.fillRect(lx - 14, cy - 1, 28, SLAB + 1); } }
   if (room.down) { ctx.fillStyle = "rgba(4,3,6,0.9)"; ctx.fillRect(lx - 14, fy, 28, SLAB + 1); if (downJ) ladder(lx, fy - 16, cy + CH + 1, L, true); else planks(lx, fy - 3, L); }
   ctx.restore();
-  // the brass name plate on the floor's front edge (as on the 3D house: it stays put when the room turns over)
-  { ctx.save(); ctx.font = `9px "IM Fell English SC", Georgia, serif`; const tw = ctx.measureText(room.name).width + 14, h = 11, h2 = [...room.name].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) % 9973, 7);
-    const nx = cx + CW / 2 + ((h2 >> 3) % 9 - 4) * 0.09 / PS - tw / 2, ny = cy + CH - 0.17 / PS - h / 2, k = 0.3 + 0.35 * L; // (lit by the room, not a label on the screen)
-    ctx.translate(nx + tw / 2, ny + h / 2); ctx.rotate(((room.name.length * 5) % 7 - 3) * 0.012); ctx.translate(-tw / 2, -h / 2);
-    const g = ctx.createLinearGradient(0, 0, 0, h); g.addColorStop(0, shade([200, 178, 120], k)); g.addColorStop(0.5, shade([150, 128, 78], k)); g.addColorStop(1, shade([96, 78, 42], k));
-    ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(1, 1.5, tw, h); ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(0, 0, tw, h, 1.5); ctx.fill();
-    ctx.fillStyle = "rgba(30,22,10,0.8)"; for (const sx of [3, tw - 3]) { ctx.beginPath(); ctx.arc(sx, h / 2, 1, 0, 7); ctx.fill(); }
-    ctx.textAlign = "center"; ctx.fillStyle = "rgba(255,240,200,0.25)"; ctx.fillRect(2, 1, tw - 4, 0.8);
-    ctx.fillStyle = `rgba(48,34,14,${0.75 + 0.2 * k})`; ctx.fillText(room.name, tw / 2, h - 2.6); ctx.restore(); }
-  if (room.lines.some((l) => l.kind === "lock")) {
-    const px = cx + CW * 0.3, py = cy + CH * 0.42, col = st.unlocked ? GRN : RED;
-    glows.push(() => padlock(px, py, col, 8 + 4 * Math.sin(st.t * 4))); padlock(px, py, col, 6);
+  // the brass name plate on the floor's front edge: the 3D house's own, path-traced and cut out, lit by its room
+  // (it stays put when the room turns over)
+  ctx.drawImage(PL.img[room.name + "_plate_dark"], cx, cy + CH - PLATEH, CW, PLATEH);
+  if (lit > 0) { ctx.globalAlpha = lit; ctx.drawImage(PL.img[room.name + "_plate_lit"], cx, cy + CH - PLATEH, CW, PLATEH); ctx.globalAlpha = 1; }
+  if (room.lines.some((l) => l.kind === "lock")) { // the 3D house's brass padlock on the back wall (path-traced), with its enamel's glow
+    const op = st.unlocked, px = cx + CW / 2 + 0.5 / PS, py = cy + CH - (op ? 1.273 : 1.225) / PS, w = 0.7 / PS, col = op ? "120,230,140" : "255,80,64";
+    ctx.save(); ctx.globalCompositeOperation = "lighter"; const g = ctx.createRadialGradient(px, py, 2, px, py, 26); g.addColorStop(0, `rgba(${col},${0.35 + 0.15 * Math.sin(st.t * 4)})`); g.addColorStop(1, `rgba(${col},0)`);
+    ctx.fillStyle = g; ctx.fillRect(px - 28, py - 28, 56, 56); ctx.restore();
+    ctx.drawImage(PL.img[op ? "lock_open" : "lock_shut"], px - w / 2, py - w / 2, w, w);
   }
   if (st.page.id === room.id && !st.page.got) {
     const px = cx + CW * 0.36, py = fy - 4, k = 0.6 + 0.4 * Math.sin(st.t * 3 + 1);
@@ -736,6 +733,8 @@ function plateLight() {
   if (st.scene !== "end") { const g = ctx.createRadialGradient(px, py, 0, px, py, 90); g.addColorStop(0, `rgba(${hot},0.32)`); g.addColorStop(1, `rgba(${hot},0)`); ctx.fillStyle = g; ctx.fillRect(px - 100, py - 100, 200, 200); }
   if (f > 0) { ctx.fillStyle = `rgba(170,190,240,${0.35 * f})`; ctx.fillRect(HX, HY, HW, HH); }
   ctx.restore();
+  // the lens: corners a little darker, as in the photographed still (the room pictures are cut without it)
+  const v = ctx.createRadialGradient(HCX, HCY, 120, HCX, HCY, 520); v.addColorStop(0, "rgba(0,0,0,0)"); v.addColorStop(1, "rgba(0,0,0,0.32)"); ctx.fillStyle = v; ctx.fillRect(HX, HY, HW, HH);
 }
 // a padlock hanging on the back wall: shackle, body, keyhole. Open (green) lifts its shackle.
 function padlock(x, y, col, blur) {
