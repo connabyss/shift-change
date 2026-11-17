@@ -77,7 +77,7 @@ function materials() {
   // at the house's edges when a row slides, the outer frame never is)
   M.plyH = [0, 1, 2, 3].map((i) => ply(false, i)); M.plyV = [0, 1, 2, 3].map((i) => ply(true, i));
   M.plyHo = [0, 1, 2, 3].map((i) => ply(false, i)); M.plyVo = [0, 1, 2, 3].map((i) => ply(true, i));
-  M.ao = aoOverlay(); M.aoSide = aoOverlay(true);
+  M.aoSide = [0, 1, 2].map((i) => grime(101 + i * 7, true));
 }
 
 // a plywood edge: seven laminations, grain, knots, nail heads, grubby finger marks (drawn once, no image needed)
@@ -101,15 +101,29 @@ function ply(vert, seed = 0) {
   const r = new THREE.CanvasTexture(rc); r.wrapS = r.wrapT = THREE.RepeatWrapping;
   return new THREE.MeshStandardMaterial({ map: t, roughnessMap: r, bumpMap: r, bumpScale: 1.2, roughness: 1.0, color: 0xa89880 });
 }
-// baked corner shade: an unlit see-through layer just in front of a wall, dark where walls meet (light can't reach
-// into corners), so the rooms get the soft contact shading of the still without paying for ambient occlusion
-function aoOverlay(side = false) {
-  const c = document.createElement("canvas"); c.width = 256; c.height = 256; const x = c.getContext("2d");
-  const edges = side ? [[0, 0, 0, 30, 0.35], [0, 256, 0, 226, 0.4], [0, 0, 90, 0, 0.5]] : [[0, 0, 0, 60, 0.3], [0, 256, 0, 170, 0.55], [0, 0, 55, 0, 0.42], [256, 0, 201, 0, 0.42]];
-  for (const [x0, y0, x1, y1, a] of edges) {
-    const g = x.createLinearGradient(x0, y0, x1, y1); g.addColorStop(0, `rgba(0,0,0,${a})`); g.addColorStop(0.45, `rgba(0,0,0,${a * 0.3})`); g.addColorStop(1, "rgba(0,0,0,0)"); x.fillStyle = g; x.fillRect(0, 0, 256, 256);
-  }
-  const t = new THREE.CanvasTexture(c);
+// corner shade plus years of grime on a wall: water stains with dark rims, drips, a dirty band along the skirting,
+// finger smudges, scuffs, a pale patch where a picture used to hang. Unlit and see-through, laid just over the wall.
+function grime(seed, side) {
+  const S2 = 512, c = document.createElement("canvas"); c.width = c.height = S2; const x = c.getContext("2d");
+  let q = seed * 7919 % 2147483646 + 1; const rn = () => { q = (q * 16807) % 2147483647; return q / 2147483647; };
+  const edges = side ? [[0, 0, 0, 60, 0.4], [0, S2, 0, S2 - 90, 0.55], [0, 0, 200, 0, 0.6]] : [[0, 0, 0, 120, 0.4], [0, S2, 0, S2 - 200, 0.6], [0, 0, 110, 0, 0.5], [S2, 0, S2 - 110, 0, 0.5]];
+  for (const [x0, y0, x1, y1, a] of edges) { const g = x.createLinearGradient(x0, y0, x1, y1); g.addColorStop(0, `rgba(0,0,0,${a})`); g.addColorStop(0.45, `rgba(0,0,0,${a * 0.3})`); g.addColorStop(1, "rgba(0,0,0,0)"); x.fillStyle = g; x.fillRect(0, 0, S2, S2); }
+  // dirt along the skirting, uneven
+  for (let i = 0; i < 60; i++) { const xx = rn() * S2, w = 20 + rn() * 80, hh = 10 + rn() * 40; const g = x.createLinearGradient(0, S2, 0, S2 - hh); g.addColorStop(0, `rgba(40,28,18,${0.15 + rn() * 0.2})`); g.addColorStop(1, "rgba(40,28,18,0)"); x.fillStyle = g; x.fillRect(xx, S2 - hh, w, hh); }
+  // water stains: soft brown blotches with a darker tide line
+  for (let i = 0; i < 2 + Math.floor(rn() * 3); i++) { const cx = rn() * S2, cy = rn() * S2 * 0.7, r = 18 + rn() * 40;
+    x.save(); x.translate(cx, cy); x.scale(1, 0.6 + rn() * 0.8); x.beginPath(); for (let k = 0; k <= 24; k++) { const a = k / 24 * Math.PI * 2, rr = r * (0.7 + rn() * 0.5); x.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } x.closePath();
+    x.fillStyle = `rgba(90,62,30,${0.08 + rn() * 0.1})`; x.fill(); x.strokeStyle = `rgba(70,45,20,${0.15 + rn() * 0.15})`; x.lineWidth = 1.5 + rn() * 2; x.stroke(); x.restore(); }
+  // drips
+  for (let i = 0; i < 6 + rn() * 10; i++) { const xx = rn() * S2, y0 = rn() * S2 * 0.6, L = 40 + rn() * 200; const g = x.createLinearGradient(0, y0, 0, y0 + L); g.addColorStop(0, `rgba(50,35,20,${0.12 + rn() * 0.12})`); g.addColorStop(1, "rgba(50,35,20,0)"); x.fillStyle = g; x.fillRect(xx, y0, 1.5 + rn() * 3, L); }
+  // smudges and scuffs
+  for (let i = 0; i < 18; i++) { const cx = rn() * S2, cy = S2 * (0.45 + rn() * 0.5), r = 6 + rn() * 22; const g = x.createRadialGradient(cx, cy, 0, cx, cy, r); g.addColorStop(0, `rgba(30,22,15,${0.08 + rn() * 0.12})`); g.addColorStop(1, "rgba(30,22,15,0)"); x.fillStyle = g; x.fillRect(cx - r, cy - r, r * 2, r * 2); }
+  for (let i = 0; i < 25; i++) { x.strokeStyle = `rgba(${rn() < 0.5 ? "30,20,10" : "230,220,200"},${0.1 + rn() * 0.2})`; x.lineWidth = 0.8 + rn(); x.beginPath(); const xx = rn() * S2, yy = S2 * (0.55 + rn() * 0.45); x.moveTo(xx, yy); x.lineTo(xx + (rn() - 0.5) * 40, yy + (rn() - 0.5) * 8); x.stroke(); }
+  // where a picture hung once: a paler rectangle with a dirty outline
+  if (!side && rn() < 0.6) { const w = 50 + rn() * 50, hh = 40 + rn() * 50, px = 60 + rn() * (S2 - 180), py = 60 + rn() * 140; x.fillStyle = "rgba(255,245,225,0.07)"; x.fillRect(px, py, w, hh); x.strokeStyle = "rgba(40,30,20,0.14)"; x.lineWidth = 3; x.strokeRect(px, py, w, hh); }
+  // fine mottling all over
+  for (let i = 0; i < 2500; i++) { x.fillStyle = `rgba(${rn() < 0.8 ? "40,30,20" : "240,230,210"},${rn() * 0.035})`; const r = 2 + rn() * 8; x.fillRect(rn() * S2, rn() * S2, r, r); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   return new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, toneMapped: false });
 }
 // dust and wear on each floor: grey dust gathered along the skirting and in the corners, a worn path, crumbs, fluff
@@ -122,6 +136,8 @@ function dust(seed) {
   g = x.createLinearGradient(0, 0, 0, 60); g.addColorStop(0, "rgba(0,0,0,0.4)"); g.addColorStop(1, "rgba(0,0,0,0)"); x.fillStyle = g; x.fillRect(0, 0, 512, 60);
   for (let i = 0; i < 900; i++) { const yy = Math.pow(rn(), 2.2) * 416, xx = rn() * 512; x.fillStyle = `rgba(${200 + rn() * 40},${190 + rn() * 40},${170 + rn() * 40},${0.08 + rn() * 0.25})`; x.fillRect(xx, yy, 0.8 + rn() * 2, 0.8 + rn() * 2); }
   for (let i = 0; i < 10; i++) { x.strokeStyle = `rgba(210,200,185,${0.25 + rn() * 0.3})`; x.lineWidth = 0.6; x.beginPath(); const cx = rn() * 512, cy = rn() * 140; for (let k = 0; k < 8; k++) x.lineTo(cx + (rn() - 0.5) * 14, cy + (rn() - 0.5) * 10); x.stroke(); }
+  for (let i = 0; i < 40; i++) { x.strokeStyle = `rgba(${rn() < 0.6 ? "30,20,10" : "230,215,190"},${0.12 + rn() * 0.2})`; x.lineWidth = 0.8 + rn() * 1.5; x.beginPath(); const cx = rn() * 512, cy = 100 + rn() * 316; x.moveTo(cx, cy); x.lineTo(cx + (rn() - 0.5) * 60, cy + (rn() - 0.5) * 12); x.stroke(); }
+  for (let i = 0; i < 4; i++) { const cx = rn() * 512, cy = 120 + rn() * 280, r = 12 + rn() * 30; x.save(); x.translate(cx, cy); x.scale(1, 0.5 + rn() * 0.4); x.beginPath(); x.arc(0, 0, r, 0, 7); x.fillStyle = `rgba(60,38,18,${0.1 + rn() * 0.12})`; x.fill(); x.strokeStyle = `rgba(50,30,12,${0.18 + rn() * 0.15})`; x.lineWidth = 1.5; x.stroke(); x.restore(); }
   g = x.createRadialGradient(256, 300, 10, 256, 300, 200); g.addColorStop(0, "rgba(0,0,0,0.10)"); g.addColorStop(1, "rgba(0,0,0,0)"); x.fillStyle = g; x.fillRect(0, 0, 512, 416);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   const m = new THREE.Mesh(new THREE.PlaneGeometry(RW - T, RD - 0.1), new THREE.MeshStandardMaterial({ map: t, transparent: true, depthWrite: false, roughness: 1 }));
@@ -136,6 +152,9 @@ function box(w, h, d, m, x, y, z, parent, round = false) {
 // a model, scaled to height h, centred on x/z, standing on y (all in the room's own space)
 function put(name, parent, { x = 0, y = 0, z = 0, h = 1, ry = 0 } = {}) {
   const src = models.get(name); if (!src) return null;
+  // nothing in a real doll's house sits square: every piece a little turned and off its mark (same every load)
+  let q = Math.floor(Math.abs(x * 997 + z * 613 + h * 389 + name.length * 31)) % 2147483646 + 1; const rn = () => { q = (q * 16807) % 2147483647; return q / 2147483647 - 0.5; };
+  ry += rn() * 0.28; x += rn() * 0.07; z += rn() * 0.06;
   const m = src.clone(true); m.rotation.y = ry; m.updateMatrixWorld(true);
   let bb = new THREE.Box3().setFromObject(m); const k = h / Math.max(1e-6, bb.max.y - bb.min.y); m.scale.setScalar(k); m.updateMatrixWorld(true);
   bb = new THREE.Box3().setFromObject(m);
@@ -167,7 +186,7 @@ function buildRoom(room) {
   box(RW, RH, 0.05, M["wall_" + name], 0, RH / 2, -RD / 2, inner);
   if (!NO_WAINSCOT.has(name)) box(RW, 0.85, 0.06, M.wains, 0, 0.425, -RD / 2 + 0.04, inner);
   box(RW, 0.12, 0.08, M.frame, 0, 0.06 + T / 2, -RD / 2 + 0.07, inner);
-  { const ao = new THREE.Mesh(new THREE.PlaneGeometry(RW - T, RH - T), M.ao); ao.position.set(0, RH / 2, -RD / 2 + 0.115); ao.renderOrder = 1; inner.add(ao); }
+  { const ao = new THREE.Mesh(new THREE.PlaneGeometry(RW - T, RH - T), grime(room.id * 17 + 3, false)); ao.position.set(0, RH / 2, -RD / 2 + 0.115); ao.renderOrder = 1; inner.add(ao); }
   inner.add(dust(room.id * 7 + name.length));
   if (RUGS[name]) { const [w, d, tint] = RUGS[name]; const rm = M.rug.clone(); rm.color.setHex(tint); const r = new THREE.Mesh(new THREE.PlaneGeometry(w, d), rm); r.rotation.x = -Math.PI / 2; r.position.set(0, T / 2 + 0.006, 0.05); r.receiveShadow = true; inner.add(r); }
   for (const [n, o] of FURNISH[name] || []) {
@@ -186,7 +205,7 @@ function buildRoom(room) {
   const shadeM = M.shade.clone();
   const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.2, 0.17, 28, 1, true), shadeM); shade.position.set(0.35, RH - T / 2 - 0.74, 0); shade.castShadow = true; inner.add(shade);
   // the shade sends its light down: a pool on the floor and the lower walls, the ceiling left in shadow
-  const lamp = new THREE.SpotLight(0xffc890, 0, 5, 1.4, 0.8, 2); lamp.position.set(0.35, RH - T / 2 - 0.8, 0.1); lamp.target.position.set(0.25, 0, 0.1); inner.add(lamp, lamp.target);
+  const lamp = new THREE.SpotLight(0xffc890, 0, 4, 1.3, 0.9, 2); lamp.position.set(0.35, RH - T / 2 - 0.8, 0.1); lamp.target.position.set(0.25, 0, 0.1); inner.add(lamp, lamp.target);
   // floor and ceiling slabs, and the front posts: the room's own, so it carries its frame when it moves
   // (their hidden faces are bare wood: you see them when the house turns over)
   const pk = room.id % 4;
@@ -195,7 +214,7 @@ function buildRoom(room) {
   for (const sd of [-1, 1]) { const po = box(0.14, RH, 0.14, M.plyV[(pk + (sd > 0 ? 2 : 3)) % 4], sd * (RW / 2 - 0.07), RH / 2, RD / 2 + 0.06, g, true); const k = room.id * 13.7 + sd * 7.1; po.position.z += Math.cos(k * 1.3) * 0.01; po.rotation.z = Math.sin(k * 2.1) * 0.004; }
   g.add(nameplate(room.name));
   // corner shade on the side walls too: darker toward the back corner and along the floor
-  for (const sd of [-1, 1]) { const ao = new THREE.Mesh(new THREE.PlaneGeometry(RD - 0.02, RH - T), M.aoSide); ao.rotation.y = sd < 0 ? Math.PI / 2 : -Math.PI / 2; if (sd > 0) ao.scale.x = -1; ao.position.set(sd * (RW / 2 - T / 2 - 0.006), RH / 2, 0); ao.renderOrder = 1; g.add(ao); }
+  for (const sd of [-1, 1]) { const ao = new THREE.Mesh(new THREE.PlaneGeometry(RD - 0.02, RH - T), M.aoSide[(room.id + (sd > 0 ? 1 : 0)) % 3]); ao.rotation.y = sd < 0 ? Math.PI / 2 : -Math.PI / 2; if (sd > 0) ao.scale.x = -1; ao.position.set(sd * (RW / 2 - T / 2 - 0.006), RH / 2, 0); ao.renderOrder = 1; g.add(ao); }
   const vary = new THREE.Group(); vary.name = "vary"; g.add(vary);
   PARTS.set(g, { inner, vary, bulbM, shadeM, lamp, fire: inner.userData.fire || null, trims: {} }); inner.userData = {};
   return g;
@@ -224,11 +243,15 @@ function nameplate(name) {
   for (let i = 0; i < 260; i++) { x.fillStyle = `rgba(${rn() < 0.5 ? "40,30,10" : "200,180,120"},${0.05 + rn() * 0.12})`; x.beginPath(); x.arc(rn() * 512, rn() * 96, 1 + rn() * 7, 0, 7); x.fill(); }
   x.font = '64px "IM Fell English SC", Georgia, serif'; x.textAlign = "left"; x.textBaseline = "middle";
   const txt = name.toUpperCase(), ws = [...txt].map((ch) => x.measureText(ch).width + 7); let px = 256 - ws.reduce((a, b) => a + b, 0) / 2;
-  [...txt].forEach((ch, i) => { const jy = (rn() - 0.5) * 3, ja = (rn() - 0.5) * 0.05; x.save(); x.translate(px, 52 + jy); x.rotate(ja); x.fillStyle = "rgba(255,240,200,0.6)"; x.fillText(ch, 1.5, 2); x.fillStyle = "rgba(20,12,4,0.95)"; x.fillText(ch, -1, -1.2); x.fillStyle = `rgba(${60 + rn() * 30},${42 + rn() * 20},18,1)`; x.fillText(ch, 0, 0); x.restore(); px += ws[i]; });
+  [...txt].forEach((ch, i) => { const jy = (rn() - 0.5) * 3, ja = (rn() - 0.5) * 0.05; x.save(); x.translate(px, 52 + jy); x.rotate(ja); x.fillStyle = "rgba(255,240,200,0.25)"; x.fillText(ch, 1, 1.5); x.fillStyle = `rgba(${55 + rn() * 25},${40 + rn() * 15},18,${0.55 + rn() * 0.25})`; x.fillText(ch, 0, 0); x.restore(); px += ws[i]; });
+  // stamped by hand and polished by thumbs for years: letters worn through in places, tarnish in the corners, scratches
+  x.globalCompositeOperation = "source-atop"; for (let i = 0; i < 70; i++) { x.fillStyle = `rgba(154,132,82,${0.3 + rn() * 0.5})`; x.beginPath(); x.arc(rn() * 512, 30 + rn() * 40, 2 + rn() * 9, 0, 7); x.fill(); } x.globalCompositeOperation = "source-over";
+  for (const [cx, cy] of [[0, 0], [512, 0], [0, 96], [512, 96]]) { const tg = x.createRadialGradient(cx, cy, 0, cx, cy, 90); tg.addColorStop(0, "rgba(40,45,25,0.55)"); tg.addColorStop(1, "rgba(40,45,25,0)"); x.fillStyle = tg; x.fillRect(0, 0, 512, 96); }
+  for (let i = 0; i < 30; i++) { x.strokeStyle = `rgba(${rn() < 0.5 ? "40,30,10" : "230,210,160"},${0.15 + rn() * 0.25})`; x.lineWidth = 0.8; x.beginPath(); const xx = rn() * 512, yy = rn() * 96; x.moveTo(xx, yy); x.lineTo(xx + (rn() - 0.5) * 80, yy + (rn() - 0.5) * 10); x.stroke(); }
   const gr = x.createRadialGradient(256, 48, 60, 256, 48, 300); gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(1, "rgba(30,20,5,0.55)"); x.fillStyle = gr; x.fillRect(0, 0, 512, 96);
   for (const sx of [22, 490]) { x.fillStyle = "#2a1e10"; x.beginPath(); x.arc(sx, 48, 9, 0, 7); x.fill(); x.fillStyle = "#b8a070"; x.beginPath(); x.arc(sx - 1.5, 46.5, 6, 0, 7); x.fill(); }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
-  const p = new THREE.Mesh(plateGeo(), new THREE.MeshStandardMaterial({ map: t, color: 0xc8b890, metalness: 0.45, roughness: 0.5, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.08 }));
+  const p = new THREE.Mesh(plateGeo(), new THREE.MeshStandardMaterial({ map: t, color: 0xc8b890, metalness: 0.45, roughness: 0.5, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.03 }));
   p.material.envMapIntensity = 2; p.position.set(0, 0.17, RD / 2 + 0.02); p.rotation.z = ((name.length * 5) % 7 - 3) * 0.012; p.castShadow = true;
   return p;
 }
@@ -420,7 +443,7 @@ export async function init(layout) {
   // image-based light from a real photographed room (a Poly Haven HDRI, shrunk), as in the photo still
   try { const hdr = await new RGBELoader().loadAsync("assets/hdr/artist_workshop.hdr"); hdr.mapping = THREE.EquirectangularReflectionMapping;
     const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromEquirectangular(hdr).texture; hdr.dispose(); pm.dispose();
-    scene.environmentIntensity = 0.45; scene.environmentRotation = new THREE.Euler(0, 1.2, 0); } catch { /* lit by the lamps alone */ }
+    scene.environmentIntensity = 0.2; scene.environmentRotation = new THREE.Euler(0, 1.2, 0); } catch { /* lit by the lamps alone */ }
   materials();
   // camera: a little right of the house and level with its roof, looking down into every room (so floors, hatches and
   // ladders all read), close in with a wide lens like the still. The
@@ -434,10 +457,10 @@ export async function init(layout) {
   clip = [new THREE.Plane(new THREE.Vector3(1, 0, 0), HWd / 2), new THREE.Plane(new THREE.Vector3(-1, 0, 0), HWd / 2), new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Plane(new THREE.Vector3(0, -1, 0), HHd)];
   // lights, as in the still: one warm desk lamp in the room, off to the front left, does most of the work (soft
   // shadows); a cool fill from the right; the house's own bulbs are small extras. The lightning is a cold flash.
-  hemi = new THREE.HemisphereLight(0xb8b0c0, 0x2a2018, 0.3); scene.add(hemi);
-  key = new THREE.SpotLight(0xffe2c0, 1500, 80, 0.62, 1.0, 2); key.position.set(-8, 7.5, 12.5); key.target.position.set(0.5, 4.2, 0);
+  hemi = new THREE.HemisphereLight(0xb8b0c0, 0x2a2018, 0.12); scene.add(hemi);
+  key = new THREE.SpotLight(0xffe2c0, 1500, 60, 0.85, 1.0, 2); key.position.set(-6.5, 9, 9); key.target.position.set(-1, 5, 0);
   key.castShadow = true; key.shadow.autoUpdate = false; key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.0006; key.shadow.radius = 6; scene.add(key, key.target);
-  const fill = new THREE.PointLight(0xc8c0d8, 14, 60, 2); fill.position.set(12, 6, 20); scene.add(fill);
+  const fill = new THREE.PointLight(0xc8c0d8, 5, 60, 2); fill.position.set(12, 6, 20); scene.add(fill);
   const table = new THREE.PointLight(0x6a5a50, 6, 14, 1.2); table.position.set(1, 1.2, 8); scene.add(table);
   moon = new THREE.DirectionalLight(0xb8c8ff, 0); moon.position.set(-6, 12, 16); scene.add(moon);
   // your lantern throws its light (and the furniture's shadows) onto the walls of the room you're in
@@ -544,7 +567,7 @@ export function render(view, w, h) {
   d.dg.rotation.y += ((open ? -1.2 : 0) - d.dg.rotation.y) * 0.12;
   d.doorGlow.material.opacity = open * (0.55 + 0.15 * Math.sin(t * 3)); porchLight.intensity = 1.2 + open * 2;
   // lightning
-  const f = view.flash || 0; moon.intensity = 9 * f; hemi.intensity = 0.3 * (view.dim || 1) + 3 * f; key.intensity = 1050 * (view.dim || 1);
+  const f = view.flash || 0; moon.intensity = 9 * f; hemi.intensity = 0.12 * (view.dim || 1) + 3 * f; key.intensity = 520 * (view.dim || 1);
   // shadows are redrawn only when something moved (they're most of the cost of a frame)
   // the desk lamp's big shadow map at once when the rooms move, at most every fourth frame when only a figure moved;
   // the lantern's small one whenever you or it moved
@@ -564,7 +587,7 @@ function place(g, [px, py], rv, t) {
   u.inner.scale.y = rv.flipped ? -1 : 1; u.inner.position.y = rv.flipped ? RH : 0;
   const lit = rv.lit;
   u.bulbM.emissiveIntensity = 3 * lit; u.bulbM.color.setHex(lit > 0.5 ? 0xffe0a0 : 0x2a2622); u.shadeM.emissiveIntensity = 3 * lit;
-  if (u.lamp) u.lamp.intensity = 13 * lit;
+  if (u.lamp) u.lamp.intensity = 16 * lit;
   if (u.fire) u.fire.intensity = 2.2 + 0.6 * Math.sin(t * 9) * Math.sin(t * 3.7);
   if (u.trims) for (const s of ["l", "r"]) if (u.trims[s]) {
     const on = rv.door && rv.door.side === s ? 0.55 + 0.45 * Math.sin(t * 8) : 0;
