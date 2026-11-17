@@ -991,14 +991,16 @@ test("the photographed house: each room's picture sits in its slot, slides with 
     assert.notEqual(row, null, "the start room has a row line");
     const b = await grab();
     for (let x = 0; x < 4; x++) { const was = a.g[row][x].name; assert.deepEqual(at(b, was), [[44 + ((x + 1) % 4) * 150, 74 + row * 146, 1]], `${was} slid one slot east`); }
-    // an open doorway is a gap in the room's post (the next room's light through it), not the post's own wood
+    // an open doorway: the next room's lamp spills across the floor through it (gone when the door is shut)
     const door = await page.evaluate(() => {
-      const st = window.__dh.st(), c = document.getElementById("game").getContext("2d"), k = c.canvas.width / 960;
-      const lum = (x, y) => { const d = c.getImageData(Math.round(x * k) - 2, Math.round(y * k) - 2, 4, 4).data; let t = 0; for (let i = 0; i < d.length; i += 4) t += d[i] + d[i + 1] + d[i + 2]; return t / 16; };
-      for (let y = 0; y < 3; y++) for (let x = 1; x < 4; x++) if (st.g[y][x].l && st.g[y][x - 1].lights) { const cx = 44 + x * 150 + 3, fy = 74 + y * 146 + 146 - 4; return { gap: lum(cx, fy - 30), post: lum(cx, fy - 110) }; }
+      const D = window.__dh, st = D.st(), c = document.getElementById("game").getContext("2d"), k = c.canvas.width / 960;
+      const lum = (x, y) => { const d = c.getImageData(Math.round(x * k) - 3, Math.round(y * k) - 3, 6, 6).data; let t = 0; for (let i = 0; i < d.length; i += 4) t += d[i] + d[i + 1] + d[i + 2]; return t / 36; };
+      for (let y = 0; y < 3; y++) for (let x = 1; x < 4; x++) if (st.g[y][x].l && st.g[y][x - 1].lights) {
+        const r = st.g[y][x], at = [44 + x * 150 + 13, 74 + y * 146 + 146 - 8]; D.render(); const open = lum(...at); r.l = false; D.render(); const shut = lum(...at); r.l = true; return { open, shut };
+      }
       return null;
     });
-    assert.ok(door && Math.abs(door.gap - door.post) > 40, `an open doorway stands out from its post (${JSON.stringify(door)})`);
+    assert.ok(door && door.open > door.shut + 6, `light comes through an open doorway (${JSON.stringify(door)})`);
     // turned over: every room's picture is drawn mirrored top to bottom
     await page.evaluate(() => { const D = window.__dh; D.newGame(777, 3); D.begin(); D.hush(); const st = D.st(); let m = null;
       for (const r of st.g.flat()) r.lines.forEach((l, li) => { if (l.kind === "flip") m = { id: r.id, li, dir: 1 }; }); D.houseMove(m); D.tick(1 / 60, 200); });

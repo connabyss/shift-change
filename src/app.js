@@ -25,8 +25,8 @@ const in3d = () => !FLAT && dh.isReady();
 // The title and the shots between floors stay the live 3D photo camera. ?plates=0 turns the pictures off.
 const PL = { on: !FLAT && !PHOTO && !/[?&]plates=0/.test(location.search), ready: false, img: {} };
 if (PL.on) {
-  const want = ["shell", "wood", "lock_shut", "lock_open", ...NAMES.flatMap((n) => [n + "_lit", n + "_dark", n + "_plate_lit", n + "_plate_dark"])]; let left = want.length;
-  for (const k of want) { const im = new Image(); im.onload = () => { if (--left === 0) PL.ready = true; }; im.onerror = () => { PL.on = false; }; im.src = k === "wood" ? "assets/tex/Wood049/Color.jpg" : `assets/plates/${k}.${/plate_|lock_/.test(k) ? "png" : "jpg"}`; PL.img[k] = im; }
+  const want = ["shell", "wood", "lock_shut", "lock_open", ...NAMES.flatMap((n) => [n + "_lit", n + "_dark", n + "_plate_lit", n + "_plate_dark", n + "_ladder_lit", n + "_ladder_dark"])]; let left = want.length;
+  for (const k of want) { const im = new Image(); im.onload = () => { if (--left === 0) PL.ready = true; }; im.onerror = () => { PL.on = false; }; im.src = k === "wood" ? "assets/tex/Wood049/Color.jpg" : `assets/plates/${k}.${/plate_|lock_|ladder_/.test(k) ? "png" : "jpg"}`; PL.img[k] = im; }
 }
 const plates = () => PL.on && PL.ready && st.scene !== "title" && st.scene !== "floor";
 cv.width = VW * DPR; cv.height = VH * DPR;
@@ -665,16 +665,17 @@ function drawPlate(room, cx, cy, o, gx, gy) {
     const hasLine = room.lines.some((l) => l.kind === "door" && (l.side === "west") === (s === "l"));
     const x0 = s === "l" ? cx : cx + CW - POST, y0 = fy - DOORH;
     if (room[s]) {
-      // (through it, the next room's lamp, or the dark when its light is off)
-      const nb = st.g[gy] && st.g[gy][gx + (s === "l" ? -1 : 1)], nl = nb ? 0.32 * roomLit(nb, {}) : 0, w = (c, f) => Math.round(c * f);
-      const g = ctx.createLinearGradient(0, y0, 0, fy), a = s === "l" ? [0, 1] : [1, 0];
-      g.addColorStop(0, `rgb(${w(150, nl)},${w(105, nl)},${w(62, nl)})`); g.addColorStop(1, `rgb(${6 + w(225, nl)},${4 + w(160, nl)},${4 + w(96, nl)})`); ctx.fillStyle = g; ctx.fillRect(x0, y0, POST, DOORH);
-      const e = ctx.createLinearGradient(x0, 0, x0 + POST, 0); e.addColorStop(a[0], "rgba(0,0,0,0)"); e.addColorStop(a[1], "rgba(0,0,0,0.55)"); ctx.fillStyle = e; ctx.fillRect(x0, y0, POST, DOORH);
-      ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(x0 - 0.5, y0 - 2, POST + 1, 2); // (the lintel's shadow)
+      // open: the post's lower half falls into the doorway's shadow, and the next room's lamp spills across the floor
+      const nb = st.g[gy] && st.g[gy][gx + (s === "l" ? -1 : 1)], nl = nb ? roomLit(nb, {}) : 0, inX = s === "l" ? x0 + POST : x0;
+      const d = ctx.createLinearGradient(0, y0 - 6, 0, y0 + 10); d.addColorStop(0, "rgba(0,0,0,0)"); d.addColorStop(1, "rgba(0,0,0,0.5)"); ctx.fillStyle = d; ctx.fillRect(x0, y0 - 6, POST, DOORH + 6);
+      if (nl > 0) { const g = ctx.createRadialGradient(inX, fy, 1, inX, fy, 34); g.addColorStop(0, `rgba(255,186,110,${0.2 * nl})`); g.addColorStop(1, "rgba(255,186,110,0)");
+        ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(inX, fy, 34, 30, 0, Math.PI, 0); ctx.fill(); ctx.restore();
+        ctx.fillStyle = `rgba(255,196,130,${0.22 * nl})`; ctx.fillRect(s === "l" ? x0 + POST - 1 : x0, y0 + 4, 1, DOORH - 4); } // (light round the door frame's edge)
     } else if (hasLine) {
-      woodRects([[x0, y0, POST, DOORH]], 0.45 * L + 0.1, "#6a7888");
-      ctx.strokeStyle = "rgba(0,0,0,0.55)"; ctx.lineWidth = 1; ctx.strokeRect(x0 + 0.5, y0 + 0.5, POST - 1, DOORH - 1);
-      ctx.fillStyle = `rgba(214,180,96,${0.5 + 0.5 * L})`; ctx.beginPath(); ctx.arc(x0 + POST / 2, fy - DOORH * 0.48, 1.4, 0, 7); ctx.fill();
+      // shut, but it can open: the door's edge shows in the post, with its brass knob
+      ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(x0 + POST / 2 - 0.5, y0, 1, DOORH); ctx.fillRect(x0, y0, POST, 1);
+      ctx.fillStyle = `rgba(214,180,96,${0.45 + 0.4 * L})`; ctx.beginPath(); ctx.arc(x0 + POST / 2, fy - DOORH * 0.48, 1.5, 0, 7); ctx.fill();
+      ctx.fillStyle = "rgba(255,240,200,0.35)"; ctx.fillRect(x0 + POST / 2 - 0.9, fy - DOORH * 0.48 - 1, 0.8, 0.8);
     }
     if (o.door && o.door.side === s) {
       ctx.save(); ctx.globalAlpha = 0.55 + 0.45 * Math.sin(st.t * 8); ctx.strokeStyle = o.door.open ? GRN : RED; ctx.lineWidth = 2.5; ctx.strokeRect(x0 - 1, y0 - 1, POST + 2, DOORH + 2); ctx.restore();
@@ -682,8 +683,10 @@ function drawPlate(room, cx, cy, o, gx, gy) {
   }
   // the ladder up to a hatch; where nothing meets it above, the hatch is boarded over. A hole down shows the ladder below's top
   const lx = cx + CW / 2 + LADX, up = room.up, upJ = up && gy > 0 && st.g[gy - 1][gx].down, downJ = room.down && gy + 1 < H && st.g[gy + 1][gx].up;
-  if (up) { ladder(lx, cyT - (upJ ? SLAB + 2 : 0), fy, L); if (!upJ) planks(lx, cyT + 1, L); else { ctx.fillStyle = "rgba(4,3,6,0.9)"; ctx.fillRect(lx - 14, cy - 1, 28, SLAB + 1); } }
-  if (room.down) { ctx.fillStyle = "rgba(4,3,6,0.9)"; ctx.fillRect(lx - 14, fy, 28, SLAB + 1); if (downJ) ladder(lx, fy - 16, cy + CH + 1, L, true); else planks(lx, fy - 3, L); }
+  // (the ladder is the 3D house's own, path-traced in this room's light and cut out: lit and dark, cross-faded)
+  const lad = (sy, sh, dy, dh) => { const a = PL.img[room.name + "_ladder_dark"], b = PL.img[room.name + "_ladder_lit"]; ctx.drawImage(a, 0, sy * 2, 66, sh * 2, lx - 16.5, dy, 33, dh); if (lit > 0) { ctx.globalAlpha = lit; ctx.drawImage(b, 0, sy * 2, 66, sh * 2, lx - 16.5, dy, 33, dh); ctx.globalAlpha = 1; } };
+  if (up) { lad(0, CH, cy, CH); if (!upJ) planks(lx, cyT + 1, L); else { ctx.fillStyle = "rgba(4,3,6,0.85)"; ctx.fillRect(lx - 14, cy - 1, 28, SLAB + 1); } }
+  if (room.down) { ctx.fillStyle = "rgba(4,3,6,0.85)"; ctx.fillRect(lx - 14, fy, 28, SLAB + 1); if (downJ) lad(SLAB, 18, fy - 18, 18); else planks(lx, fy - 3, L); }
   ctx.restore();
   // the brass name plate on the floor's front edge: the 3D house's own, path-traced and cut out, lit by its room
   // (it stays put when the room turns over)
@@ -711,16 +714,6 @@ function woodRects(rects, k, tint = "#b08a62") {
   ctx.fillStyle = woodPat(); for (const r of rects) ctx.fillRect(...r);
   ctx.globalCompositeOperation = "multiply"; ctx.fillStyle = tint; for (const r of rects) ctx.fillRect(...r); // (the 3D house's stain on the bare wood)
   ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = `rgba(8,5,3,${clamp(1 - k, 0, 1)})`; for (const r of rects) ctx.fillRect(...r); ctx.restore();
-}
-// a wooden ladder seen straight on: two rails and round rungs, its shadow on the back wall
-function ladder(x, y0, y1, L, stub) {
-  const k = 0.2 + 0.6 * L, h = y1 - y0, R = [];
-  ctx.fillStyle = "rgba(0,0,0,0.35)"; for (const sx of [-1, 1]) ctx.fillRect(x + sx * 10.3 + 1, y0 + 3, 3, h - 3);
-  for (let r = y1 - 14; r > y0 + 4; r -= 14) R.push([x - 10, r - 1.1, 20, 2.2]);
-  for (const sx of [-1, 1]) R.push([x + sx * 10.3 - 1.6, y0, 3.3, h]);
-  woodRects(R, k);
-  ctx.fillStyle = `rgba(255,220,170,${0.1 * k})`; for (const sx of [-1, 1]) ctx.fillRect(x + sx * 10.3 - 1.6, y0, 1, h); // (a lit edge)
-  if (stub) { ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fillRect(x - 12, y0, 24, 2); }
 }
 function planks(x, y, L) {
   woodRects([[x - 17, y, 34, 3]], 0.3 + 0.45 * L);

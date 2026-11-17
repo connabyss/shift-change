@@ -1,9 +1,9 @@
-# python3 plates.py lit.png dark.png shell.png outdir "name,name,...(12, row by row)"
+# python3 plates.py lit.png dark.png shell.png outdir "name,name,...(12, row by row)" [ladder_lit_cut.png ladder_dark_cut.png]
 # Cuts the straight-on renders (ORTHO="2.9,4.52,20.48", 1920x1200: the game's 960x600 canvas at 2x) into one picture
 # per room, lights on and off, plus the empty house around them, for the game's play view (src/app.js drawPlate).
 import sys, subprocess, os
 from PIL import Image
-lit, dark, shell, out, names = sys.argv[1:6]; names = names.split(','); os.makedirs(out, exist_ok=True)
+lit, dark, shell, out, names = sys.argv[1:6]; ladders = sys.argv[6:8]; names = names.split(','); os.makedirs(out, exist_ok=True)
 G = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'grain.py')
 def grain(src, dst, *flags): subprocess.run([sys.executable, G, src, dst, *flags], check=True)
 grain(shell, os.path.join(out, 'shell.jpg'), '--ca')
@@ -19,3 +19,10 @@ for tag, src in (('lit', lit), ('dark', dark)):
         for i, n in enumerate(names):
             x, y = i % 4, i // 4; x0, y1 = 2 * (44 + x * 150), 2 * (74 + y * 146) + 292
             ci.crop((x0, y1 - 40, x0 + 300, y1)).save(os.path.join(out, f'{n}_plate_{tag}.png'), optimize=True)
+# render.py CUT=ladder CUT_ONLY=1 on a house where every room has a ladder up: each room's ladder alone, in its own light
+for tag, src in zip(('lit', 'dark'), ladders):
+    ci = Image.open(src)
+    for i, n in enumerate(names):
+        x, y = i % 4, i // 4; x0, y0 = 2 * (44 + x * 150 + 96), 2 * (74 + y * 146)
+        ci.crop((x0, y0, x0 + 66, y0 + 292)).save(os.path.join(out, f'{n}_ladder_{tag}.png'), optimize=True)
+

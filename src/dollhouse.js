@@ -331,9 +331,9 @@ function buildVary(g, room, v) {
     }
   }
   if (room.up) { // a ladder to a hatch in the ceiling
-    const lz = -0.25, top = RH - T / 2;
-    for (const k of [-1, 1]) box(0.07, top, 0.06, M.ladder, LADDER_X + k * 0.22, T / 2 + top / 2, lz, vary);
-    for (let h = 0.3; h < top; h += 0.3) { const rg = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.44, 10), M.ladder); rg.rotation.z = Math.PI / 2; rg.position.set(LADDER_X, T / 2 + h, lz); rg.castShadow = true; vary.add(rg); }
+    const lz = -0.25, top = RH - T / 2, lad = new THREE.Group(); lad.name = "ladder"; vary.add(lad); // (named: the offline renders cut it out)
+    for (const k of [-1, 1]) box(0.07, top, 0.06, M.ladder, LADDER_X + k * 0.22, T / 2 + top / 2, lz, lad);
+    for (let h = 0.3; h < top; h += 0.3) { const rg = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.44, 10), M.ladder); rg.rotation.z = Math.PI / 2; rg.position.set(LADDER_X, T / 2 + h, lz); rg.castShadow = true; lad.add(rg); }
     box(0.62, T / 2 + 0.01, 0.6, M.hole, LADDER_X, RH - T / 4, lz, vary);
     if (!v.upJoined) boards(vary, RH - T / 2 - 0.03);
   }

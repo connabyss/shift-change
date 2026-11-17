@@ -139,9 +139,10 @@ elif os.environ.get('CUT'):  # CUT=name: render once without those objects (out.
     # by the house around them (out_cut.png: RGBA, the rest kept as a holdout)
     def kids(o): return [o] + [k for c in o.children for k in kids(c)]
     want = os.environ['CUT']; cut = {k.name for o in sc.objects if o.name.split('.')[0] == want for k in kids(o)}
-    for o in sc.objects:
-        if o.name in cut: o.hide_render = True
-    t0 = time.time(); bpy.ops.render.render(write_still=True); print('render', round(time.time() - t0), 's', flush=True)
+    if not os.environ.get('CUT_ONLY'):  # (CUT_ONLY=1: just the cut-out pass)
+        for o in sc.objects:
+            if o.name in cut: o.hide_render = True
+        t0 = time.time(); bpy.ops.render.render(write_still=True); print('render', round(time.time() - t0), 's', flush=True)
     for o in sc.objects:
         if o.name in cut: o.hide_render = False
         elif o.type == 'MESH': o.is_holdout = True
