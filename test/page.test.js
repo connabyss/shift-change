@@ -934,8 +934,10 @@ test("the 3D doll's house: it loads its scans, follows the house when a row slid
     await page.waitForFunction(() => window.__dh.in3d(), null, { timeout: 300000, polling: 1000 });
     const a = await page.evaluate(() => {
       const D = window.__dh, st = D.st(); D.begin(); D.hush(); D.render();
-      const p = D.find(st.g, st.player.id), row = st.g[p.y].map((r) => r.id), px = document.getElementById("game").getContext("2d").getImageData(2 * (44 + 75), 2 * (74 + p.y * 146 + 73), 1, 1).data;
-      return { row, before: row.map((id) => D.roomAt3d(id)), calls: D.info3d().calls, px: [...px], y: p.y };
+      const p = D.find(st.g, st.player.id), row = st.g[p.y].map((r) => r.id), d = document.getElementById("game").getContext("2d").getImageData(2 * (44 + 75) - 40, 2 * (74 + p.y * 146 + 73) - 40, 80, 80).data;
+      // the average colour over the middle of the room (one pixel could land on a dark cupboard)
+      const px = [0, 1, 2].map((c) => { let t = 0; for (let i = c; i < d.length; i += 4) t += d[i]; return t / (d.length / 4); });
+      return { row, before: row.map((id) => D.roomAt3d(id)), calls: D.info3d().calls, px, y: p.y };
     });
     assert.ok(a.calls > 50, "it drew the house");
     assert.ok(a.px[0] + a.px[1] + a.px[2] > 60, "a room shows in the canvas, not the night sky");
