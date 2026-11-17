@@ -75,5 +75,8 @@ They were shrunk for the web (textures to 512 px, meshes simplified) with glTF-T
 - WoodFloor051: https://ambientcg.com/view?id=WoodFloor051
 - WoodSiding011: https://ambientcg.com/view?id=WoodSiding011
 
+## Light: Poly Haven HDRI (CC0)
+- artist_workshop (shrunk to 512x256 for the room light): https://polyhaven.com/a/artist_workshop
+
 ## Code
 - three.js r170 (MIT, vendor/THREE_LICENSE): https://threejs.org
