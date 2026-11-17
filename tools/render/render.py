@@ -1,5 +1,5 @@
 # bpyenv/bin/python render.py house.glb out.png W H samples [lightscale]
-import bpy, sys, json, math, mathutils, time, os
+import bpy, sys, json, math, mathutils, time, os, hashlib
 glb, out, W, H, S = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5])
 LS = float(sys.argv[6]) if len(sys.argv) > 6 else 1.0
 WS = float(sys.argv[7]) if len(sys.argv) > 7 else 0.25
@@ -57,9 +57,10 @@ for m in bpy.data.materials:
     geo = N.new('ShaderNodeNewGeometry'); sep = N.new('ShaderNodeSeparateXYZ'); L.new(geo.outputs['Normal'], sep.inputs['Vector'])
     up = N.new('ShaderNodeMapRange'); up.inputs['From Min'].default_value = 0.5; up.inputs['From Max'].default_value = 1.0; L.new(sep.outputs['Z'], up.inputs['Value'])
     mk = N.new('ShaderNodeMath'); mk.operation = 'MULTIPLY'; L.new(up.outputs['Result'], mk.inputs[0]); L.new(nz.outputs['Fac'], mk.inputs[1])
-    mk2 = N.new('ShaderNodeMath'); mk2.operation = 'MULTIPLY'; mk2.inputs[1].default_value = 0.55; L.new(mk.outputs['Value'], mk2.inputs[0])
+    mk2 = N.new('ShaderNodeMath'); mk2.operation = 'MULTIPLY'; mk2.inputs[1].default_value = 0.3 + 0.5 * (int(hashlib.md5((m.name + 'd').encode()).hexdigest(), 16) % 89) / 88; L.new(mk.outputs['Value'], mk2.inputs[0])
     bc = bs.inputs['Base Color']; src = bc.links[0].from_socket if bc.links else None
-    dark = N.new('ShaderNodeMix'); dark.data_type = 'RGBA'; dark.blend_type = 'MULTIPLY'; dark.inputs['Factor'].default_value = 0.35
+    hm = int(hashlib.md5(m.name.encode()).hexdigest(), 16)  # (each material its own amount of dirt: some rooms kept, some neglected)
+    dark = N.new('ShaderNodeMix'); dark.data_type = 'RGBA'; dark.blend_type = 'MULTIPLY'; dark.inputs['Factor'].default_value = 0.2 + 0.45 * (hm % 97) / 96
     if src: L.new(src, dark.inputs['A'])
     else: dark.inputs['A'].default_value = bc.default_value
     rmp = N.new('ShaderNodeValToRGB'); rmp.color_ramp.elements[0].color = (0.6, 0.55, 0.5, 1); rmp.color_ramp.elements[1].color = (1, 1, 1, 1); L.new(nz.outputs['Fac'], rmp.inputs['Fac']); L.new(rmp.outputs['Color'], dark.inputs['B'])
@@ -105,6 +106,9 @@ import hashlib
 for o in sc.objects:
     if o.type == 'LIGHT' and o.data.type in ('POINT', 'SPOT') and abs(o.matrix_world.translation.x) < 7 and -2 < o.matrix_world.translation.z < 11:
         h = int(hashlib.md5(('%.1f%.1f' % (o.matrix_world.translation.x, o.matrix_world.translation.z)).encode()).hexdigest(), 16)
+        if os.environ.get('HUE'):  # each room's bulb its own colour, candle-orange to cold daylight (hashed like the strength)
+            tints = [(1, 0.62, 0.32), (1, 0.78, 0.55), (1, 0.9, 0.78), (0.78, 0.86, 1), (1, 0.55, 0.25), (0.95, 0.95, 0.9), (1, 0.7, 0.45), (0.85, 0.9, 1)]
+            t = tints[(h >> 8) % 8]; o.data.color = tuple(min(1, a * b) for a, b in zip(o.data.color, t))
         o.data.energy *= float(os.environ['EVEN']) if os.environ.get('EVEN') else [float(x) for x in os.environ.get('MOOD', '0.08,0.3,0.6,1,1.6,2.6,0,0.45').split(',')][h % 8]  # EVEN=k: every room lit the same, for play
 sc.render.engine = 'CYCLES'; sc.cycles.device = 'CPU'; sc.cycles.samples = S; sc.cycles.use_denoising = DN
 sc.cycles.max_bounces = 6; sc.render.resolution_x = W; sc.render.resolution_y = H; sc.render.resolution_percentage = 100
