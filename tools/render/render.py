@@ -32,9 +32,17 @@ c = bpy.data.objects.new('cam', bpy.data.cameras.new('cam')); sc.collection.obje
 c.location = (p[0], -p[2], p[1])
 qt = mathutils.Quaternion((q[3], q[0], q[1], q[2])); conv = mathutils.Matrix.Rotation(math.pi / 2, 4, 'X')
 c.matrix_world = conv @ (mathutils.Matrix.Translation((p[0], p[1], p[2])) @ qt.to_matrix().to_4x4())
+if os.environ.get('CAM'):  # another shot of the same house: CAM="px,py,pz,tx,ty,tz,fov,focusdist" in three.js coords
+    v = [float(x) for x in os.environ['CAM'].split(',')]
+    c.location = (v[0], -v[2], v[1]); d = mathutils.Vector((v[3], -v[5], v[4])) - c.location
+    c.rotation_mode = 'QUATERNION'; c.rotation_quaternion = d.to_track_quat('-Z', 'Y'); cam['fov'] = v[6]; cam['focus'] = v[7] if v[7] > 0 else d.length
 c.data.sensor_fit = 'VERTICAL'; c.data.angle = math.radians(cam['fov'])
 c.data.dof.use_dof = True; c.data.dof.focus_distance = cam['focus']; c.data.dof.aperture_fstop = FS
 # world: the photographed workshop
+if os.environ.get('ORTHO'):  # the game's own straight-on view: ORTHO="cx,cy,width" (three.js units), all in focus
+    v = [float(x) for x in os.environ['ORTHO'].split(',')]
+    c.data.type = 'ORTHO'; c.data.ortho_scale = v[2]; c.data.sensor_fit = 'HORIZONTAL'; c.data.dof.use_dof = False
+    c.rotation_mode = 'XYZ'; c.rotation_euler = (math.pi / 2, 0, 0); c.location = (v[0], -40, v[1]); c.data.clip_end = 200
 w = bpy.data.worlds.new('w'); sc.world = w; w.use_nodes = True; nt = w.node_tree
 env = nt.nodes.new('ShaderNodeTexEnvironment'); env.image = bpy.data.images.load('/home/user/shift-change/assets/hdr/artist_workshop.hdr')
 bg = nt.nodes['Background']; bg.inputs['Strength'].default_value = WS; nt.links.new(env.outputs['Color'], bg.inputs['Color'])
