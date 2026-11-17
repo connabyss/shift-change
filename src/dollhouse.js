@@ -45,13 +45,13 @@ function mat(id, rep, tint = 0xffffff, rough = 0.9, noRough = false) {
 // (soft painted pastels, like the photo still: wallpapers lightly tinted, the side walls a neighbouring pastel)
 const PAPER = {
   attic: ["Bricks074", 0xa89080, [2, 2], 0xc8b8a0], nursery: ["Wallpaper001A", 0xf0c8c0, [1.5, 1.5], 0xe0c0c8], study: ["Wallpaper002A", 0xf0c0b4, [1.5, 1.5], 0xe8b0b0],
-  chapel: ["PaintedPlaster017", 0xe8b8c0, [1, 1], 0xd8b0c8], parlour: ["Wallpaper002B", 0xf0a8a8, [1.5, 1.5], 0xe0a0b0], library: ["Wallpaper002C", 0xa8a8d8, [1.5, 1.5], 0x9aa0c8],
-  gallery: ["Wallpaper001C", 0xf0b8b0, [1.5, 1.5], 0xe0b0b8], bath: ["PaintedPlaster017", 0xc0d8d8, [1, 1], 0xb0c8d0], kitchen: ["PaintedPlaster017", 0xe8e0cc, [1, 1], 0xb8c4cc],
+  chapel: ["ph_painted_plaster_wall", 0xe8b8c0, [1, 1], 0xd8b0c8], parlour: ["Wallpaper002B", 0xf0a8a8, [1.5, 1.5], 0xe0a0b0], library: ["Wallpaper002C", 0xa8a8d8, [1.5, 1.5], 0x9aa0c8],
+  gallery: ["Wallpaper001C", 0xf0b8b0, [1.5, 1.5], 0xe0b0b8], bath: ["ph_plastered_wall_02", 0xc0d8d8, [1, 1], 0xb0c8d0], kitchen: ["ph_painted_plaster_wall", 0xe8e0cc, [1, 1], 0xb8c4cc],
   pantry: ["Wallpaper001B", 0xfae8c8, [1.5, 1.5], 0xf0dcc0], cellar: ["Bricks074", 0xc8a898, [2, 2], 0xb89888], hall: ["Wallpaper001A", 0xb8d0e8, [1.5, 1.5], 0xa8c0d8],
 };
 const NO_WAINSCOT = new Set(["cellar", "attic", "kitchen", "bath"]);
 function materials() {
-  M.floor = mat("WoodFloor051", [1.5, 1.2], 0xd0bcac, 0.85);
+  M.floor = mat("WoodFloor051", [1.5, 1.2], 0xd0bcac, 0.85); M.floor.normalScale.set(1.8, 1.8);
   M.ceil = mat("Plaster001", [1, 1], 0x8a8078);
   M.frame = mat("Wood049", [3, 1], 0xb89a74, 0.7);
   M.trim = mat("PaintedPlaster017", [0.3, 1], 0xc8d0d8, 0.7); // painted door frames, as in the still
@@ -71,14 +71,15 @@ function materials() {
   M.back = new THREE.MeshStandardMaterial({ color: 0x050507, roughness: 1 });
   M.brass = new THREE.MeshStandardMaterial({ color: 0xc8a050, metalness: 1, roughness: 0.35 });
   M.cord = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
-  for (const [name, [id, tint, rep, side]] of Object.entries(PAPER)) { M["wall_" + name] = mat(id, rep, tint, 0.9); M["side_" + name] = mat(id, [rep[0] * 0.8, rep[1]], side, 0.9); }
+  for (const [name, [id, tint, rep, side]] of Object.entries(PAPER)) { M["wall_" + name] = mat(id, rep, tint, 0.9); M["side_" + name] = /^Bricks/.test(id) ? mat(id, [rep[0] * 0.8, rep[1]], side, 0.9) : mat(name.length % 2 ? "ph_painted_plaster_wall" : "ph_plastered_wall_02", [0.9, 1], new THREE.Color(side).multiplyScalar(1.15).getHex(), 1); } // side walls: photo-scanned painted plaster (Poly Haven), tinted
+  for (const k of Object.keys(M)) if (/^(wall|side)_/.test(k)) M[k].normalScale.set(2.2, 2.2); // (old paper over lumpy plaster: the surface catches the light)
   M.shade = new THREE.MeshStandardMaterial({ map: tex("Fabric030", "Color", [2, 1]), normalMap: tex("Fabric030", "NormalGL", [2, 1]), color: 0xe8d8b8, roughness: 0.95, side: THREE.DoubleSide, emissive: 0xffb060, emissiveIntensity: 0 });
   M.shade.emissiveMap = M.shade.map;
   // the cut front edges are raw birch plywood, like a real kit doll's house (two sets: the rooms' posts are clipped
   // at the house's edges when a row slides, the outer frame never is)
   M.plyH = [0, 1, 2, 3].map((i) => ply(false, i)); M.plyV = [0, 1, 2, 3].map((i) => ply(true, i));
   M.plyHo = [0, 1, 2, 3].map((i) => ply(false, i)); M.plyVo = [0, 1, 2, 3].map((i) => ply(true, i));
-  M.aoSide = [0, 1, 2].map((i) => grime(101 + i * 7, true));
+  M.aoSide = [0, 1, 2, 3, 4, 5].map((i) => grime(101 + i * 7, true));
 }
 
 // a plywood edge: seven laminations, grain, knots, nail heads, grubby finger marks (drawn once, no image needed)
@@ -119,9 +120,12 @@ function grime(seed, side) {
   for (let i = 0; i < 6 + rn() * 10; i++) { const xx = rn() * S2, y0 = rn() * S2 * 0.6, L = 40 + rn() * 200; const g = x.createLinearGradient(0, y0, 0, y0 + L); g.addColorStop(0, `rgba(50,35,20,${0.12 + rn() * 0.12})`); g.addColorStop(1, "rgba(50,35,20,0)"); x.fillStyle = g; x.fillRect(xx, y0, 1.5 + rn() * 3, L); }
   // smudges and scuffs
   for (let i = 0; i < 18; i++) { const cx = rn() * S2, cy = S2 * (0.45 + rn() * 0.5), r = 6 + rn() * 22; const g = x.createRadialGradient(cx, cy, 0, cx, cy, r); g.addColorStop(0, `rgba(30,22,15,${0.08 + rn() * 0.12})`); g.addColorStop(1, "rgba(30,22,15,0)"); x.fillStyle = g; x.fillRect(cx - r, cy - r, r * 2, r * 2); }
-  for (let i = 0; i < 25; i++) { x.strokeStyle = `rgba(${rn() < 0.5 ? "30,20,10" : "230,220,200"},${0.1 + rn() * 0.2})`; x.lineWidth = 0.8 + rn(); x.beginPath(); const xx = rn() * S2, yy = S2 * (0.55 + rn() * 0.45); x.moveTo(xx, yy); x.lineTo(xx + (rn() - 0.5) * 40, yy + (rn() - 0.5) * 8); x.stroke(); }
+  for (let i = 0; i < 25; i++) { x.strokeStyle = `rgba(30,20,10,${0.08 + rn() * 0.15})`; /* (an unlit overlay: pale marks glow in the dark, so dark only) */ x.lineWidth = 0.8 + rn(); x.beginPath(); const xx = rn() * S2, yy = S2 * (0.55 + rn() * 0.45); x.moveTo(xx, yy); x.lineTo(xx + (rn() - 0.5) * 40, yy + (rn() - 0.5) * 8); x.stroke(); }
   // where a picture hung once: a paler rectangle with a dirty outline
   if (!side && rn() < 0.6) { const w = 50 + rn() * 50, hh = 40 + rn() * 50, px = 60 + rn() * (S2 - 180), py = 60 + rn() * 140; x.fillStyle = "rgba(255,245,225,0.07)"; x.fillRect(px, py, w, hh); x.strokeStyle = "rgba(40,30,20,0.14)"; x.lineWidth = 3; x.strokeRect(px, py, w, hh); }
+  // the paint itself: uneven coats (big soft blotches lighter and darker), brush streaks, rubbed-thin patches
+  for (let i = 0; i < 26; i++) { const cx = rn() * S2, cy = rn() * S2, r = 50 + rn() * 140, g = x.createRadialGradient(cx, cy, 0, cx, cy, r); g.addColorStop(0, `rgba(30,22,14,${0.04 + rn() * 0.1})`); g.addColorStop(1, "rgba(0,0,0,0)"); x.fillStyle = g; x.fillRect(cx - r, cy - r, 2 * r, 2 * r); }
+  for (let i = 0; i < 70; i++) { const xx = rn() * S2, yy = rn() * S2, L = 30 + rn() * 160; x.strokeStyle = `rgba(30,22,14,${0.02 + rn() * 0.035})`; x.lineWidth = 2 + rn() * 6; x.beginPath(); x.moveTo(xx, yy); x.quadraticCurveTo(xx + (rn() - 0.5) * 10, yy + L / 2, xx + (rn() - 0.5) * 14, yy + L); x.stroke(); }
   // fine mottling all over
   for (let i = 0; i < 900; i++) { const cx = rn() * S2, cy = rn() * S2, r = 4 + rn() * 14, g = x.createRadialGradient(cx, cy, 0, cx, cy, r); g.addColorStop(0, `rgba(40,30,20,${rn() * 0.05})`); g.addColorStop(1, "rgba(40,30,20,0)"); x.fillStyle = g; x.fillRect(cx - r, cy - r, 2 * r, 2 * r); } // (soft and dark only: pale specks read as snow)
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
@@ -224,7 +228,7 @@ function buildRoom(room) {
   for (const sd of [-1, 1]) { const po = box(0.14, RH, 0.14, M.plyV[(pk + (sd > 0 ? 2 : 3)) % 4], sd * (RW / 2 - 0.07), RH / 2, RD / 2 + 0.06, g, true); const k = room.id * 13.7 + sd * 7.1; po.position.z += Math.cos(k * 1.3) * 0.01; po.rotation.z = Math.sin(k * 2.1) * 0.004; }
   g.add(nameplate(room.name));
   // corner shade on the side walls too: darker toward the back corner and along the floor
-  for (const sd of [-1, 1]) { const ao = new THREE.Mesh(new THREE.PlaneGeometry(RD - 0.02, RH - T), M.aoSide[(room.id + (sd > 0 ? 1 : 0)) % 3]); ao.rotation.y = sd < 0 ? Math.PI / 2 : -Math.PI / 2; if (sd > 0) ao.scale.x = -1; ao.position.set(sd * (RW / 2 - T / 2 - 0.006), RH / 2, 0); ao.renderOrder = 1; g.add(ao); }
+  for (const sd of [-1, 1]) { const ao = new THREE.Mesh(new THREE.PlaneGeometry(RD - 0.02, RH - T), M.aoSide[(room.id * 2 + (sd > 0 ? 1 : 0)) % 6]); ao.rotation.y = sd < 0 ? Math.PI / 2 : -Math.PI / 2; if (sd > 0) ao.scale.x = -1; ao.position.set(sd * (RW / 2 - T / 2 - 0.006), RH / 2, 0); ao.renderOrder = 1; g.add(ao); }
   const vary = new THREE.Group(); vary.name = "vary"; g.add(vary);
   PARTS.set(g, { inner, vary, bulbM, shadeM, lamp, fire: inner.userData.fire || null, trims: {} }); inner.userData = {};
   return g;
@@ -605,7 +609,7 @@ export function render(view, w, h) {
   d.dg.rotation.y += ((open ? -1.2 : 0) - d.dg.rotation.y) * 0.12;
   d.doorGlow.material.opacity = open * (0.55 + 0.15 * Math.sin(t * 3)); porchLight.intensity = 1.2 + open * 2;
   // lightning
-  const f = view.flash || 0; moon.intensity = 9 * f; hemi.intensity = 0.12 * (view.dim || 1) + 3 * f; key.intensity = 520 * (view.dim || 1) * (view.photo ? 0.9 : 1); key.angle = view.photo ? 0.6 : 0.85; key.target.position.set(view.photo ? 1.0 : -1, view.photo ? 3.8 : 5, 0); // (photo: a narrow desk-lamp cone, its edge falling across the house)
+  const f = view.flash || 0; moon.intensity = 9 * f; hemi.intensity = 0.12 * (view.dim || 1) + 3 * f; key.intensity = 520 * (view.dim || 1) * (view.photo ? 0.3 : 1); key.angle = view.photo ? 0.6 : 0.85; key.target.position.set(view.photo ? 1.0 : -1, view.photo ? 3.8 : 5, 0); // (photo: a narrow desk-lamp cone, its edge falling across the house)
   // shadows are redrawn only when something moved (they're most of the cost of a frame)
   // the desk lamp's big shadow map at once when the rooms move, at most every fourth frame when only a figure moved;
   // the lantern's small one whenever you or it moved
@@ -631,7 +635,7 @@ function place(g, [px, py], rv, t) {
   u.inner.scale.y = rv.flipped ? -1 : 1; u.inner.position.y = rv.flipped ? RH : 0;
   const lit = rv.lit;
   u.bulbM.emissiveIntensity = 3 * lit; u.bulbM.color.setHex(lit > 0.5 ? 0xffe0a0 : 0x2a2622); u.shadeM.emissiveIntensity = 3 * lit;
-  if (u.lamp) { const L = u.lamp; L.intensity = (PHOTO_ON ? 60 : 16) * lit * (L.userData.pw || 1); L.angle = PHOTO_ON ? 0.72 : L.userData.a; L.penumbra = PHOTO_ON ? 1 : 0.9; L.color.copy(PHOTO_ON ? L.userData.pc : L.userData.c); } // (photo: a tight pool under each shade, dark upper corners, each bulb its own colour)
+  if (u.lamp) { const L = u.lamp; L.intensity = (PHOTO_ON ? 34 : 16) * lit * (L.userData.pw || 1); L.angle = PHOTO_ON ? 1.45 : L.userData.a; L.penumbra = PHOTO_ON ? 0.6 : 0.9; L.decay = 2; L.distance = PHOTO_ON ? 0 : 4; L.color.copy(PHOTO_ON ? L.userData.pc : L.userData.c); } // (photo: a tight pool under each shade, dark upper corners, each bulb its own colour)
   if (u.fire) u.fire.intensity = 2.2 + 0.6 * Math.sin(t * 9) * Math.sin(t * 3.7);
   if (u.trims) for (const s of ["l", "r"]) if (u.trims[s]) {
     const on = rv.door && rv.door.side === s ? 0.55 + 0.45 * Math.sin(t * 8) : 0;
