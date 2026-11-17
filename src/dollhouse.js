@@ -53,6 +53,7 @@ function materials() {
   M.ceil = mat("Plaster001", [1, 1], 0xb8b0a8);
   M.frame = mat("Wood049", [3, 1], 0x4a3020, 0.55);
   M.trim = mat("Wood049", [1, 2], 0x3a2418, 0.5);
+  M.slab = mat("Planks021", [2, 1], 0x5a4030, 0.8);
   M.door = mat("Wood049", [1, 2], 0x5a2e22, 0.55);
   M.wains = mat("Planks021", [2, 0.5], 0x6a4a36, 0.7);
   M.ladder = mat("Wood049", [0.3, 2], 0x8a6a4a, 0.7);
@@ -113,14 +114,19 @@ function buildRoom(room) {
     if (o.hang) { const m = put(n, inner, { ...o, y: 0 }); if (m) m.position.y += RH - T - o.h - 0.35; } else put(n, inner, o);
   }
   if (name === "parlour") fireplace(inner);
+  // books on the worn bookshelves (board heights measured from the model)
+  for (const [n, o] of FURNISH[name] || []) if (n === "wooden_bookshelf_worn") {
+    const k = o.h / 2.06; [0.11, 0.39, 0.67, 0.96, 1.28].forEach((by, i) => put("book_encyclopedia_set_01", inner, { x: o.x + ((i % 3) - 1) * 0.1 * k, h: 0.22 * k, y: by * k + 0.005, z: o.z + 0.02, ry: i % 2 ? 0.1 : -0.05 }));
+  }
   // the ceiling lamp: a cord and a bulb (on or off with the room's lights)
   const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.42), M.cord); cord.position.set(0.35, RH - T / 2 - 0.21, 0); inner.add(cord);
   const bulbM = new THREE.MeshStandardMaterial({ color: 0x2a2622, emissive: 0xffc070, emissiveIntensity: 0, roughness: 0.3 });
   const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.07, 16, 12), bulbM); bulb.position.set(0.35, RH - T / 2 - 0.46, 0); inner.add(bulb);
   const lamp = new THREE.PointLight(0xffb060, 0, 3.0, 2); lamp.position.set(0.35, RH - 0.75, 0.25); inner.add(lamp);
   // floor and ceiling slabs, and the front posts: the room's own, so it carries its frame when it moves
-  box(RW, T / 2, RD, M.floor, 0, T / 4, 0, g);
-  box(RW, T / 2, RD, M.ceil, 0, RH - T / 4, 0, g);
+  // (their hidden faces are bare wood: you see them when the house turns over)
+  box(RW, T / 2, RD, [M.slab, M.slab, M.floor, M.slab, M.slab, M.slab], 0, T / 4, 0, g);
+  box(RW, T / 2, RD, [M.slab, M.slab, M.slab, M.ceil, M.slab, M.slab], 0, RH - T / 4, 0, g);
   for (const sd of [-1, 1]) box(0.12, RH, 0.14, M.frame, sd * (RW / 2 - 0.06), RH / 2, RD / 2 + 0.06, g, true);
   g.add(nameplate(room.name));
   const vary = new THREE.Group(); vary.name = "vary"; g.add(vary);
@@ -227,12 +233,12 @@ function pegDoll() {
   const c = document.createElement("canvas"); c.width = 512; c.height = 256; const x = c.getContext("2d");
   x.fillStyle = "#c09a74"; x.fillRect(0, 0, 512, 256);
   x.fillStyle = "#3a2216"; x.beginPath(); x.moveTo(0, 0); x.lineTo(512, 0); for (let u = 512; u >= 0; u -= 4) { const f = Math.cos((u / 512 - 0.25) * 2 * Math.PI); x.lineTo(u, 115 - 35 * Math.max(0, f) + 4 * Math.sin(u / 11) + (f < 0 ? 45 : 0)); } x.closePath(); x.fill();
-  x.fillStyle = "#1a0e08"; for (const s of [-1, 1]) { x.beginPath(); x.ellipse(128 + s * 17, 145, 3, 3.5, 0, 0, 7); x.fill(); }
-  x.fillStyle = "rgba(190,70,60,0.22)"; for (const s of [-1, 1]) { x.beginPath(); x.ellipse(128 + s * 27, 162, 8, 5, 0, 0, 7); x.fill(); }
-  x.fillStyle = "#7a2a22"; x.beginPath(); x.ellipse(128, 165, 3, 1.8, 0, 0, 7); x.fill();
+  x.fillStyle = "#1a0e08"; for (const s of [-1, 1]) { x.beginPath(); x.ellipse(128 + s * 26, 150, 8, 10, 0, 0, 7); x.fill(); }
+  x.fillStyle = "rgba(190,70,60,0.35)"; for (const s of [-1, 1]) { x.beginPath(); x.ellipse(128 + s * 40, 178, 14, 9, 0, 0, 7); x.fill(); }
+  x.fillStyle = "#7a2a22"; x.beginPath(); x.ellipse(128, 186, 9, 5, 0, 0, 7); x.fill();
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.115, 32, 20), new THREE.MeshStandardMaterial({ map: t, roughness: 0.85 }));
-  head.position.y = 0.8; head.rotation.y = Math.PI / 2; head.castShadow = true; g.add(head);
+  head.position.y = 0.8; head.castShadow = true; g.add(head);
   // the little lantern you carry
   const lan = new THREE.Group(); lan.position.set(0.2, 0.38, 0.05);
   box(0.07, 0.1, 0.07, new THREE.MeshStandardMaterial({ color: 0x2a2018, roughness: 0.6, metalness: 0.4 }), 0, 0, 0, lan);
@@ -273,16 +279,19 @@ function surroundings() {
   const roof = new THREE.Mesh(new THREE.ExtrudeGeometry(s, { depth: RD + 0.5, bevelEnabled: false }), [M.siding, M.tiles]);
   roof.position.set(0, HHd + 0.13, -RD / 2 - 0.25); roof.castShadow = roof.receiveShadow = true; scene.add(roof);
   box(0.45, 1.0, 0.45, mat("Bricks074", [0.5, 0.5], 0x8a6a60), HWd * 0.22, HHd + 1.2, -0.3, scene);
-  // the front door, beside the house on the ground floor: a lean-to porch with its own wall
-  const dx = (27 - (G.HX + G.W * G.CW / 2)) * S;
-  box(1.0, 1.9, RD * 0.7, M.porch, dx - 0.1, 0.95, -0.25, scene);
-  box(1.15, 0.07, RD * 0.8, mat("Planks037A", [0.3, 0.3], 0x5a4248, 0.8), dx - 0.1, 1.93, -0.2, scene);
-  const fr = M.trim.clone(); box(0.72, 0.1, 0.12, fr, dx, 1.46, RD * 0.1 + 0.05, scene); for (const k of [-1, 1]) box(0.08, 1.42, 0.12, fr, dx + k * 0.32, 0.71, RD * 0.1 + 0.05, scene);
-  const dg = new THREE.Group(); dg.position.set(dx - 0.28, 0, RD * 0.1 + 0.04); scene.add(dg);
-  box(0.56, 1.4, 0.06, mat("Wood049", [1, 2], 0x5a1418, 0.45), 0.28, 0.7, 0, dg);
-  const kn = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 8), M.brass.clone()); kn.position.set(0.48, 0.68, 0.05); dg.add(kn);
-  const doorGlow = new THREE.Mesh(new THREE.PlaneGeometry(0.56, 1.4), new THREE.MeshBasicMaterial({ color: 0xcfe0ff, transparent: true, opacity: 0 })); doorGlow.position.set(dx, 0.7, RD * 0.1 + 0.02); scene.add(doorGlow);
-  porchLight = new THREE.PointLight(0xa8c0ff, 0, 3, 2); porchLight.position.set(dx + 0.2, 0.9, RD * 0.1 + 0.6); scene.add(porchLight);
+  // the front door, beside the house on the ground floor: a lean-to porch with its own wall, a lamp over the door
+  const dx = (27 - (G.HX + G.W * G.CW / 2)) * S - 0.1, dz = RD / 2 + 0.2;
+  box(1.1, 1.95, RD + 0.2, M.porch, dx - 0.05, 0.975, 0, scene);
+  box(1.3, 0.07, RD + 0.6, mat("Planks037A", [0.3, 0.3], 0x5a4248, 0.8), dx - 0.05, 1.98, 0.2, scene);
+  const fr = M.trim.clone(); box(0.8, 0.1, 0.1, fr, dx, 1.5, dz + 0.02, scene); for (const k of [-1, 1]) box(0.08, 1.48, 0.1, fr, dx + k * 0.36, 0.74, dz + 0.02, scene);
+  const dg = new THREE.Group(); dg.position.set(dx - 0.32, 0, dz); scene.add(dg);
+  box(0.64, 1.45, 0.06, mat("Wood049", [1, 2], 0x5a1418, 0.45), 0.32, 0.725, 0, dg);
+  for (const [a, b] of [[0.18, 0.42], [0.46, 0.42], [0.18, 1.05], [0.46, 1.05]]) box(0.2, 0.45, 0.02, mat("Wood049", [1, 1], 0x4a1014, 0.45), a, b, 0.035, dg);
+  const kn = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 8), M.brass.clone()); kn.position.set(0.55, 0.7, 0.05); dg.add(kn);
+  const doorGlow = new THREE.Mesh(new THREE.PlaneGeometry(0.64, 1.45), new THREE.MeshBasicMaterial({ color: 0xcfe0ff, transparent: true, opacity: 0 })); doorGlow.position.set(dx, 0.725, dz - 0.04); scene.add(doorGlow);
+  const lampM = new THREE.MeshStandardMaterial({ color: 0x302820, emissive: 0xffb060, emissiveIntensity: 1.2, roughness: 0.5 });
+  box(0.1, 0.14, 0.1, lampM, dx, 1.66, dz + 0.08, scene);
+  porchLight = new THREE.PointLight(0xffb070, 1, 2.2, 2); porchLight.position.set(dx, 1.55, dz + 0.35); scene.add(porchLight);
   scene.userData.door = { dg, doorGlow };
   // the ground: dark boards stretching away
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 30), M.ground); ground.rotation.x = -Math.PI / 2; ground.position.set(0, -0.68, 0); ground.receiveShadow = true; scene.add(ground);
@@ -388,7 +397,7 @@ export function render(view, w, h) {
   // the front door: shut and dark, or open with cold light behind it
   const d = scene.userData.door, open = view.unlocked ? 1 : 0;
   d.dg.rotation.y += ((open ? -1.2 : 0) - d.dg.rotation.y) * 0.12;
-  d.doorGlow.material.opacity = open * (0.55 + 0.15 * Math.sin(t * 3)); porchLight.intensity = 0.8 + open * 3;
+  d.doorGlow.material.opacity = open * (0.55 + 0.15 * Math.sin(t * 3)); porchLight.intensity = 1.2 + open * 2;
   // lightning
   const f = view.flash || 0; moon.intensity = 1.2 + 9 * f; hemi.intensity = 0.55 * (view.dim || 1) + 3 * f;
   // shadows are redrawn only when something moved (they're most of the cost of a frame)
