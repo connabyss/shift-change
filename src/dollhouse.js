@@ -14,7 +14,7 @@ import { RGBELoader } from "../vendor/addons/loaders/RGBELoader.js";
 let G = null; // layout from the game: { VW, VH, HX, HY, CW, CH, W, H }
 let RW, RH, S; // room width/height in metres-ish, and world units per game pixel
 const RD = 2.6, T = 0.16, DOOR_Z0 = -0.45, DOOR_Z1 = 0.55, DOOR_H = 1.5, LADDER_X = 0.8;
-let renderer, scene, camera, root, grid, clip, moon, hemi, key, lantern, porchLight, rt, post;
+let renderer, scene, camera, photoCam, root, grid, clip, moon, hemi, key, lantern, porchLight, rt, post;
 let ready = false, failed = false, size = [0, 0];
 const rooms = new Map(); // room id -> { main, ghost, key }
 const M = {}; // shared materials
@@ -60,7 +60,7 @@ function materials() {
   M.ladder = mat("Wood049", [0.3, 2], 0xb08a62, 0.7);
   M.hatch = mat("Wood049", [1, 0.3], 0xd8c09a, 0.7);
   M.brick = mat("Bricks074", [6, 0.6], 0x7a6458, 0.95);
-  M.porch = mat("Planks037A", [0.5, 1], 0x4a3a40, 0.85);
+  M.porch = mat("Planks037A", [0.5, 1], 0x2a2226, 0.9);
   M.rug = mat("Fabric030", [2, 2], 0x7a2a2a, 1);
   M.siding = new THREE.MeshStandardMaterial({ color: 0x1a1612, roughness: 1 });
   M.tiles = mat("RoofingTiles014A", [0.7, 0.7], 0x5a4a48, 0.85);
@@ -122,7 +122,7 @@ function grime(seed, side) {
   // where a picture hung once: a paler rectangle with a dirty outline
   if (!side && rn() < 0.6) { const w = 50 + rn() * 50, hh = 40 + rn() * 50, px = 60 + rn() * (S2 - 180), py = 60 + rn() * 140; x.fillStyle = "rgba(255,245,225,0.07)"; x.fillRect(px, py, w, hh); x.strokeStyle = "rgba(40,30,20,0.14)"; x.lineWidth = 3; x.strokeRect(px, py, w, hh); }
   // fine mottling all over
-  for (let i = 0; i < 2500; i++) { x.fillStyle = `rgba(${rn() < 0.8 ? "40,30,20" : "240,230,210"},${rn() * 0.035})`; const r = 2 + rn() * 8; x.fillRect(rn() * S2, rn() * S2, r, r); }
+  for (let i = 0; i < 900; i++) { const cx = rn() * S2, cy = rn() * S2, r = 4 + rn() * 14, g = x.createRadialGradient(cx, cy, 0, cx, cy, r); g.addColorStop(0, `rgba(40,30,20,${rn() * 0.05})`); g.addColorStop(1, "rgba(40,30,20,0)"); x.fillStyle = g; x.fillRect(cx - r, cy - r, 2 * r, 2 * r); } // (soft and dark only: pale specks read as snow)
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   return new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, toneMapped: false });
 }
@@ -385,6 +385,8 @@ function surroundings() {
   const fz = RD / 2 + 0.07;
   for (let y = 0; y <= G.H; y++) { const b = box(HWd + 0.36, y === 0 || y === G.H ? 0.26 : 0.14, 0.14, M.plyHo[y % 4], 0, y * RH, fz, scene, true); b.material = M.plyHo[y % 4].clone(); b.material.map = b.material.map.clone(); b.material.map.repeat.set(4, 1); }
   for (const sd of [-1, 1]) box(0.22, HHd + 0.26, 0.16, M.plyVo[sd > 0 ? 1 : 2], sd * (HWd / 2 + 0.09), HHd / 2, fz, scene, true);
+  // the house's outer side walls, plain painted boards (seen from the photo camera at the side)
+  { const sm = mat("Planks037A", [1, 4], 0x14110e, 1, true); sm.envMapIntensity = 0.3; sm.normalScale.set(0.4, 0.4); /* (the side away from the desk lamp stays dark, as in a real photo) */ for (const sd of [-1, 1]) { const w = box(0.1, HHd + 0.13, RD + 0.1, sm, sd * (HWd / 2 + 0.16), HHd / 2, 0, scene); w.castShadow = w.receiveShadow = true; } }
   // gable roof: real overlapping clapboards on the front (geometry, not a texture), a little window, wooden barge boards
   const gh = 1.35, half = HWd / 2 + 0.45, base = HHd + 0.13, s = new THREE.Shape(); s.moveTo(-half, 0); s.lineTo(0, gh); s.lineTo(half, 0); s.lineTo(-half, 0);
   const roof = new THREE.Mesh(new THREE.ExtrudeGeometry(s, { depth: RD + 0.5, bevelEnabled: false }), [M.siding, M.tiles]);
@@ -409,7 +411,7 @@ function surroundings() {
   const dx = (27 - (G.HX + G.W * G.CW / 2)) * S - 0.1, dz = RD / 2 + 0.2;
   box(1.1, 1.95, RD + 0.2, M.porch, dx - 0.05, 0.975, 0, scene);
   box(1.3, 0.07, RD + 0.6, mat("Planks037A", [0.3, 0.3], 0x5a4248, 0.8), dx - 0.05, 1.98, 0.2, scene);
-  const fr = M.trim.clone(); box(0.8, 0.1, 0.1, fr, dx, 1.5, dz + 0.02, scene); for (const k of [-1, 1]) box(0.08, 1.48, 0.1, fr, dx + k * 0.36, 0.74, dz + 0.02, scene);
+  const fr = M.trim.clone(); fr.color.setHex(0x5a5650); box(0.8, 0.1, 0.1, fr, dx, 1.5, dz + 0.02, scene); for (const k of [-1, 1]) box(0.08, 1.48, 0.1, fr, dx + k * 0.36, 0.74, dz + 0.02, scene);
   const dg = new THREE.Group(); dg.position.set(dx - 0.32, 0, dz); scene.add(dg);
   box(0.64, 1.45, 0.06, mat("Wood049", [1, 2], 0x5a1418, 0.45), 0.32, 0.725, 0, dg);
   for (const [a, b] of [[0.18, 0.42], [0.46, 0.42], [0.18, 1.05], [0.46, 1.05]]) box(0.2, 0.45, 0.02, mat("Wood049", [1, 1], 0x4a1014, 0.45), a, b, 0.035, dg);
@@ -422,6 +424,25 @@ function surroundings() {
   // the house stands on old floorboards in a dark room, not in a field
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 30), M.ground); ground.rotation.x = -Math.PI / 2; ground.position.set(0, -0.68, 0); ground.receiveShadow = true; scene.add(ground);
   const wall = new THREE.Mesh(new THREE.PlaneGeometry(60, 30), M.roomWall); wall.position.set(0, 8, -7); wall.receiveShadow = true; scene.add(wall);
+}
+
+// things left on the table and the room behind, seen only in the photo shots: a bowl of apples, a book pile, an oil
+// lamp, a picture on the wall, a curtained window with the night outside
+function props() {
+  const g = new THREE.Group(); g.visible = false; scene.add(g); scene.userData.props = g;
+  const on = (n, h, x, z, ry = 0) => { const m = put(n, g, { x, z, h, ry }); if (m) m.position.y += -0.68 - T / 2; return m; };
+  on("wooden_bowl_01", 0.55, -8.6, 3.2, 0.5); on("food_apple_01", 0.36, -9.5, 2.6, 1.1); on("food_apple_01", 0.34, -7.7, 3.9, 2.3); on("food_apple_01", 0.33, -8.5, 3.1, 0.4);
+  on("book_encyclopedia_set_01", 0.5, 8.6, 2.6, -0.4); on("vintage_oil_lamp", 2.6, 10.2, 0.4, -0.6); on("brass_candleholders", 0.9, -10.4, 0.8, 0.3); on("wooden_candlestick", 1.6, 9.2, 4.2, 0.2);
+  on("wooden_candlestick", 1.9, 6.2, 7.6, 0.7); on("book_encyclopedia_set_01", 0.55, 4.6, 8.4, 0.9); on("food_apple_01", 0.34, 5.6, 9.3, 0.2); on("vintage_oil_lamp", 3.2, 8.4, 9.6, 0.4); // (out of focus in front, like a real tabletop shot)
+  const fr = models.get("fancy_picture_frame_02"); if (fr) { const m = put("fancy_picture_frame_02", g, { x: -11.5, z: -6.8, h: 3.2 }); if (m) m.position.y += 7.5; }
+  const wx0 = 12.5, wy0 = 9.4, wz = -6.95, nc = document.createElement("canvas"); nc.width = 256; nc.height = 320; const nx = nc.getContext("2d");
+  let ng = nx.createLinearGradient(0, 0, 0, 320); ng.addColorStop(0, "#1c2c4c"); ng.addColorStop(0.7, "#0c1424"); ng.addColorStop(1, "#05080e"); nx.fillStyle = ng; nx.fillRect(0, 0, 256, 320);
+  nx.fillStyle = "#04060a"; nx.beginPath(); nx.moveTo(0, 320); for (let u = 0; u <= 256; u += 8) nx.lineTo(u, 250 + 18 * Math.sin(u * 0.07) + 10 * Math.sin(u * 0.23)); nx.lineTo(256, 320); nx.fill();
+  const nt = new THREE.CanvasTexture(nc); nt.colorSpace = THREE.SRGBColorSpace;
+  const night = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 5.4), new THREE.MeshStandardMaterial({ color: 0, emissive: 0xffffff, emissiveMap: nt, emissiveIntensity: 0.35, roughness: 0.05 })); night.position.set(wx0, wy0, wz); g.add(night); scene.userData.night = night;
+  const wm = mat("Wood049", [1, 1], 0x5a4030, 0.6); for (const [w, h, x, y] of [[4.6, 0.3, 0, 2.85], [4.6, 0.4, 0, -2.85], [0.3, 6, -2.25, 0], [0.3, 6, 2.25, 0], [0.1, 5.4, 0, 0], [4.2, 0.1, 0, 0.9], [4.2, 0.1, 0, -0.9]]) box(w, h, 0.25, wm, wx0 + x, wy0 + y, wz + 0.1, g);
+  const cur = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 7.4, 24, 1), new THREE.MeshStandardMaterial({ map: tex("Fabric030", "Color", [2, 4]), normalMap: tex("Fabric030", "NormalGL", [2, 4]), color: 0x6a3a34, roughness: 0.95, side: THREE.DoubleSide }));
+  const cp = cur.geometry.attributes.position; for (let i = 0; i < cp.count; i++) cp.setZ(i, 0.18 * Math.sin(cp.getX(i) * 9)); cur.geometry.computeVertexNormals(); cur.position.set(wx0 - 2.6, wy0 - 0.3, wz + 0.35); g.add(cur);
 }
 
 // ---------- set-up ----------
@@ -454,12 +475,16 @@ export async function init(layout) {
   camera.position.set(C[0], C[1], RD / 2 + D);
   { const k = n / D; camera.projectionMatrix.makePerspective((wx(0) - C[0]) * k, (wx(G.VW) - C[0]) * k, (wy(0) - C[1]) * k, (wy(G.VH) - C[1]) * k, n, far);
     camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert(); camera.userData.D = D; }
+  // the photo camera, for the title and between floors: low and off to the right like a real photo of a real doll's
+  // house on a table (rooms partly hidden behind their walls, shallow focus). Play always uses the camera above.
+  photoCam = new THREE.PerspectiveCamera(42, G.VW / G.VH, 0.3, far); photoCam.position.set(11.8, 2.0, 12.6); photoCam.lookAt(-0.2, 5.0, 0); photoCam.rotateZ(-0.012);
+  photoCam.userData.focus = photoCam.position.distanceTo(new THREE.Vector3(3.2, 4.6, 0.8));
   clip = [new THREE.Plane(new THREE.Vector3(1, 0, 0), HWd / 2), new THREE.Plane(new THREE.Vector3(-1, 0, 0), HWd / 2), new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Plane(new THREE.Vector3(0, -1, 0), HHd)];
   // lights, as in the still: one warm desk lamp in the room, off to the front left, does most of the work (soft
   // shadows); a cool fill from the right; the house's own bulbs are small extras. The lightning is a cold flash.
   hemi = new THREE.HemisphereLight(0xb8b0c0, 0x2a2018, 0.12); scene.add(hemi);
   key = new THREE.SpotLight(0xffe2c0, 1500, 60, 0.85, 1.0, 2); key.position.set(-6.5, 9, 9); key.target.position.set(-1, 5, 0);
-  key.castShadow = true; key.shadow.autoUpdate = false; key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.0006; key.shadow.radius = 6; scene.add(key, key.target);
+  key.castShadow = true; key.shadow.autoUpdate = false; key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.0006; key.shadow.normalBias = 0.04; key.shadow.radius = 6; scene.add(key, key.target);
   const fill = new THREE.PointLight(0xc8c0d8, 5, 60, 2); fill.position.set(12, 6, 20); scene.add(fill);
   const table = new THREE.PointLight(0x6a5a50, 6, 14, 1.2); table.position.set(1, 1.2, 8); scene.add(table);
   moon = new THREE.DirectionalLight(0xb8c8ff, 0); moon.position.set(-6, 12, 16); scene.add(moon);
@@ -477,11 +502,12 @@ export async function init(layout) {
   }, undefined, () => ok()))));
   try { await document.fonts.load('64px "IM Fell English SC"'); } catch { /* fine */ }
   await new Promise((ok) => { const im = new Image(); im.onload = () => { WOODIMG = im; ok(); }; im.onerror = ok; im.src = "assets/tex/Wood049/Color.jpg"; });
+  props();
   player = pegDoll(); playerTwin = pegDoll(); shadowFig = hooded(); shadowTwin = hooded();
   for (const f of [player, playerTwin, shadowFig, shadowTwin]) { clipAll(f); grid.add(f); }
   ready = true; return true;
 }
-let player, playerTwin, shadowFig, shadowTwin, lastSig = "", lastFig = "", frameNo = 0, keyAt = 0, WOODIMG = null;
+let lastPhoto = false, player, playerTwin, shadowFig, shadowTwin, lastSig = "", lastFig = "", frameNo = 0, keyAt = 0, WOODIMG = null;
 // the last pass, done in one shader at game speed: focus falls off into the room behind the house (and a touch in the
 // rooms' depths), film grain, a soft vignette and a hint of lens barrel, as in the still
 function makePost() {
@@ -489,11 +515,11 @@ function makePost() {
   rt.depthTexture = new THREE.DepthTexture(4, 4); rt.depthTexture.type = THREE.UnsignedIntType;
   const m = new THREE.ShaderMaterial({
     uniforms: { tColor: { value: rt.texture }, tDepth: { value: rt.depthTexture }, res: { value: new THREE.Vector2(4, 4) }, near: { value: camera.near }, far: { value: camera.far },
-      focus: { value: camera.userData.D + 1.2 }, t: { value: 0 }, vc: { value: new THREE.Vector2(0.36, 0.5) } },
+      focus: { value: camera.userData.D + 1.2 }, t: { value: 0 }, photo: { value: 0 }, vc: { value: new THREE.Vector2(0.36, 0.5) } },
     vertexShader: "varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.0,1.0);}",
-    fragmentShader: `uniform sampler2D tColor,tDepth;uniform vec2 res,vc;uniform float near,far,focus,t;varying vec2 vUv;
+    fragmentShader: `uniform sampler2D tColor,tDepth;uniform vec2 res,vc;uniform float near,far,focus,t,photo;varying vec2 vUv;
 float lin(float d){float z=d*2.0-1.0;return 2.0*near*far/(far+near-z*(far-near));}
-float coc(vec2 uv){float z=lin(texture2D(tDepth,uv).x);return 0.45+clamp((z-focus)*0.5,0.0,1.0)*1.1+smoothstep(focus+5.0,focus+14.0,z)*4.5;}
+float coc(vec2 uv){float z=lin(texture2D(tDepth,uv).x);if(photo>0.5)return clamp(abs(z-focus)*0.3-0.35,0.0,1.0)*5.0;return 0.45+clamp((z-focus)*0.5,0.0,1.0)*1.1+smoothstep(focus+5.0,focus+14.0,z)*4.5;}
 float h(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);}
 void main(){vec2 q0=vUv-0.5;float rr=dot(q0,q0);vec2 uv=0.5+q0*(1.0-0.03*rr);
  float c=coc(uv);vec3 col=texture2D(tColor,uv).rgb;float tw=1.0;
@@ -575,7 +601,11 @@ export function render(view, w, h) {
   frameNo++;
   if (roomSig !== lastSig) { key.shadow.needsUpdate = lantern.shadow.needsUpdate = true; lastSig = roomSig; lastFig = figSig; keyAt = frameNo; }
   else if (figSig !== lastFig) { lantern.shadow.needsUpdate = true; if (frameNo - keyAt >= 4) { key.shadow.needsUpdate = true; keyAt = frameNo; lastFig = figSig; } }
-  renderer.setRenderTarget(rt); renderer.render(scene, camera); renderer.setRenderTarget(null); sceneInfo = { ...renderer.info.render };
+  const PH = !!view.photo, cam = PH ? photoCam : camera, U = post.material.uniforms;
+  U.photo.value = PH ? 1 : 0; U.focus.value = PH ? photoCam.userData.focus : camera.userData.D + 1.2; U.vc.value.set(PH ? 0.5 : 0.36, 0.5);
+  scene.userData.props.visible = PH;
+  if (PH !== lastPhoto) { key.shadow.needsUpdate = true; lastPhoto = PH; }
+  renderer.setRenderTarget(rt); renderer.render(scene, cam); renderer.setRenderTarget(null); sceneInfo = { ...renderer.info.render };
   post.material.uniforms.t.value = t; renderer.render(post.userData.scene, post.userData.cam);
   return renderer.domElement;
 }

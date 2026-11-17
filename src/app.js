@@ -17,7 +17,7 @@ const HCX = HX + HW / 2, HCY = HY + HH / 2, PX = 664, PW = 278;
 const cv = document.getElementById("game"), ctx = cv.getContext("2d");
 // The house is a real 3D doll's house (src/dollhouse.js) once its models load; until then, or with ?flat=1, or where
 // WebGL isn't there, it's drawn flat like before.
-const FLAT = /[?&]flat=1/.test(location.search);
+const FLAT = /[?&]flat=1/.test(location.search); const PHOTO = /[?&]photo=1/.test(location.search); // (photo=1: the photo camera all the time, for stills)
 if (!FLAT) dh.init({ VW: 960, VH: 600, HX, HY, CW, CH, W, H }).catch((e) => console.warn("3D house unavailable:", e));
 const in3d = () => !FLAT && dh.isReady();
 cv.width = VW * DPR; cv.height = VH * DPR;
@@ -816,7 +816,7 @@ function draw3d() {
   const freed = st.scene === "end" && st.ending === "free", pl = walkerInfo(st.player), sh = walkerInfo(st.shadow);
   const seen = st.scene === "end" ? 1 : Math.max(clamp(1.5 - Math.hypot(pl.x - sh.x, pl.y - sh.y) / 110, 0, 1), flash() * 0.9);
   const view = {
-    t: st.t, flash: flash(), flip, dim: st.scene === "title" ? 0.55 : 1, unlocked: st.unlocked, rooms,
+    t: st.t, flash: flash(), flip, dim: st.scene === "title" ? 0.8 : 1, photo: PHOTO || st.scene === "title" || st.scene === "floor", unlocked: st.unlocked, rooms,
     player: { ...pl, hidden: freed || (flip != null && Math.abs(flip) > 0.1) },
     shadow: { ...sh, hidden: freed || st.shadow.seep || (flip != null && Math.abs(flip) > 0.1), seen, asleep: st.shadow.mode === "sleep", near: nearness() },
     twin: { player: twinAt(st.player), shadow: twinAt(st.shadow) },
@@ -1624,6 +1624,6 @@ requestAnimationFrame(frame);
 window.__dh = {
   pickHouseMove: () => pickHouseMove(), houseMove: (m) => performEdit(m.id, m.li, m.dir, true), houseMoves, st: () => st, begin: () => { st.scene = "play"; }, choose: (w) => choose(w), say: (k) => say(k), choiceRects: () => choiceRects, nextFloor: () => nextFloor(), solve, hint: () => doHint(), edit: (li, d) => doEdit(li, d), edits, path, walk: (id, exit) => walkTo(id, exit, 0, 0),
   reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(), sticky: () => sticky, gag: () => ({ gag: !!st.gag, nudged: !!st.nudged, sign: !!st.sign, sticker: !!st.sticker }), undone: () => undone, undo: () => undo(), line: (t) => sayLine(t), hush: () => { st.voice = null; st.voiceQ = []; st.quiet = 99; st.sign = st.sticker = null; }, lift: () => lift(), junk: () => junk.length, tick: (dt, n) => { for (let i = 0; i < n; i++) update(dt); }, render: () => render(), upright: () => upright.matches, dragBack: () => dragBack(), previewLit: () => [...previewLit()], deskHit: desk.deskHit, shiftK: () => shiftK, goneFor, openDesk: () => openDesk(), trapped: (b) => trapped(b), awayLine: () => awayLine, calm: () => CALM, flash: () => flash(),
-  in3d: () => in3d(), info3d: () => dh.info(), roomAt3d: (id) => dh.roomAt(id),
+  in3d: () => in3d(), info3d: () => dh.info(), roomAt3d: (id) => dh.roomAt(id), draw3d: () => draw3d(), // (stills: the 3D picture alone, no page or buttons on top)
   paused: () => paused, restart: () => restartFloor(), hudRects: () => hudRects, pauseRects: () => pauseRects, roomGeo: (x, y) => roomGeo(x, y),
 };
