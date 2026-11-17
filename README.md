@@ -51,10 +51,18 @@ afterwards light up green), then click it. Under the house are buttons for Pause
   three and the last line of the game becomes a word you can change: `house.keep(shadow|nobody)`. All of the story's
   words are in `src/story.js`.
 
-**The look.** The house is a wooden doll's house at night; rooms you can't reach sit in cold moonlight, and your lamp warms the one you're in. Its source code is typed on an old page clipped beside it, and every choice is circled in red pencil. The title and the between-floor notes are typed pages too. Floor, moves and pages sit on a brass plate under the house. All of it lives in `src/look.js`.
+**The look.** The house is a real 3D doll's house at night (`src/dollhouse.js`, three.js): scanned furniture from
+Poly Haven, walls and floors from ambientCG, a brass nameplate under every room, a peg doll for you with a little
+lantern, and the hooded shadow. Rooms with their lights off sit in cold moonlight. When a row slides, the rooms carry
+their furniture and frame with them; when the house turns over, it really tips end over end, and everything inside
+hangs from the ceiling. The house's source code is typed on an old page clipped beside it, and every choice is
+circled in red pencil (`src/look.js`). All the art is CC0; the list is in `assets/CREDITS.md`.
 
-Everything you see and hear is drawn and played by code: no image or sound files. Rain, wind, thunder, a music box
-that plays a slow, wrong little tune, and whispers when it's in the next room. Headphones help.
+Where WebGL is missing, on a computer drawing without a graphics card, or with `?flat=1` in the address, the house is
+drawn flat in code instead. If frames run slow, the 3D house uses fewer pixels, then drops your lantern's shadows.
+
+Every sound is played by code: rain, wind, thunder, a music box that plays a slow, wrong little tune, and whispers
+when it's in the next room. Headphones help.
 
 ## Play it locally
 

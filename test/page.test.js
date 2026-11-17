@@ -19,7 +19,8 @@ function serve() {
       const p = new URL(req.url, "http://x").pathname;
       try {
         const body = await readFile(join(ROOT, p === "/" ? "index.html" : p));
-        res.writeHead(200, { "content-type": extname(p) === ".js" ? "text/javascript" : "text/html" }).end(body);
+        const type = { ".js": "text/javascript", ".glb": "model/gltf-binary", ".jpg": "image/jpeg", ".md": "text/plain" }[extname(p)] || "text/html";
+        res.writeHead(200, { "content-type": type }).end(body);
       } catch { res.writeHead(404).end(); }
     }).listen(0, "127.0.0.1", () => ok(s));
   });
@@ -633,7 +634,7 @@ test("never a dead floor: after a grab, if no way out is left, the house puts th
 // pixels off: every name twice, ladders through the ceiling, red X marks. Now each room's bones are drawn once, in
 // its own perspective, and the moon picks them out in the dark.
 test("in the dark, each room's name is drawn once, its open doorways show, and pointing at a word lights the rooms it moves", { skip }, async () => {
-  const { page, errors, close } = await open("/?seed=4242");
+  const { page, errors, close } = await open("/?seed=4242&plates=0"); // (the flat house: the photographed one has its own test)
   try {
     await page.evaluate(() => { const D = window.__dh; D.newGame(99, 2); D.begin(); const st = D.st(); st.floorT = 9; st.gag = true; D.hush(); });
     await page.mouse.move(5, 5); await page.waitForTimeout(300);
@@ -741,7 +742,7 @@ test("a lock in reach in the preview is tagged in words, not only in red", { ski
 });
 
 test("the screen break draws the game once, not every frame, so the WOW moment stays smooth", { skip }, async () => {
-  const { page, errors, close } = await open("/");
+  const { page, errors, close } = await open("/?plates=0"); // (measured against the flat house's frame, the dearer one)
   try {
     const r = await page.evaluate(() => {
       const D = window.__dh; D.newGame(null, 3); D.begin(); const st = D.st(); st.gag = true; st.faced = true; st.floorT = 9;
@@ -910,4 +911,101 @@ test("with \"reduce motion\" on, no screen shake and lightning is one soft glow,
     assert.ok(Math.max(...calm.f) <= 0.6, "calm: never full white");
     assert.ok(calm.f[0] > 0.3, "calm: still bright enough to show the shadow for a moment");
   } finally { await browser.close(); server.close(); }
+});
+
+test("the 3D doll's house: it loads its scans, follows the house when a row slides and when it turns over, and steps aside on a software renderer", { skip, timeout: 600000 }, async () => {
+  const server = await serve(), browser = await chromium.launch();
+  try {
+    const open = async (q) => {
+      const page = await browser.newPage({ viewport: { width: 960, height: 600 } }), errors = [];
+      page.on("pageerror", (e) => errors.push(String(e)));
+      // frames are driven by hand below: in a headless browser each 3D frame takes seconds
+      await page.addInitScript(() => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (f) => (window.__stop ? 0 : raf(f)); });
+      await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+      await page.goto(`http://127.0.0.1:${server.address().port}/${q}`); await page.waitForFunction(() => window.__dh);
+      return { page, errors };
+    };
+    // 1. headless Chromium draws with SwiftShader (no graphics card): the flat house is the better game there
+    const soft = await open("?seed=4242"); await soft.page.waitForTimeout(4000);
+    assert.equal(await soft.page.evaluate(() => window.__dh.in3d()), false, "software rendering keeps the flat house");
+    assert.deepEqual(soft.errors, []); await soft.page.close();
+    // 2. forced on, the 3D house loads and draws into the game's canvas
+    const { page, errors } = await open("?seed=4242&3d=1&plates=0"); await page.evaluate(() => { window.__stop = 1; }); // (in play the photographed rooms take over from it: see their test)
+    await page.waitForFunction(() => window.__dh.in3d(), null, { timeout: 300000, polling: 1000 });
+    const a = await page.evaluate(() => {
+      const D = window.__dh, st = D.st(); D.begin(); D.hush(); D.render();
+      const p = D.find(st.g, st.player.id), row = st.g[p.y].map((r) => r.id), d = document.getElementById("game").getContext("2d").getImageData(2 * (44 + 75) - 40, 2 * (74 + p.y * 146 + 73) - 40, 80, 80).data;
+      // the average colour over the middle of the room (one pixel could land on a dark cupboard)
+      const px = [0, 1, 2].map((c) => { let t = 0; for (let i = c; i < d.length; i += 4) t += d[i]; return t / (d.length / 4); });
+      return { row, before: row.map((id) => D.roomAt3d(id)), calls: D.info3d().calls, px, y: p.y };
+    });
+    assert.ok(a.calls > 50, "it drew the house");
+    assert.ok(a.px[0] + a.px[1] + a.px[2] > 60, "a room shows in the canvas, not the night sky");
+    // 3. a row slides east: once it settles, every room of that row has moved one room along in 3D too
+    const b = await page.evaluate(() => {
+      const D = window.__dh, st = D.st(), li = st.g.flat().find((r) => r.id === st.player.id).lines.findIndex((l) => l.kind === "row");
+      D.edit(li, 1); D.tick(1 / 60, 20); D.render(); const mid = D.st().anim && D.st().anim.kind;
+      D.tick(1 / 60, 120); D.render(); return { mid, li };
+    });
+    assert.equal(b.mid, "row");
+    const after = await page.evaluate((row) => row.map((id) => window.__dh.roomAt3d(id)), a.row);
+    const xs = a.before.map((r) => r.x).sort((u, v) => u - v), step = xs[1] - xs[0];
+    a.before.forEach((r, i) => { const want = r.x + step > xs[3] + 1e-3 ? xs[0] : r.x + step; assert.ok(Math.abs(after[i].x - want) < 1e-3, `room ${a.row[i]} slid east in 3D`); assert.equal(after[i].y, r.y); });
+    // 4. turned over: the furniture hangs from the ceiling, and floors change places
+    const c = await page.evaluate(() => {
+      const D = window.__dh; D.newGame(777, 3); D.begin(); D.hush(); const st = D.st(); D.render();
+      let m = null; for (const row of st.g) for (const r of row) r.lines.forEach((l, li) => { if (l.kind === "flip") m = { id: r.id, li, dir: 1 }; });
+      const top = st.g[0][0].id, y0 = D.roomAt3d(top).y; D.houseMove(m); D.tick(1 / 60, 200); D.render();
+      return { flipped: D.roomAt3d(top).flipped, y0, y1: D.roomAt3d(top).y, anim: !!st.anim };
+    });
+    assert.equal(c.anim, false); assert.equal(c.flipped, true, "upside down: furniture on the ceiling"); assert.ok(c.y1 < c.y0, "the top floor went to the bottom");
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); server.close(); }
+});
+
+// CH 11-17 ("its cross section not open roof. its from the side"; then "that shifting house side view is insaneee"):
+// in play the rooms are path-traced pictures taken straight from the side (tools/render), one per room, lights on and
+// off. They must move with the rules: each room's picture in its own slot, carried along by a slide, hanging upside
+// down when the house turns over, every name on its plate once, and open doorways showing in the posts.
+test("the photographed house: each room's picture sits in its slot, slides with its row, turns over with the house, and shows its doorways", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    await page.waitForFunction(() => { const D = window.__dh; D.begin(); return D.plates(); }, null, { timeout: 30000 });
+    const grab = () => page.evaluate(() => {
+      const D = window.__dh, P = CanvasRenderingContext2D.prototype, di = P.drawImage, ft = P.fillText, imgs = [], txt = [], plates = [];
+      P.drawImage = function (im, ...a) { const m = this.getTransform(); if (im && im.src && /plates\/\w+_plate_dark\.png/.test(im.src)) plates.push(im.src.match(/plates\/(\w+)_plate_dark/)[1]); if (im && im.src && /plates\/\w+_(lit|dark)\.jpg/.test(im.src)) imgs.push({ k: im.src.match(/plates\/(\w+)_(lit|dark)/).slice(1), x: m.a * a[0] + m.e, y: m.d * a[1] + m.f, sy: m.d }); return di.call(this, im, ...a); };
+      P.fillText = function (t, ...a) { txt.push(String(t)); return ft.call(this, t, ...a); };
+      try { D.render(); } finally { P.drawImage = di; P.fillText = ft; }
+      const st = D.st(), k = document.getElementById("game").width / 960;
+      return { imgs: imgs.map((i) => ({ ...i, x: i.x / k, y: i.y / k, sy: i.sy / k })), txt, plates, g: st.g.map((r) => r.map((x) => ({ id: x.id, name: x.name, l: x.l }))) };
+    });
+    const at = (f, name) => f.imgs.filter((i) => i.k[0] === name && i.k[1] === "dark").map((i) => [Math.round(i.x), Math.round(i.y), Math.sign(i.sy)]);
+    const a = await grab();
+    for (let y = 0; y < 3; y++) for (let x = 0; x < 4; x++) {
+      const r = a.g[y][x], cell = [44 + x * 150, 74 + y * 146];
+      assert.deepEqual(at(a, r.name), [[cell[0], cell[1], 1]], `${r.name}'s picture is in its own slot`);
+      assert.equal(a.plates.filter((t) => t === r.name).length, 1, `${r.name}'s name plate is drawn once`);
+    }
+    // a row slides east: once it settles, each of its rooms' pictures is one slot along (the end one wraps round)
+    const row = await page.evaluate(() => { const D = window.__dh, st = D.st(), p = D.find(st.g, st.player.id), li = D.byId(st.g, st.player.id).lines.findIndex((l) => l.kind === "row"); if (li < 0) return null; D.edit(li, 1); D.tick(1 / 60, 150); return p.y; });
+    assert.notEqual(row, null, "the start room has a row line");
+    const b = await grab();
+    for (let x = 0; x < 4; x++) { const was = a.g[row][x].name; assert.deepEqual(at(b, was), [[44 + ((x + 1) % 4) * 150, 74 + row * 146, 1]], `${was} slid one slot east`); }
+    // an open doorway: the next room's lamp spills across the floor through it (gone when the door is shut)
+    const door = await page.evaluate(() => {
+      const D = window.__dh, st = D.st(), c = document.getElementById("game").getContext("2d"), k = c.canvas.width / 960;
+      const lum = (x, y) => { const d = c.getImageData(Math.round(x * k) - 3, Math.round(y * k) - 3, 6, 6).data; let t = 0; for (let i = 0; i < d.length; i += 4) t += d[i] + d[i + 1] + d[i + 2]; return t / 36; };
+      for (let y = 0; y < 3; y++) for (let x = 1; x < 4; x++) if (st.g[y][x].l && st.g[y][x - 1].lights) {
+        const r = st.g[y][x], at = [44 + x * 150 + 13, 74 + y * 146 + 146 - 8]; D.render(); const open = lum(...at); r.l = false; D.render(); const shut = lum(...at); r.l = true; return { open, shut };
+      }
+      return null;
+    });
+    assert.ok(door && door.open > door.shut + 6, `light comes through an open doorway (${JSON.stringify(door)})`);
+    // turned over: every room's picture is drawn mirrored top to bottom
+    await page.evaluate(() => { const D = window.__dh; D.newGame(777, 3); D.begin(); D.hush(); const st = D.st(); let m = null;
+      for (const r of st.g.flat()) r.lines.forEach((l, li) => { if (l.kind === "flip") m = { id: r.id, li, dir: 1 }; }); D.houseMove(m); D.tick(1 / 60, 200); });
+    const c = await grab();
+    assert.ok(c.imgs.length >= 12 && c.imgs.every((i) => i.sy < 0), "upside down, the rooms hang from their ceilings");
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
 });
