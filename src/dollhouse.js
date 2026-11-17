@@ -66,7 +66,7 @@ function materials() {
   M.siding = new THREE.MeshStandardMaterial({ color: 0x1a1612, roughness: 1 });
   M.tiles = mat("RoofingTiles014A", [0.7, 0.7], 0x5a4a48, 0.85);
   M.ground = mat("WoodFloor041", [6, 3], 0x5a4638, 0.9); M.ground.envMapIntensity = 0.35;
-  M.roomWall = mat("Wallpaper002B", [10, 5], 0x3a3438, 0.9);
+  M.roomWall = mat("Wallpaper002B", [26, 10], 0x3a3438, 0.9);
   M.hole = new THREE.MeshBasicMaterial({ color: 0x020203 });
   M.back = new THREE.MeshStandardMaterial({ color: 0x050507, roughness: 1 });
   M.brass = new THREE.MeshStandardMaterial({ color: 0xc8a050, metalness: 1, roughness: 0.35 });
@@ -453,8 +453,10 @@ function surroundings() {
   porchLight = new THREE.PointLight(0xffb070, 1, 2.2, 2); porchLight.position.set(dx, 1.55, dz + 0.35); scene.add(porchLight);
   scene.userData.door = { dg, doorGlow };
   // the house stands on old floorboards in a dark room, not in a field
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 30), M.ground); ground.rotation.x = -Math.PI / 2; ground.position.set(0, -0.68, 0); ground.receiveShadow = true; scene.add(ground);
-  const wall = new THREE.Mesh(new THREE.PlaneGeometry(60, 30), M.roomWall); wall.position.set(0, 8, -7); wall.receiveShadow = true; scene.add(wall);
+  // a real table: a top with a front edge you can see over, the room's floor far below it
+  { const tb = rbox(44, 0.5, 15, M.ground, 0, -0.93, 0.5, scene); tb.castShadow = false;
+    const fl = new THREE.Mesh(new THREE.PlaneGeometry(120, 60), M.ground.clone()); fl.material.color.setHex(0x221a14); fl.rotation.x = -Math.PI / 2; fl.position.set(0, -9, 10); fl.receiveShadow = true; scene.add(fl); }
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(160, 60), M.roomWall); wall.position.set(0, 8, -7); wall.receiveShadow = true; scene.add(wall); scene.userData.wall = wall; wall.userData.c0 = M.roomWall.color.getHex();
 }
 
 // things left on the table and the room behind, seen only in the photo shots: a bowl of apples, a book pile, an oil
@@ -466,14 +468,25 @@ function props() {
   on("book_encyclopedia_set_01", 0.5, 8.6, 2.6, -0.4); on("vintage_oil_lamp", 2.6, 10.2, 0.4, -0.6); on("brass_candleholders", 0.9, -10.4, 0.8, 0.3); on("wooden_candlestick", 1.6, 9.2, 4.2, 0.2);
   on("wooden_candlestick", 1.9, 6.2, 7.6, 0.7); on("book_encyclopedia_set_01", 0.55, 4.6, 8.4, 0.9); on("food_apple_01", 0.34, 5.6, 9.3, 0.2); on("vintage_oil_lamp", 3.2, 8.4, 9.6, 0.4); // (out of focus in front, like a real tabletop shot)
   const fr = models.get("fancy_picture_frame_02"); if (fr) { const m = put("fancy_picture_frame_02", g, { x: -11.5, z: -6.8, h: 3.2 }); if (m) m.position.y += 7.5; }
-  const wx0 = 12.5, wy0 = 9.4, wz = -6.95, nc = document.createElement("canvas"); nc.width = 256; nc.height = 320; const nx = nc.getContext("2d");
-  let ng = nx.createLinearGradient(0, 0, 0, 320); ng.addColorStop(0, "#1c2c4c"); ng.addColorStop(0.7, "#0c1424"); ng.addColorStop(1, "#05080e"); nx.fillStyle = ng; nx.fillRect(0, 0, 256, 320);
-  nx.fillStyle = "#04060a"; nx.beginPath(); nx.moveTo(0, 320); for (let u = 0; u <= 256; u += 8) nx.lineTo(u, 250 + 18 * Math.sin(u * 0.07) + 10 * Math.sin(u * 0.23)); nx.lineTo(256, 320); nx.fill();
+  const wx0 = -27, wy0 = 7.4, wz = -6.95, nc = document.createElement("canvas"); nc.width = 256; nc.height = 320; const nx = nc.getContext("2d");
+  let ng = nx.createLinearGradient(0, 0, 0, 320); ng.addColorStop(0, "#c8d8ec"); ng.addColorStop(0.7, "#e8eef4"); ng.addColorStop(1, "#d8dcd8"); /* (a pale overcast day outside) */ nx.fillStyle = ng; nx.fillRect(0, 0, 256, 320);
+  nx.filter = "blur(3px)"; nx.fillStyle = "#6a7468"; nx.beginPath(); nx.moveTo(0, 320); for (let u = 0; u <= 256; u += 8) nx.lineTo(u, 250 + 18 * Math.sin(u * 0.07) + 10 * Math.sin(u * 0.23)); nx.lineTo(256, 320); nx.fill();
   const nt = new THREE.CanvasTexture(nc); nt.colorSpace = THREE.SRGBColorSpace;
-  const night = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 5.4), new THREE.MeshStandardMaterial({ color: 0, emissive: 0xffffff, emissiveMap: nt, emissiveIntensity: 0.35, roughness: 0.05 })); night.position.set(wx0, wy0, wz); g.add(night); scene.userData.night = night;
+  const night = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 5.4), new THREE.MeshStandardMaterial({ color: 0, emissive: 0xffffff, emissiveMap: nt, emissiveIntensity: 1.6, roughness: 0.05 })); night.position.set(wx0, wy0, wz); g.add(night); scene.userData.night = night;
   const wm = mat("Wood049", [1, 1], 0x5a4030, 0.6); for (const [w, h, x, y] of [[4.6, 0.3, 0, 2.85], [4.6, 0.4, 0, -2.85], [0.3, 6, -2.25, 0], [0.3, 6, 2.25, 0], [0.1, 5.4, 0, 0], [4.2, 0.1, 0, 0.9], [4.2, 0.1, 0, -0.9]]) box(w, h, 0.25, wm, wx0 + x, wy0 + y, wz + 0.1, g);
   const cur = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 7.4, 24, 1), new THREE.MeshStandardMaterial({ map: tex("Fabric030", "Color", [2, 4]), normalMap: tex("Fabric030", "NormalGL", [2, 4]), color: 0x6a3a34, roughness: 0.95, side: THREE.DoubleSide }));
   const cp = cur.geometry.attributes.position; for (let i = 0; i < cp.count; i++) cp.setZ(i, 0.18 * Math.sin(cp.getX(i) * 9)); cur.geometry.computeVertexNormals(); cur.position.set(wx0 - 2.6, wy0 - 0.3, wz + 0.35); g.add(cur);
+  // daylight from the window, cool and soft, across the table and the side of the house
+  const day = new THREE.SpotLight(0xd8e4ff, 0, 0, 0.75, 1, 2); day.position.set(wx0 + 0.5, wy0, wz + 0.6); day.target.position.set(-8, -0.5, 4); day.angle = 0.9; g.add(day, day.target); scene.userData.day = day;
+  // the desk lamp, standing on the table in shot: a weighted base, a jointed arm, a metal shade aimed at the house
+  { const met = new THREE.MeshStandardMaterial({ color: 0x2a2a26, metalness: 0.7, roughness: 0.45 }), y0 = -0.68, bx = -8.6, bz = 4.2, sx = -7.4, sy = 3.9, sz = 3.6;
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.62, 0.16, 32), met); base.position.set(bx, y0 + 0.08, bz); g.add(base);
+    const joint = new THREE.Vector3(bx - 0.3, y0 + 2.4, bz - 0.2);
+    for (const [a, b] of [[new THREE.Vector3(bx, y0 + 0.16, bz), joint], [joint, new THREE.Vector3(sx, sy + 0.3, sz)]]) { const L = a.distanceTo(b), arm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, L, 12), met); arm.position.copy(a).lerp(b, 0.5); arm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize()); g.add(arm); }
+    const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.6, 0.8, 32, 1, true), new THREE.MeshStandardMaterial({ color: 0x3a3a34, metalness: 0.6, roughness: 0.4, side: THREE.DoubleSide })); sh.position.set(sx, sy, sz);
+    sh.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), new THREE.Vector3(1.6, 1.4, -0.4).sub(new THREE.Vector3(sx, sy, sz)).normalize()); g.add(sh);
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 12), new THREE.MeshBasicMaterial({ color: 0xfff0d0 })); bulb.position.copy(sh.position).add(new THREE.Vector3(0, -0.15, 0).applyQuaternion(sh.quaternion)); g.add(bulb);
+    scene.userData.deskLamp = bulb.position.clone(); }
 }
 
 // ---------- set-up ----------
@@ -625,7 +638,7 @@ export function render(view, w, h) {
   d.dg.rotation.y += ((open ? -1.2 : 0) - d.dg.rotation.y) * 0.12;
   d.doorGlow.material.opacity = open * (0.55 + 0.15 * Math.sin(t * 3)); porchLight.intensity = 1.2 + open * 2;
   // lightning
-  const f = view.flash || 0; moon.intensity = 9 * f; hemi.intensity = 0.12 * (view.dim || 1) + 3 * f; key.intensity = 520 * (view.dim || 1) * (view.photo ? 0.3 : 1); key.angle = view.photo ? 0.6 : 0.85; key.target.position.set(view.photo ? 1.0 : -1, view.photo ? 3.8 : 5, 0); // (photo: a narrow desk-lamp cone, its edge falling across the house)
+  const f = view.flash || 0; moon.intensity = 9 * f; hemi.intensity = 0.12 * (view.dim || 1) + 3 * f; key.intensity = 520 * (view.dim || 1) * (view.photo ? 0.2 : 1); key.angle = view.photo ? 0.75 : 0.85; key.target.position.set(view.photo ? 1.6 : -1, view.photo ? 1.4 : 5, 0); if (view.photo && scene.userData.deskLamp) key.position.copy(scene.userData.deskLamp); else key.position.set(-6.5, 9, 9); // (photo: a narrow desk-lamp cone, its edge falling across the house)
   // shadows are redrawn only when something moved (they're most of the cost of a frame)
   // the desk lamp's big shadow map at once when the rooms move, at most every fourth frame when only a figure moved;
   // the lantern's small one whenever you or it moved
@@ -637,7 +650,7 @@ export function render(view, w, h) {
   U.photo.value = PH ? 1 : 0; U.focus.value = PH ? photoCam.userData.focus : camera.userData.D + 1.2; U.vc.value.set(PH ? 0.5 : 0.36, 0.5);
   // the photo: six of the room lamps cast real shadows (chair legs and table edges across the floor). Only there: in play it would cost too much
   if (PH !== lampShadows) { lampShadows = PH; key.shadow.needsUpdate = true; let n = 0; for (const L of LAMPS) { const on = PH && n++ < 6; L.castShadow = on; if (on) { L.shadow.mapSize.set(512, 512); L.shadow.bias = -0.002; L.shadow.radius = 3; L.shadow.camera.near = 0.05; } } }
-  scene.userData.props.visible = PH; scene.userData.fill.intensity = PH ? 1.2 : 5; scene.environmentIntensity = PH ? 0.07 : 0.2; // (the photo: almost all the light from the lamps, deep shadow between)
+  scene.userData.props.visible = PH; if (scene.userData.day) scene.userData.day.intensity = PH ? 260 : 0; scene.userData.wall.material.color.setHex(PH ? 0x8a7e74 : scene.userData.wall.userData.c0); scene.userData.fill.intensity = PH ? 1.2 : 5; scene.environmentIntensity = PH ? 0.3 : 0.2; // (photo: the real room's own light, from the photographed workshop) // (the photo: almost all the light from the lamps, deep shadow between)
   if (PH !== lastPhoto) { key.shadow.needsUpdate = true; lastPhoto = PH; }
   renderer.setRenderTarget(rt); renderer.render(scene, cam); renderer.setRenderTarget(null); sceneInfo = { ...renderer.info.render };
   post.material.uniforms.t.value = t; renderer.render(post.userData.scene, post.userData.cam);
