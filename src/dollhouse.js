@@ -14,12 +14,13 @@ import { RGBELoader } from "../vendor/addons/loaders/RGBELoader.js";
 let G = null; // layout from the game: { VW, VH, HX, HY, CW, CH, W, H }
 let RW, RH, S; // room width/height in metres-ish, and world units per game pixel
 const RD = 2.6, T = 0.16, DOOR_Z0 = -0.45, DOOR_Z1 = 0.55, DOOR_H = 1.5, LADDER_X = 0.8;
+let PHOTO_ON = false, lampShadows = false;
 let renderer, scene, camera, photoCam, root, grid, clip, moon, hemi, key, lantern, porchLight, rt, post;
 let ready = false, failed = false, size = [0, 0];
 const rooms = new Map(); // room id -> { main, ghost, key }
 const M = {}; // shared materials
 const models = new Map(); // model name -> gltf scene (cloned per use)
-const PARTS = new WeakMap(); // room group -> the parts render() changes (kept out of userData, which clone() copies as JSON)
+const LAMPS = []; const PARTS = new WeakMap(); // room group -> the parts render() changes (kept out of userData, which clone() copies as JSON)
 
 export const isReady = () => ready;
 // quality 0: full; 1: fewer pixels; 2: fewer pixels and no lantern shadows (the game steps down if frames run slow)
@@ -113,7 +114,7 @@ function grime(seed, side) {
   // water stains: soft brown blotches with a darker tide line
   for (let i = 0; i < 2 + Math.floor(rn() * 3); i++) { const cx = rn() * S2, cy = rn() * S2 * 0.7, r = 18 + rn() * 40;
     x.save(); x.translate(cx, cy); x.scale(1, 0.6 + rn() * 0.8); x.beginPath(); for (let k = 0; k <= 24; k++) { const a = k / 24 * Math.PI * 2, rr = r * (0.7 + rn() * 0.5); x.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } x.closePath();
-    x.fillStyle = `rgba(90,62,30,${0.08 + rn() * 0.1})`; x.fill(); x.strokeStyle = `rgba(70,45,20,${0.15 + rn() * 0.15})`; x.lineWidth = 1.5 + rn() * 2; x.stroke(); x.restore(); }
+    x.filter = "blur(4px)"; x.fillStyle = `rgba(90,62,30,${0.06 + rn() * 0.08})`; x.fill(); x.filter = "blur(1.5px)"; x.strokeStyle = `rgba(70,45,20,${0.06 + rn() * 0.08})`; x.lineWidth = 1.5 + rn() * 2; x.stroke(); x.filter = "none"; x.restore(); }
   // drips
   for (let i = 0; i < 6 + rn() * 10; i++) { const xx = rn() * S2, y0 = rn() * S2 * 0.6, L = 40 + rn() * 200; const g = x.createLinearGradient(0, y0, 0, y0 + L); g.addColorStop(0, `rgba(50,35,20,${0.12 + rn() * 0.12})`); g.addColorStop(1, "rgba(50,35,20,0)"); x.fillStyle = g; x.fillRect(xx, y0, 1.5 + rn() * 3, L); }
   // smudges and scuffs
@@ -183,7 +184,11 @@ function buildRoom(room) {
   const g = new THREE.Group(); g.name = "room" + room.id;
   const name = PAPER[room.name] ? room.name : "hall";
   const inner = new THREE.Group(); inner.name = "inner"; g.add(inner); // everything that turns over with the house
-  box(RW, RH, 0.05, M["wall_" + name], 0, RH / 2, -RD / 2, inner);
+  // no two rooms alike, as in a real old doll's house: each its own piece of the paper, hung a little crooked, its own lamp
+  let rq = room.id * 48271 % 2147483646 + 7; const rr = () => { rq = (rq * 16807) % 2147483647; return rq / 2147483647; };
+  const wm = M["wall_" + name].clone(); if (wm.map) { wm.map = wm.map.clone(); wm.map.offset.set(rr(), rr()); wm.map.needsUpdate = true; } if (wm.normalMap) { wm.normalMap = wm.normalMap.clone(); wm.normalMap.offset.copy(wm.map ? wm.map.offset : new THREE.Vector2()); }
+  wm.color.multiplyScalar(0.86 + rr() * 0.24); wm.roughness = Math.min(1, wm.roughness * (0.85 + rr() * 0.3));
+  { const bw = box(RW, RH, 0.05, wm, 0, RH / 2, -RD / 2, inner); bw.rotation.y = (rr() - 0.5) * 0.012; bw.rotation.z = (rr() - 0.5) * 0.006; }
   if (!NO_WAINSCOT.has(name)) box(RW, 0.85, 0.06, M.wains, 0, 0.425, -RD / 2 + 0.04, inner);
   box(RW, 0.12, 0.08, M.frame, 0, 0.06 + T / 2, -RD / 2 + 0.07, inner);
   { const ao = new THREE.Mesh(new THREE.PlaneGeometry(RW - T, RH - T), grime(room.id * 17 + 3, false)); ao.position.set(0, RH / 2, -RD / 2 + 0.115); ao.renderOrder = 1; inner.add(ao); }
@@ -199,13 +204,18 @@ function buildRoom(room) {
   }
   // the ceiling lamp: a cord and a bulb (on or off with the room's lights)
   // the ceiling lamp: a cord, a fabric shade and a small bulb (on or off with the room's lights)
-  const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.66), M.cord); cord.position.set(0.35, RH - T / 2 - 0.33, 0); inner.add(cord);
+  const lx = 0.35 + (rr() - 0.5) * 0.5, cl = 0.5 + rr() * 0.32, kind = Math.floor(rr() * 4);
+  const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, cl), M.cord); cord.position.set(lx, RH - T / 2 - cl / 2, 0); inner.add(cord);
   const bulbM = new THREE.MeshStandardMaterial({ color: 0x2a2622, emissive: 0xffc070, emissiveIntensity: 0, roughness: 0.3 });
-  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.04, 16, 12), bulbM); bulb.position.set(0.35, RH - T / 2 - 0.77, 0); inner.add(bulb);
-  const shadeM = M.shade.clone();
-  const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.2, 0.17, 28, 1, true), shadeM); shade.position.set(0.35, RH - T / 2 - 0.74, 0); shade.castShadow = true; inner.add(shade);
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.04, 16, 12), bulbM); bulb.position.set(lx, RH - T / 2 - cl - 0.03, 0); inner.add(bulb);
+  const shadeM = M.shade.clone(); shadeM.color.setHex([0xe8d8b8, 0xc8b88a, 0xd8b0a0, 0xb8c4a8, 0xe0c890][Math.floor(rr() * 5)]);
+  // four kinds of shade: a cone, a drum, a fluted bell (turned), a squat coolie; each a little off true
+  const sg = kind === 0 ? new THREE.CylinderGeometry(0.07, 0.2, 0.17, 28, 1, true) : kind === 1 ? new THREE.CylinderGeometry(0.13, 0.15, 0.16, 28, 1, true)
+    : kind === 2 ? new THREE.LatheGeometry([...Array(9)].map((_, i) => new THREE.Vector2(0.05 + 0.15 * Math.pow(i / 8, 1.6) + 0.008 * Math.sin(i * 2.3), 0.09 - i * 0.022)), 24) : new THREE.CylinderGeometry(0.03, 0.24, 0.1, 28, 1, true);
+  const shade = new THREE.Mesh(sg, shadeM); shade.position.set(lx, RH - T / 2 - cl + 0.02, 0); shade.rotation.set((rr() - 0.5) * 0.08, rr() * 6, (rr() - 0.5) * 0.08); shade.scale.setScalar(0.85 + rr() * 0.3); shade.castShadow = true; inner.add(shade);
   // the shade sends its light down: a pool on the floor and the lower walls, the ceiling left in shadow
-  const lamp = new THREE.SpotLight(0xffc890, 0, 4, 1.3, 0.9, 2); lamp.position.set(0.35, RH - T / 2 - 0.8, 0.1); lamp.target.position.set(0.25, 0, 0.1); inner.add(lamp, lamp.target);
+  const lamp = new THREE.SpotLight([0xffc890, 0xffb878, 0xffd8a8, 0xffa860][Math.floor(rr() * 4)], 0, 4, 1.1 + rr() * 0.3, 0.9, 2); lamp.position.set(lx, RH - T / 2 - cl - 0.06, 0.1); lamp.target.position.set(lx - 0.1 + (rr() - 0.5) * 0.6, 0, 0.1 + (rr() - 0.5) * 0.4); inner.add(lamp, lamp.target);
+  lamp.userData.pw = [0.55, 0.8, 1, 1.15, 1.35][Math.floor(rr() * 5)]; LAMPS.push(lamp); lamp.userData.a = lamp.angle; lamp.userData.c = lamp.color.clone(); lamp.userData.pc = new THREE.Color([0xffb070, 0xffd2a0, 0xff9a50, 0xe8e4ff, 0xffc080, 0xfff0d8][room.id % 6]); // (bulbs of different strengths: the light is uneven across the house)
   // floor and ceiling slabs, and the front posts: the room's own, so it carries its frame when it moves
   // (their hidden faces are bare wood: you see them when the house turns over)
   const pk = room.id % 4;
@@ -253,6 +263,7 @@ function nameplate(name) {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
   const p = new THREE.Mesh(plateGeo(), new THREE.MeshStandardMaterial({ map: t, color: 0xc8b890, metalness: 0.45, roughness: 0.5, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.03 }));
   p.material.envMapIntensity = 2; p.position.set(0, 0.17, RD / 2 + 0.02); p.rotation.z = ((name.length * 5) % 7 - 3) * 0.012; p.castShadow = true;
+  { const h = [...name].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) % 9973, 7); p.scale.set(0.72 + (h % 5) * 0.08, 0.9 + (h % 3) * 0.08, 1); p.position.x = ((h >> 3) % 9 - 4) * 0.09; p.material.color.setHex([0xc8b890, 0xb8a070, 0xa8a090, 0xd0c0a0][h % 4]); p.material.roughness = 0.4 + (h % 7) * 0.06; } // (not a matched set: each plate bought and fixed on at a different time)
   return p;
 }
 // the parts that change with the code: side walls (open doorway, shut door or plain wall), the ladder up and its
@@ -485,7 +496,7 @@ export async function init(layout) {
   hemi = new THREE.HemisphereLight(0xb8b0c0, 0x2a2018, 0.12); scene.add(hemi);
   key = new THREE.SpotLight(0xffe2c0, 1500, 60, 0.85, 1.0, 2); key.position.set(-6.5, 9, 9); key.target.position.set(-1, 5, 0);
   key.castShadow = true; key.shadow.autoUpdate = false; key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.0006; key.shadow.normalBias = 0.04; key.shadow.radius = 6; scene.add(key, key.target);
-  const fill = new THREE.PointLight(0xc8c0d8, 5, 60, 2); fill.position.set(12, 6, 20); scene.add(fill);
+  const fill = new THREE.PointLight(0xc8c0d8, 5, 60, 2); fill.position.set(12, 6, 20); scene.add(fill); scene.userData.fill = fill;
   const table = new THREE.PointLight(0x6a5a50, 6, 14, 1.2); table.position.set(1, 1.2, 8); scene.add(table);
   moon = new THREE.DirectionalLight(0xb8c8ff, 0); moon.position.set(-6, 12, 16); scene.add(moon);
   // your lantern throws its light (and the furniture's shadows) onto the walls of the room you're in
@@ -569,6 +580,7 @@ const wy = (py) => (G.HY + G.H * G.CH - py) * S;
 //   rooms: [{ room, at: [[px, py], ...] (top-left of each copy, in game pixels), lit, lock, page, door: {side, open} | null }],
 //   player: { x, y, dir, walking }, shadow: { x, y, seen, asleep, near, look }, twin: { player: [x,y] | null, shadow: [x,y] | null } }
 export function render(view, w, h) {
+  PHOTO_ON = !!view.photo;
   if (!ready) return null;
   if (w !== size[0] || h !== size[1]) { renderer.setSize(w, h, false); rt.setSize(w, h); post.material.uniforms.res.value.set(w, h); size = [w, h]; }
   const t = view.t, seen = new Set();
@@ -593,7 +605,7 @@ export function render(view, w, h) {
   d.dg.rotation.y += ((open ? -1.2 : 0) - d.dg.rotation.y) * 0.12;
   d.doorGlow.material.opacity = open * (0.55 + 0.15 * Math.sin(t * 3)); porchLight.intensity = 1.2 + open * 2;
   // lightning
-  const f = view.flash || 0; moon.intensity = 9 * f; hemi.intensity = 0.12 * (view.dim || 1) + 3 * f; key.intensity = 520 * (view.dim || 1);
+  const f = view.flash || 0; moon.intensity = 9 * f; hemi.intensity = 0.12 * (view.dim || 1) + 3 * f; key.intensity = 520 * (view.dim || 1) * (view.photo ? 0.9 : 1); key.angle = view.photo ? 0.6 : 0.85; key.target.position.set(view.photo ? 1.0 : -1, view.photo ? 3.8 : 5, 0); // (photo: a narrow desk-lamp cone, its edge falling across the house)
   // shadows are redrawn only when something moved (they're most of the cost of a frame)
   // the desk lamp's big shadow map at once when the rooms move, at most every fourth frame when only a figure moved;
   // the lantern's small one whenever you or it moved
@@ -603,7 +615,9 @@ export function render(view, w, h) {
   else if (figSig !== lastFig) { lantern.shadow.needsUpdate = true; if (frameNo - keyAt >= 4) { key.shadow.needsUpdate = true; keyAt = frameNo; lastFig = figSig; } }
   const PH = !!view.photo, cam = PH ? photoCam : camera, U = post.material.uniforms;
   U.photo.value = PH ? 1 : 0; U.focus.value = PH ? photoCam.userData.focus : camera.userData.D + 1.2; U.vc.value.set(PH ? 0.5 : 0.36, 0.5);
-  scene.userData.props.visible = PH;
+  // the photo: six of the room lamps cast real shadows (chair legs and table edges across the floor). Only there: in play it would cost too much
+  if (PH !== lampShadows) { lampShadows = PH; key.shadow.needsUpdate = true; let n = 0; for (const L of LAMPS) { const on = PH && n++ < 6; L.castShadow = on; if (on) { L.shadow.mapSize.set(512, 512); L.shadow.bias = -0.002; L.shadow.radius = 3; L.shadow.camera.near = 0.05; } } }
+  scene.userData.props.visible = PH; scene.userData.fill.intensity = PH ? 1.2 : 5; scene.environmentIntensity = PH ? 0.07 : 0.2; // (the photo: almost all the light from the lamps, deep shadow between)
   if (PH !== lastPhoto) { key.shadow.needsUpdate = true; lastPhoto = PH; }
   renderer.setRenderTarget(rt); renderer.render(scene, cam); renderer.setRenderTarget(null); sceneInfo = { ...renderer.info.render };
   post.material.uniforms.t.value = t; renderer.render(post.userData.scene, post.userData.cam);
@@ -617,7 +631,7 @@ function place(g, [px, py], rv, t) {
   u.inner.scale.y = rv.flipped ? -1 : 1; u.inner.position.y = rv.flipped ? RH : 0;
   const lit = rv.lit;
   u.bulbM.emissiveIntensity = 3 * lit; u.bulbM.color.setHex(lit > 0.5 ? 0xffe0a0 : 0x2a2622); u.shadeM.emissiveIntensity = 3 * lit;
-  if (u.lamp) u.lamp.intensity = 16 * lit;
+  if (u.lamp) { const L = u.lamp; L.intensity = (PHOTO_ON ? 60 : 16) * lit * (L.userData.pw || 1); L.angle = PHOTO_ON ? 0.72 : L.userData.a; L.penumbra = PHOTO_ON ? 1 : 0.9; L.color.copy(PHOTO_ON ? L.userData.pc : L.userData.c); } // (photo: a tight pool under each shade, dark upper corners, each bulb its own colour)
   if (u.fire) u.fire.intensity = 2.2 + 0.6 * Math.sin(t * 9) * Math.sin(t * 3.7);
   if (u.trims) for (const s of ["l", "r"]) if (u.trims[s]) {
     const on = rv.door && rv.door.side === s ? 0.55 + 0.45 * Math.sin(t * 8) : 0;
