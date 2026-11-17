@@ -105,7 +105,7 @@ import hashlib
 for o in sc.objects:
     if o.type == 'LIGHT' and o.data.type in ('POINT', 'SPOT') and abs(o.matrix_world.translation.x) < 7 and -2 < o.matrix_world.translation.z < 11:
         h = int(hashlib.md5(('%.1f%.1f' % (o.matrix_world.translation.x, o.matrix_world.translation.z)).encode()).hexdigest(), 16)
-        o.data.energy *= float(os.environ['EVEN']) if os.environ.get('EVEN') else [0.08, 0.3, 0.6, 1, 1.6, 2.6, 0, 0.45][h % 8]  # EVEN=k: every room lit the same, for play
+        o.data.energy *= float(os.environ['EVEN']) if os.environ.get('EVEN') else [float(x) for x in os.environ.get('MOOD', '0.08,0.3,0.6,1,1.6,2.6,0,0.45').split(',')][h % 8]  # EVEN=k: every room lit the same, for play
 sc.render.engine = 'CYCLES'; sc.cycles.device = 'CPU'; sc.cycles.samples = S; sc.cycles.use_denoising = DN
 sc.cycles.max_bounces = 6; sc.render.resolution_x = W; sc.render.resolution_y = H; sc.render.resolution_percentage = 100
 sc.view_settings.view_transform = 'AgX'; sc.view_settings.look = 'AgX - Medium High Contrast'; sc.view_settings.exposure = 0
