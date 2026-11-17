@@ -57,7 +57,8 @@ function materials() {
   M.slab = mat("Planks021", [2, 1], 0x5a4030, 0.8);
   M.door = mat("Wood049", [1, 2], 0x6a7888, 0.6);
   M.wains = mat("Planks021", [2, 0.5], 0x6a4a36, 0.7);
-  M.ladder = mat("Wood049", [0.3, 2], 0x8a6a4a, 0.7);
+  M.ladder = mat("Wood049", [0.3, 2], 0xb08a62, 0.7);
+  M.hatch = mat("Wood049", [1, 0.3], 0xd8c09a, 0.7);
   M.brick = mat("Bricks074", [6, 0.6], 0x7a6458, 0.95);
   M.porch = mat("Planks037A", [0.5, 1], 0x4a3a40, 0.85);
   M.rug = mat("Fabric030", [2, 2], 0x7a2a2a, 1);
@@ -264,7 +265,14 @@ function buildVary(g, room, v) {
     box(0.62, T / 2 + 0.01, 0.6, M.hole, LADDER_X, RH - T / 4, lz, vary);
     if (!v.upJoined) boards(vary, RH - T / 2 - 0.03);
   }
-  if (room.down) { box(0.62, T / 2 + 0.01, 0.6, M.hole, LADDER_X, T / 4, -0.25, vary); if (!v.downJoined) boards(vary, T / 2 + 0.02); }
+  if (room.down) { // a hatch in the floor: dark hole, a pale wooden frame round it, and the top of the ladder poking up
+    box(0.62, T / 2 + 0.01, 0.6, M.hole, LADDER_X, T / 4, -0.25, vary);
+    for (const [w, d, x, z] of [[0.76, 0.07, 0, -0.335], [0.76, 0.07, 0, 0.335], [0.07, 0.6, -0.345, 0], [0.07, 0.6, 0.345, 0]]) box(w, 0.035, d, M.hatch, LADDER_X + x, T / 2 + 0.017, -0.25 + z, vary);
+    if (v.downJoined) {
+      for (const k of [-1, 1]) box(0.07, 0.75, 0.06, M.ladder, LADDER_X + k * 0.22, T / 2 + 0.375 - 0.2, -0.25, vary);
+      for (const hh of [0.12, 0.42]) { const rg = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.44, 10), M.ladder); rg.rotation.z = Math.PI / 2; rg.position.set(LADDER_X, T / 2 + hh, -0.25); rg.castShadow = true; vary.add(rg); }
+    } else boards(vary, T / 2 + 0.02);
+  }
   if (v.lock) vary.add(padlock(v.unlocked));
   if (v.page) vary.add(tornPage());
 }
@@ -277,7 +285,7 @@ function padlock(open) {
   const badge = new THREE.Mesh(new THREE.CircleGeometry(0.055, 20), new THREE.MeshStandardMaterial({ color: open ? 0x2f8a3a : 0xb3261e, emissive: open ? 0x2f8a3a : 0xb3261e, emissiveIntensity: 0.6, roughness: 0.3 }));
   badge.position.set(0, 0, 0.041); g.add(badge);
   const sh = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.018, 8, 20, Math.PI), M.brass); sh.position.set(open ? -0.03 : 0, 0.1 + (open ? 0.06 : 0), 0); sh.rotation.y = open ? 0.6 : 0; g.add(sh);
-  g.position.set(0.5, 1.6, -RD / 2 + 0.1); g.scale.setScalar(1.6); body.castShadow = true;
+  g.position.set(0.5, 1.15, -RD / 2 + 0.1); g.scale.setScalar(1.6); // low enough to see from above body.castShadow = true;
   return g;
 }
 function tornPage() {
@@ -291,8 +299,15 @@ function tornPage() {
 }
 
 // ---------- the two figures ----------
+// a soft dark patch on the floor under a figure, so it stands on the boards instead of floating
+function contact(r, a) {
+  const c = document.createElement("canvas"); c.width = c.height = 64; const x = c.getContext("2d"); const gr = x.createRadialGradient(32, 32, 2, 32, 32, 31);
+  gr.addColorStop(0, "rgba(0,0,0,1)"); gr.addColorStop(0.45, "rgba(0,0,0,0.6)"); gr.addColorStop(1, "rgba(0,0,0,0)"); x.fillStyle = gr; x.fillRect(0, 0, 64, 64);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(r * 2, r * 2), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, opacity: a, depthWrite: false, toneMapped: false }));
+  m.rotation.x = -Math.PI / 2; m.position.y = 0.006; m.renderOrder = 3; m.userData.op = a; return m;
+}
 function pegDoll() {
-  const g = new THREE.Group();
+  const g = new THREE.Group(); g.add(contact(0.32, 0.75));
   const prof = [[0, 0], [0.17, 0], [0.19, 0.05], [0.16, 0.45], [0.11, 0.6], [0.09, 0.66], [0.105, 0.7], [0, 0.7]].map(([a, b]) => new THREE.Vector2(a, b));
   // painted wood, like a real peg doll: blue paint over the grain, worn at the edges
   let bodyM = new THREE.MeshStandardMaterial({ map: tex("Fabric030", "Color", [2, 2]), color: 0x6e8c96, roughness: 0.9 });
@@ -322,7 +337,7 @@ function pegDoll() {
   return g;
 }
 function hooded() {
-  const g = new THREE.Group(), prof = [];
+  const g = new THREE.Group(), prof = []; const blob = contact(0.42, 0.8); g.add(blob);
   for (let i = 0; i <= 24; i++) { const t = i / 24, h = t * 1.6; const r = t < 0.08 ? 0.2 + 0.25 * t : t < 0.7 ? 0.22 - 0.07 * (t - 0.08) / 0.62 : t < 0.86 ? 0.15 - 0.02 * (t - 0.7) / 0.16 : Math.max(0.001, 0.13 * Math.cos((t - 0.86) / 0.14 * Math.PI / 2)); prof.push(new THREE.Vector2(r, h)); }
   const geo = new THREE.LatheGeometry(prof, 40), pa = geo.attributes.position;
   for (let i = 0; i < pa.count; i++) { const vx = pa.getX(i), vy = pa.getY(i), vz = pa.getZ(i), ang = Math.atan2(vz, vx); if (vy < 0.35) { const k = (0.35 - vy) / 0.35, w = 1 + k * (0.35 * Math.sin(ang * 5 + 1) + 0.2 * Math.sin(ang * 11)); pa.setXYZ(i, vx * w, vy + k * 0.06 * Math.sin(ang * 7), vz * w); } }
@@ -333,7 +348,7 @@ function hooded() {
   for (const [sc, op] of [[1.08, 0.4], [1.2, 0.18], [1.36, 0.07]]) { const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: op, depthWrite: false })); m.scale.set(sc, 1 + (sc - 1) * 0.4, sc); m.position.y = -(sc - 1) * 0.1; m.userData.op = op; g.add(m); smokes.push(m); }
   const eyeM = new THREE.MeshBasicMaterial({ color: 0xff3a22, transparent: true });
   const eyes = [-1, 1].map((sd) => { const e = new THREE.Mesh(new THREE.SphereGeometry(0.016, 8, 8), eyeM); e.position.set(sd * 0.045, 1.42, 0.12); g.add(e); return e; });
-  g.userData = { coreM, smokes, eyes, eyeM };
+  g.userData = { coreM, smokes, eyes, eyeM, blob };
   return g;
 }
 
@@ -407,10 +422,11 @@ export async function init(layout) {
     const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromEquirectangular(hdr).texture; hdr.dispose(); pm.dispose();
     scene.environmentIntensity = 0.45; scene.environmentRotation = new THREE.Euler(0, 1.2, 0); } catch { /* lit by the lamps alone */ }
   materials();
-  // camera: a little right of the house and a little below its middle, close in with a wide lens like the still. The
+  // camera: a little right of the house and level with its roof, looking down into every room (so floors, hatches and
+  // ladders all read), close in with a wide lens like the still. The
   // lens is shifted (an off-centre frustum) so the house's front face still lands exactly on the game's house box,
   // while you see into each room in depth: side walls, ceilings, the floor running back.
-  const HWd = RW * G.W, HHd = RH * G.H, D = 12.5, C = [5.2, HHd / 2 - 1.3], n = 0.3, far = 120;
+  const HWd = RW * G.W, HHd = RH * G.H, D = 13, C = [3.6, HHd + 0.5], n = 0.3, far = 120;
   camera = new THREE.PerspectiveCamera(45, G.VW / G.VH, n, far);
   camera.position.set(C[0], C[1], RD / 2 + D);
   { const k = n / D; camera.projectionMatrix.makePerspective((wx(0) - C[0]) * k, (wx(G.VW) - C[0]) * k, (wy(0) - C[1]) * k, (wy(G.VH) - C[1]) * k, n, far);
@@ -560,11 +576,12 @@ function figure(f, p, isPlayer, t) {
   f.visible = true;
   const walking = p.walking, bob = walking ? Math.abs(Math.sin(t * 16)) * 0.04 : 0;
   f.position.set(wx(p.x), wy(p.y) + T / 2 + bob, isPlayer ? 0.35 : 0.1);
+  f.children[0].position.y = 0.006 - bob / f.scale.y; // the floor patch stays on the floor while you bob
   const face = p.climb ? Math.PI : p.dir ? (p.dir > 0 ? Math.PI / 2 : -Math.PI / 2) * 0.8 : 0;
   f.rotation.y += (face - f.rotation.y) * 0.2; f.rotation.z = walking && !p.climb ? Math.sin(t * 16) * 0.06 : 0;
   if (!isPlayer) {
     const u = f.userData, a = p.seen;
-    u.coreM.opacity = a * (p.asleep ? 0.8 : 1); for (const m of u.smokes) m.material.opacity = m.userData.op * a * (1 + 0.3 * Math.sin(t * 2 + m.userData.op * 20));
+    u.coreM.opacity = a * (p.asleep ? 0.8 : 1); u.blob.material.opacity = 0.8 * a; for (const m of u.smokes) m.material.opacity = m.userData.op * a * (1 + 0.3 * Math.sin(t * 2 + m.userData.op * 20));
     f.scale.set(1, 1 + 0.02 * Math.sin(t * 1.4), 1);
     const blink = Math.sin(t * 0.9 + p.x * 0.01) > 0.97;
     u.eyeM.opacity = p.asleep ? 0.2 * (1 - a) : blink ? 0 : 1; for (const e of u.eyes) e.scale.setScalar(p.near <= 1 ? 1.4 : 1);
