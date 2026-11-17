@@ -80,3 +80,8 @@ They were shrunk for the web (textures to 512 px, meshes simplified) with glTF-T
 
 ## Code
 - three.js r170 (MIT, vendor/THREE_LICENSE): https://threejs.org
+
+## Photo-scanned surfaces (Poly Haven, CC0)
+
+painted_plaster_wall, plastered_wall_02, beige_wall_001, peeling_painted_wall, old_wooden_floor_01, wood_floor_worn,
+herringbone_parquet, dark_wooden_planks, linoleum_brown (https://polyhaven.com, CC0). Saved in assets/tex/ph_*.

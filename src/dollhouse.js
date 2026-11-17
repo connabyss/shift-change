@@ -44,10 +44,10 @@ function mat(id, rep, tint = 0xffffff, rough = 0.9, noRough = false) {
 // each room's name asks for its own walls: wallpaper id, tint, repeat
 // (soft painted pastels, like the photo still: wallpapers lightly tinted, the side walls a neighbouring pastel)
 const PAPER = {
-  attic: ["Bricks074", 0xa89080, [2, 2], 0xc8b8a0], nursery: ["Wallpaper001A", 0xf0c8c0, [1.5, 1.5], 0xe0c0c8], study: ["Wallpaper002A", 0xf0c0b4, [1.5, 1.5], 0xe8b0b0],
-  chapel: ["ph_painted_plaster_wall", 0xe8b8c0, [1, 1], 0xd8b0c8], parlour: ["Wallpaper002B", 0xf0a8a8, [1.5, 1.5], 0xe0a0b0], library: ["Wallpaper002C", 0xa8a8d8, [1.5, 1.5], 0x9aa0c8],
-  gallery: ["Wallpaper001C", 0xf0b8b0, [1.5, 1.5], 0xe0b0b8], bath: ["ph_plastered_wall_02", 0xc0d8d8, [1, 1], 0xb0c8d0], kitchen: ["ph_painted_plaster_wall", 0xe8e0cc, [1, 1], 0xb8c4cc],
-  pantry: ["Wallpaper001B", 0xfae8c8, [1.5, 1.5], 0xf0dcc0], cellar: ["Bricks074", 0xc8a898, [2, 2], 0xb89888], hall: ["Wallpaper001A", 0xb8d0e8, [1.5, 1.5], 0xa8c0d8],
+  attic: ["Bricks074", 0xa89080, [2, 2], 0xc8b8a0], nursery: ["Wallpaper001A", 0xf0c8c0, [1, 1], 0xe0c0c8], study: ["Wallpaper002A", 0xf0c0b4, [1, 1], 0xe8b0b0],
+  chapel: ["ph_painted_plaster_wall", 0xe8b8c0, [1, 1], 0xd8b0c8], parlour: ["Wallpaper002B", 0xf0a8a8, [1, 1], 0xe0a0b0], library: ["Wallpaper002C", 0xa8a8d8, [1, 1], 0x9aa0c8],
+  gallery: ["Wallpaper001C", 0xf0b8b0, [1, 1], 0xe0b0b8], bath: ["ph_plastered_wall_02", 0xc0d8d8, [1, 1], 0xb0c8d0], kitchen: ["ph_painted_plaster_wall", 0xe8e0cc, [1, 1], 0xb8c4cc],
+  pantry: ["Wallpaper001B", 0xfae8c8, [1, 1], 0xf0dcc0], cellar: ["Bricks074", 0xc8a898, [2, 2], 0xb89888], hall: ["Wallpaper001A", 0xb8d0e8, [1, 1], 0xa8c0d8],
 };
 const NO_WAINSCOT = new Set(["cellar", "attic", "kitchen", "bath"]);
 function materials() {
@@ -71,8 +71,9 @@ function materials() {
   M.back = new THREE.MeshStandardMaterial({ color: 0x050507, roughness: 1 });
   M.brass = new THREE.MeshStandardMaterial({ color: 0xc8a050, metalness: 1, roughness: 0.35 });
   M.cord = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
-  for (const [name, [id, tint, rep, side]] of Object.entries(PAPER)) { M["wall_" + name] = mat(id, rep, tint, 0.9); M["side_" + name] = /^Bricks/.test(id) ? mat(id, [rep[0] * 0.8, rep[1]], side, 0.9) : mat(name.length % 2 ? "ph_painted_plaster_wall" : "ph_plastered_wall_02", [0.9, 1], new THREE.Color(side).multiplyScalar(1.15).getHex(), 1); } // side walls: photo-scanned painted plaster (Poly Haven), tinted
-  for (const k of Object.keys(M)) if (/^(wall|side)_/.test(k)) M[k].normalScale.set(2.2, 2.2); // (old paper over lumpy plaster: the surface catches the light)
+  for (const [name, [id, tint, rep, side]] of Object.entries(PAPER)) { M["wall_" + name] = mat(id, rep, tint, 0.9); M["floor_" + name] = (() => { const f = { attic: "ph_dark_wooden_planks", cellar: "ph_dark_wooden_planks", parlour: "ph_herringbone_parquet", library: "ph_herringbone_parquet", study: "ph_herringbone_parquet", kitchen: "ph_linoleum_brown", bath: "ph_linoleum_brown", pantry: "ph_wood_floor_worn", chapel: "ph_wood_floor_worn" }[name] || "ph_old_wooden_floor_01"; const m = mat(f, [1.3, 1.05], 0xd8ccc0, 0.85); m.normalScale.set(1.6, 1.6); return m; })(); M["side_" + name] = /^Bricks/.test(id) ? mat(id, [rep[0] * 0.8, rep[1]], side, 0.9) : mat(name.length % 2 ? "ph_painted_plaster_wall" : "ph_plastered_wall_02", [0.9, 1], new THREE.Color(side).multiplyScalar(1.15).getHex(), 1); } // side walls: photo-scanned painted plaster (Poly Haven), tinted
+  for (const k of Object.keys(M)) if (/^(wall|side)_/.test(k)) M[k].normalScale.set(2.2, 2.2);
+  for (const k of Object.keys(M)) if (/^(wall|side|floor)_/.test(k) || ['ceil', 'slab', 'wains', 'floor'].includes(k)) M[k].envMapIntensity = 0.25; // (inside the rooms the room's daylight barely reaches: the lamps do the work, so no two rooms look alike) // (old paper over lumpy plaster: the surface catches the light)
   M.shade = new THREE.MeshStandardMaterial({ map: tex("Fabric030", "Color", [2, 1]), normalMap: tex("Fabric030", "NormalGL", [2, 1]), color: 0xe8d8b8, roughness: 0.95, side: THREE.DoubleSide, emissive: 0xffb060, emissiveIntensity: 0 });
   M.shade.emissiveMap = M.shade.map;
   // the cut front edges are raw birch plywood, like a real kit doll's house (two sets: the rooms' posts are clipped
@@ -239,14 +240,30 @@ function buildRoom(room) {
   // floor and ceiling slabs, and the front posts: the room's own, so it carries its frame when it moves
   // (their hidden faces are bare wood: you see them when the house turns over)
   const pk = room.id % 4;
-  rbox(RW, T / 2, RD, [M.slab, M.slab, M.floor, M.slab, M.plyH[pk], M.slab], 0, T / 4, 0, g);
+  rbox(RW, T / 2, RD, [M.slab, M.slab, M["floor_" + name] || M.floor, M.slab, M.plyH[pk], M.slab], 0, T / 4, 0, g);
   rbox(RW, T / 2, RD, [M.slab, M.slab, M.slab, M.ceil, M.plyH[(pk + 1) % 4], M.slab], 0, RH - T / 4, 0, g);
   for (const sd of [-1, 1]) { const po = rbox(0.14, RH, 0.14, M.plyV[(pk + (sd > 0 ? 2 : 3)) % 4], sd * (RW / 2 - 0.07), RH / 2, RD / 2 + 0.06, g); const k = room.id * 13.7 + sd * 7.1; po.position.z += Math.cos(k * 1.3) * 0.01; po.rotation.z = Math.sin(k * 2.1) * 0.004; }
   g.add(nameplate(room.name));
   // corner shade on the side walls too: darker toward the back corner and along the floor
   for (const sd of [-1, 1]) { const ao = new THREE.Mesh(new THREE.PlaneGeometry(RD - 0.02, RH - T), M.aoSide[(room.id * 2 + (sd > 0 ? 1 : 0)) % 6]); ao.rotation.y = sd < 0 ? Math.PI / 2 : -Math.PI / 2; if (sd > 0) ao.scale.x = -1; ao.position.set(sd * (RW / 2 - T / 2 - 0.006), RH / 2, 0); ao.renderOrder = 1; g.add(ao); }
   const vary = new THREE.Group(); vary.name = "vary"; g.add(vary);
-  PARTS.set(g, { inner, vary, bulbM, shadeM, lamp, fire: inner.userData.fire || null, trims: {} }); inner.userData = {};
+  // the photo shot: each room lit its own way, not one lamp recipe. 0 the ceiling shade, 1 a table lamp, 2 a window, 3 a candle,
+  // 4 a bare bulb, 5 no light of its own, only what spills in through the door from next door
+  const rigT = room.id % 6, rig = new THREE.Group(); rig.visible = false; inner.add(rig); let flame = null;
+  if (rigT === 1) { const tx = -0.95, ty = 0.92, tz = -0.7; const sm = M.shade.clone(); sm.color.setHex(0xd8c090); sm.emissiveIntensity = 2.5;
+    const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.13, 0.15, 24, 1, true), sm); sh.position.set(tx, ty, tz); rig.add(sh);
+    const st = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, ty), M.brass); st.position.set(tx, ty / 2, tz); rig.add(st);
+    const bs = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.03, 20), M.brass); bs.position.set(tx, 0.1, tz); rig.add(bs);
+    const pl = new THREE.PointLight(0xffb468, 4.5, 2.4, 2); pl.position.set(tx, ty - 0.02, tz + 0.05); rig.add(pl); }
+  if (rigT === 2) { const wx = 0.55, wy = 1.45, wz = -RD / 2 + 0.06; const sky = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.8), new THREE.MeshBasicMaterial({ color: 0xc8d8f0 })); sky.position.set(wx, wy, wz); rig.add(sky);
+    const fm = mat("Wood049", [0.3, 0.3], 0x5a4a3a, 0.7); for (const [w, h, x, y] of [[0.72, 0.06, 0, 0.43], [0.72, 0.07, 0, -0.43], [0.06, 0.92, -0.34, 0], [0.06, 0.92, 0.34, 0], [0.025, 0.8, 0, 0], [0.62, 0.025, 0, 0.05]]) box(w, h, 0.05, fm, wx + x, wy + y, wz + 0.02, rig);
+    const sp = new THREE.SpotLight(0xc8daff, 22, 0, 0.75, 1, 2); sp.position.set(wx, wy + 0.1, wz + 0.15); sp.target.position.set(wx - 0.4, 0, 0.7); rig.add(sp, sp.target); }
+  if (rigT === 3) { const cx = -0.75, cz = 0.55; const cd = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.034, 0.2, 14), new THREE.MeshStandardMaterial({ color: 0xe8e0cc, roughness: 0.6 })); cd.position.set(cx, T / 2 + 0.1, cz); rig.add(cd);
+    flame = new THREE.Mesh(new THREE.SphereGeometry(0.018, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffd890 })); flame.scale.set(1, 2, 1); flame.position.set(cx, T / 2 + 0.24, cz); rig.add(flame);
+    const pl = new THREE.PointLight(0xff9a48, 1.6, 1.8, 2); pl.position.set(cx, T / 2 + 0.3, cz); rig.add(pl); flame.userData.light = pl; }
+  if (rigT === 4) { const pl = new THREE.PointLight(0xfff0d8, 5, 3, 2); pl.position.set(lx, RH - T / 2 - cl - 0.03, 0); rig.add(pl); }
+  if (rigT === 5) { const sd = room.id % 12 < 6 ? -1 : 1, pl = new THREE.PointLight(0xffb070, 2.2, 1.5, 2); pl.position.set(sd * (RW / 2 - 0.25), 0.7, (DOOR_Z0 + DOOR_Z1) / 2); rig.add(pl); }
+  PARTS.set(g, { inner, vary, bulbM, shadeM, shade, lamp, rig, rigT, flame, fire: inner.userData.fire || null, trims: {} }); inner.userData = {};
   return g;
 }
 function fireplace(parent) {
@@ -667,6 +684,9 @@ function place(g, [px, py], rv, t) {
   const md = PHOTO_ON && u.lamp ? u.lamp.userData.mood : 1, bl = lit * Math.min(1, md * 1.4);
   u.bulbM.emissiveIntensity = 3 * bl; u.bulbM.color.setHex(bl > 0.3 ? 0xffe0a0 : 0x2a2622); u.shadeM.emissiveIntensity = 3 * bl;
   if (u.lamp) { const L = u.lamp; L.intensity = (PHOTO_ON ? 34 * md : 16) * lit * (L.userData.pw || 1); L.angle = PHOTO_ON ? 1.45 : L.userData.a; L.penumbra = PHOTO_ON ? 0.6 : 0.9; L.decay = 2; L.distance = PHOTO_ON ? 0 : 4; L.color.copy(PHOTO_ON ? L.userData.pc : L.userData.c); if (PHOTO_ON && L.userData.cold) { L.color.setHex(0x8aa8ff); L.intensity = 14 * lit; L.angle = 0.9; } } // (photo: a tight pool under each shade, dark upper corners, each bulb its own colour)
+  if (u.rig) { u.rig.visible = PHOTO_ON && lit > 0.3; u.shade.visible = !(PHOTO_ON && u.rigT === 4);
+    if (PHOTO_ON && u.rigT) { if (u.lamp) u.lamp.intensity = 0; u.shadeM.emissiveIntensity = 0; u.bulbM.emissiveIntensity = u.rigT === 4 ? 8 * lit : 0; u.bulbM.color.setHex(u.rigT === 4 ? 0xfff4e0 : 0x2a2622); }
+    if (u.flame) { const k = 0.85 + 0.15 * Math.sin(t * 13) * Math.sin(t * 7.7); u.flame.userData.light.intensity = 1.6 * k; u.flame.scale.y = 2 * k; } }
   if (u.fire) u.fire.intensity = 2.2 + 0.6 * Math.sin(t * 9) * Math.sin(t * 3.7);
   if (u.trims) for (const s of ["l", "r"]) if (u.trims[s]) {
     const on = rv.door && rv.door.side === s ? 0.55 + 0.45 * Math.sin(t * 8) : 0;
