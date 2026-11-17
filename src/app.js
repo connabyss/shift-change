@@ -7,6 +7,7 @@ import * as art from "./art.js";
 import * as tear from "./tear.js";
 import * as desk from "./desk.js";
 import { LOOK, woodFrame, beam, paper, pencil } from "./look.js";
+import * as dh from "./dollhouse.js";
 
 
 // ---------- layout ----------
@@ -14,6 +15,11 @@ const VW = 960, VH = 600, DPR = 2;
 const CW = 150, CH = 146, HX = 44, HY = 74, HW = W * CW, HH = H * CH;
 const HCX = HX + HW / 2, HCY = HY + HH / 2, PX = 664, PW = 278;
 const cv = document.getElementById("game"), ctx = cv.getContext("2d");
+// The house is a real 3D doll's house (src/dollhouse.js) once its models load; until then, or with ?flat=1, or where
+// WebGL isn't there, it's drawn flat like before.
+const FLAT = /[?&]flat=1/.test(location.search);
+if (!FLAT) dh.init({ VW: 960, VH: 600, HX, HY, CW, CH, W, H }).catch((e) => console.warn("3D house unavailable:", e));
+const in3d = () => !FLAT && dh.isReady();
 cv.width = VW * DPR; cv.height = VH * DPR;
 const MONO = LOOK.mono, SERIF = '"IM Fell English", Georgia, serif', TITLE = LOOK.title;
 let INK = "#d6ccb6", DIM = "rgba(214,204,182,0.45)", YEL = "#ffd36a", RED = "#ff5a4e", GRN = "#8fe39a";
@@ -689,8 +695,9 @@ function drawHouse() {
   ctx.fillStyle = YEL; ctx.fillText(t, HCX, HY - 14); ctx.restore();
 }
 function drawHouseNow() {
-  art.roof(ctx, { x: HX, y: HY, w: HW, h: HH }, st.t, HX + HW + 8);
-  if (st.scene !== "end") { ctx.save(); ctx.fillStyle = `rgba(2,5,16,${0.8 - 0.5 * flash()})`; ctx.beginPath(); ctx.moveTo(HX - 22, HY); ctx.lineTo(HCX, HY - 62); ctx.lineTo(HX + HW + 22, HY); ctx.closePath(); ctx.fill();
+  const D3 = in3d() && draw3d();
+  if (!D3) art.roof(ctx, { x: HX, y: HY, w: HW, h: HH }, st.t, HX + HW + 8);
+  if (!D3 && st.scene !== "end") { ctx.save(); ctx.fillStyle = `rgba(2,5,16,${0.8 - 0.5 * flash()})`; ctx.beginPath(); ctx.moveTo(HX - 22, HY); ctx.lineTo(HCX, HY - 62); ctx.lineTo(HX + HW + 22, HY); ctx.closePath(); ctx.fill();
     ctx.fillRect(HX + HW * 0.72 - 4, HY - 64, 32, 64); ctx.restore(); }
   ctx.save(); ctx.beginPath(); ctx.rect(HX, HY, HW, HH); ctx.clip();
   const pv = st.preview;
@@ -698,13 +705,13 @@ function drawHouseNow() {
   let sy = 1;
   if (st.anim && st.anim.kind === "flip") sy = -Math.cos(Math.PI * ease(st.anim.t));
   else if (pv && pv.band && pv.band.kind === "flip") sy = 1 - 0.08 * (0.5 + 0.5 * Math.sin(st.t * 6));
-  if (sy !== 1) { ctx.translate(0, HCY); ctx.scale(1, sy); ctx.translate(0, -HCY); }
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+  if (sy !== 1 && !D3) { ctx.translate(0, HCY); ctx.scale(1, sy); ctx.translate(0, -HCY); }
+  if (!D3) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const room = st.g[y][x], o = {};
     if (pv && pv.roomId === room.id) { if (pv.door) o.door = pv.door; if (pv.light) o.lightPreview = 0.5 + 0.5 * Math.sin(st.t * 5); }
     for (const [cx, cy] of drawPositions({ x, y })) drawRoom(room, cx, cy, o);
   }
-  lampLight();
+  if (!D3) lampLight();
   // reach outlines
   // rooms you could walk to after the word: dashed. A lock in reach gets a solid double frame and a tag, so it
   // reads without telling red from green (about 1 in 12 men can't)
@@ -742,7 +749,7 @@ function drawHouseNow() {
   }
   // figures
   const freed = st.scene === "end" && st.ending === "free";
-  for (const [w, draw] of freed ? [] : [[st.shadow, drawShadow], [st.player, drawPlayer]]) {
+  for (const [w, draw] of freed || D3 ? [] : [[st.shadow, drawShadow], [st.player, drawPlayer]]) {
     const p = walkerPos(w); draw(p[0], p[1]);
     const a = find(st.g, w.id), pos = drawPositions(a);
     if (pos.length > 1 && !w.way) { const d = [pos[1][0] - pos[0][0], pos[1][1] - pos[0][1]]; draw(p[0] + d[0], p[1] + d[1]); }
@@ -752,9 +759,12 @@ function drawHouseNow() {
   if (pv && pv.band && (pv.band.kind === "row" || pv.band.kind === "col")) chalkArrow(pv.band, YEL);
   ctx.restore();
   // beams between rooms
-  drawLookFrame();
+  drawLookFrame(D3);
   // front door, in the house's frame (bottom left)
   const fx = HX - 30, fy = HY + HH - 64, hov = st.hover && st.hover.type === "door";
+  if (D3) { // the door itself is in the 3D porch; under the pointer it gets a frame
+    if (hov) { ctx.strokeStyle = st.unlocked ? "#fff" : RED; ctx.lineWidth = 1.5; ctx.strokeRect(fx - 3, fy - 3, 32, 66); }
+  } else {
   ctx.fillStyle = "#1c1820"; ctx.fillRect(fx - 4, fy - 4, 34, 68);
   if (st.unlocked) {
     const g = ctx.createLinearGradient(fx, 0, fx + 26, 0); g.addColorStop(0, "rgba(220,230,255,0.9)"); g.addColorStop(1, "rgba(150,170,210,0.4)");
@@ -764,15 +774,67 @@ function drawHouseNow() {
     ctx.fillStyle = "#3a1e1a"; ctx.fillRect(fx, fy, 26, 60); ctx.fillStyle = "#b08a40"; ctx.fillRect(fx + 19, fy + 32, 3, 3);
     ctx.strokeStyle = hov ? RED : "rgba(255,90,78,0.4)"; ctx.lineWidth = 1.5; ctx.strokeRect(fx, fy, 26, 60);
   }
+  }
   ctx.font = `13px ${TITLE}`; ctx.fillStyle = st.unlocked ? "#cfe0ff" : "rgba(255,120,104,0.85)"; ctx.textAlign = "center";
   ctx.fillText("front", fx + 13, fy - 18); ctx.fillText("door", fx + 13, fy - 7); ctx.textAlign = "left";
 }
 
+// ---------- the 3D house ----------
+// Tells src/dollhouse.js what to show this frame (the same things the flat drawing reads) and draws its picture
+// into the canvas. Returns false if it couldn't, so the flat house draws instead.
+function roomLit(room, o) {
+  let lit = room.lights ? 1 : 0;
+  if (o.lightPreview) lit = lerp(lit, 1 - lit, o.lightPreview);
+  if (st.finale && st.scene === "play") lit = room.id === st.player.id || (st.finalePath && st.finalePath.includes(room.id)) ? 1 : 0;
+  if (st.blackout > 0) lit *= st.blackout > 0.4 ? 0.1 : lerp(1, 0.1, st.blackout / 0.4);
+  return lit;
+}
+function walkerInfo(w) {
+  const [x, y] = walkerPos(w); let dir = 0, climb = false;
+  if (w.way) { const a = w.way.pts[w.way.seg], b = w.way.pts[w.way.seg + 1]; const pa = screenPos(a.id, a.fx), pb = screenPos(b.id, b.fx); dir = Math.sign(pb[0] - pa[0]); climb = !!(a.v && b.v && a.id !== b.id); }
+  return { x, y, dir, climb, walking: !!w.way };
+}
+function twinAt(w) {
+  const a = find(st.g, w.id); if (!a || w.way) return null; const pos = drawPositions(a); if (pos.length < 2) return null;
+  const p = walkerPos(w); return [p[0] + pos[1][0] - pos[0][0], p[1] + pos[1][1] - pos[0][1]];
+}
+function draw3d() {
+  const pv = st.preview, rooms = [];
+  // the flip tumbles the house end over end: the first half shows the house as it was, the second as it is now
+  let flip = null, before = false;
+  if (st.anim && st.anim.kind === "flip") { const a = Math.PI * ease(st.anim.t); before = a < Math.PI / 2; flip = before ? a : a - Math.PI; }
+  else if (pv && pv.band && pv.band.kind === "flip") flip = 0.05 * (0.5 + 0.5 * Math.sin(st.t * 6));
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const src = before ? st.g[H - 1 - y][x] : st.g[y][x], o = {};
+    const room = before ? { ...src, up: src.down, down: src.up } : src;
+    if (pv && pv.roomId === room.id) { if (pv.door) o.door = pv.door; if (pv.light) o.lightPreview = 0.5 + 0.5 * Math.sin(st.t * 5); }
+    const ry = before ? H - 1 - y : y, above = y > 0 ? (before ? st.g[H - y][x] : st.g[y - 1][x]) : null, below = y + 1 < H ? (before ? st.g[H - 2 - y][x] : st.g[y + 1][x]) : null;
+    rooms.push({ room, at: drawPositions({ x, y: before ? y : ry }), lit: roomLit(room, o), door: o.door || null, flipped: before ? !st.flipped : st.flipped,
+      lock: room.lines.some((l) => l.kind === "lock"), unlocked: st.unlocked, page: st.page.id === room.id && !st.page.got,
+      upJoined: !!(room.up && above && (before ? above.up : above.down)), downJoined: !!(room.down && below && (before ? below.down : below.up)) });
+  }
+  const freed = st.scene === "end" && st.ending === "free", pl = walkerInfo(st.player), sh = walkerInfo(st.shadow);
+  const seen = st.scene === "end" ? 1 : Math.max(clamp(1.5 - Math.hypot(pl.x - sh.x, pl.y - sh.y) / 110, 0, 1), flash() * 0.9);
+  const view = {
+    t: st.t, flash: flash(), flip, dim: st.scene === "title" ? 0.55 : 1, unlocked: st.unlocked, rooms,
+    player: { ...pl, hidden: freed || (flip != null && Math.abs(flip) > 0.1) },
+    shadow: { ...sh, hidden: freed || st.shadow.seep || (flip != null && Math.abs(flip) > 0.1), seen, asleep: st.shadow.mode === "sleep", near: nearness() },
+    twin: { player: twinAt(st.player), shadow: twinAt(st.shadow) },
+  };
+  // no more pixels than the screen shows; fewer when frames run slow (see frame())
+  const r = cv.getBoundingClientRect(), k = [1, 0.75, 0.6][dh.getQuality()], dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = Math.max(320, Math.round(Math.min(cv.width, r.width * dpr) * k)), h = Math.round(w * VH / VW);
+  const img = dh.render(view, w, h); if (!img) return false;
+  ctx.drawImage(img, 0, 0, VW, VH);
+  return true;
+}
 // look prototypes: wooden doll's-house frame, beams, and one brass plaque under the house for floor/moves/pages
-function drawLookFrame() {
-  for (let x = 1; x < W; x++) beam(ctx, HX + x * CW - 3, HY, 6, HH);
-  for (let y = 1; y < H; y++) beam(ctx, HX, HY + y * CH - 3, HW, 6);
-  woodFrame(ctx, HX, HY, HW, HH, 14);
+function drawLookFrame(D3) {
+  if (!D3) {
+    for (let x = 1; x < W; x++) beam(ctx, HX + x * CW - 3, HY, 6, HH);
+    for (let y = 1; y < H; y++) beam(ctx, HX, HY + y * CH - 3, HW, 6);
+    woodFrame(ctx, HX, HY, HW, HH, 14);
+  }
   const txt = `Floor ${st.floor} of ${FLOORS}   ·   moves ${st.moves} / house's best ${st.h.par}   ·   pages ${st.pages} of 3`;
   // it steps aside while the house is talking (the house's line is typed in the same spot)
   const v = st.voice, talk = v && (st.scene === "play" || st.scene === "caught") ? clamp(Math.min(v.t * 4, (v.len - v.t) / 0.6), 0, 1) : 0;
@@ -1548,12 +1610,20 @@ else newGame(urlSeed || ((Math.random() * 1e9) | 0));
 let last = performance.now();
 // a phone held upright shows the "turn me sideways" card (index.html), and the house waits for you
 const upright = typeof matchMedia === "function" ? matchMedia("(orientation: portrait) and (max-width: 600px) and (pointer: coarse)") : { matches: false };
-function frame(now) { if (upright.matches) { last = now; requestAnimationFrame(frame); return; } const dt = Math.min(0.05, (now - last) / 1000); last = now; if (sticky && (sticky.t += dt) > 6) sticky = null; update(dt); render(); requestAnimationFrame(frame); }
+// If the 3D house runs slow on this machine, it steps down to fewer pixels, then drops the lantern's shadows.
+let slowT = 0, slowN = 0;
+function pace(raw) {
+  if (!in3d() || dh.getQuality() >= 2 || document.hidden || raw > 0.5) return;
+  slowT += raw; slowN++;
+  if (slowN >= 90) { if (slowT / slowN > 0.026) dh.setQuality(dh.getQuality() + 1); slowT = 0; slowN = 0; }
+}
+function frame(now) { if (upright.matches) { last = now; requestAnimationFrame(frame); return; } pace((now - last) / 1000); const dt = Math.min(0.05, (now - last) / 1000); last = now; if (sticky && (sticky.t += dt) > 6) sticky = null; update(dt); render(); requestAnimationFrame(frame); }
 requestAnimationFrame(frame);
 
 // hooks for automated checks
 window.__dh = {
   pickHouseMove: () => pickHouseMove(), houseMove: (m) => performEdit(m.id, m.li, m.dir, true), houseMoves, st: () => st, begin: () => { st.scene = "play"; }, choose: (w) => choose(w), say: (k) => say(k), choiceRects: () => choiceRects, nextFloor: () => nextFloor(), solve, hint: () => doHint(), edit: (li, d) => doEdit(li, d), edits, path, walk: (id, exit) => walkTo(id, exit, 0, 0),
   reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(), sticky: () => sticky, gag: () => ({ gag: !!st.gag, nudged: !!st.nudged, sign: !!st.sign, sticker: !!st.sticker }), undone: () => undone, undo: () => undo(), line: (t) => sayLine(t), hush: () => { st.voice = null; st.voiceQ = []; st.quiet = 99; st.sign = st.sticker = null; }, lift: () => lift(), junk: () => junk.length, tick: (dt, n) => { for (let i = 0; i < n; i++) update(dt); }, render: () => render(), upright: () => upright.matches, dragBack: () => dragBack(), previewLit: () => [...previewLit()], deskHit: desk.deskHit, shiftK: () => shiftK, goneFor, openDesk: () => openDesk(), trapped: (b) => trapped(b), awayLine: () => awayLine, calm: () => CALM, flash: () => flash(),
+  in3d: () => in3d(), info3d: () => dh.info(),
   paused: () => paused, restart: () => restartFloor(), hudRects: () => hudRects, pauseRects: () => pauseRects, roomGeo: (x, y) => roomGeo(x, y),
 };
