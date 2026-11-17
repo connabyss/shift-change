@@ -153,7 +153,7 @@ function dust(seed) {
 // ---------- building blocks ----------
 // hand-cut wood: no edge dead straight. Every vertex nudged by a smooth noise of where it is (same place, same nudge, so
 // faces stay joined), plus the odd chip knocked out of an edge
-function roughen(geo, amp = 0.006, chip = 0.012) {
+function roughen(geo, amp = 0.0025, chip = 0.01) {
   const p = geo.attributes.position, v = new THREE.Vector3(); geo.computeBoundingBox(); const bb = geo.boundingBox;
   const n = (a, b, c) => Math.sin(a * 7.3 + b * 3.1 + c * 5.7) * 0.5 + Math.sin(a * 17.9 - b * 11.3 + c * 2.9) * 0.3 + Math.sin(a * 41.7 + b * 29.3 - c * 37.1) * 0.2;
   for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i);
@@ -629,6 +629,7 @@ const wy = (py) => (G.HY + G.H * G.CH - py) * S;
 // view: { t, flash, flipped, flip (0..1 tumble progress, or null), dim, blackout, unlocked, hoverDoor,
 //   rooms: [{ room, at: [[px, py], ...] (top-left of each copy, in game pixels), lit, lock, page, door: {side, open} | null }],
 //   player: { x, y, dir, walking }, shadow: { x, y, seen, asleep, near, look }, twin: { player: [x,y] | null, shadow: [x,y] | null } }
+export function forExport() { return { scene, photoCam }; } // (the offline path-traced stills: tools/render)
 export function render(view, w, h) {
   PHOTO_ON = !!view.photo;
   if (!ready) return null;
