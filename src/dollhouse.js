@@ -50,7 +50,7 @@ const PAPER = {
 };
 const NO_WAINSCOT = new Set(["cellar", "attic", "kitchen", "bath"]);
 function materials() {
-  M.floor = mat("WoodFloor051", [1.5, 1.2], 0xc8a888, 0.7);
+  M.floor = mat("WoodFloor051", [1.5, 1.2], 0xd0bcac, 0.85);
   M.ceil = mat("Plaster001", [1, 1], 0x8a8078);
   M.frame = mat("Wood049", [3, 1], 0xb89a74, 0.7);
   M.trim = mat("PaintedPlaster017", [0.3, 1], 0xc8d0d8, 0.7); // painted door frames, as in the still
@@ -180,13 +180,13 @@ function buildRoom(room) {
   }
   // the ceiling lamp: a cord and a bulb (on or off with the room's lights)
   // the ceiling lamp: a cord, a fabric shade and a small bulb (on or off with the room's lights)
-  const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.36), M.cord); cord.position.set(0.35, RH - T / 2 - 0.18, 0); inner.add(cord);
+  const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.66), M.cord); cord.position.set(0.35, RH - T / 2 - 0.33, 0); inner.add(cord);
   const bulbM = new THREE.MeshStandardMaterial({ color: 0x2a2622, emissive: 0xffc070, emissiveIntensity: 0, roughness: 0.3 });
-  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.04, 16, 12), bulbM); bulb.position.set(0.35, RH - T / 2 - 0.47, 0); inner.add(bulb);
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.04, 16, 12), bulbM); bulb.position.set(0.35, RH - T / 2 - 0.77, 0); inner.add(bulb);
   const shadeM = M.shade.clone();
-  const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.2, 0.17, 28, 1, true), shadeM); shade.position.set(0.35, RH - T / 2 - 0.44, 0); shade.castShadow = true; inner.add(shade);
+  const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.2, 0.17, 28, 1, true), shadeM); shade.position.set(0.35, RH - T / 2 - 0.74, 0); shade.castShadow = true; inner.add(shade);
   // the shade sends its light down: a pool on the floor and the lower walls, the ceiling left in shadow
-  const lamp = new THREE.SpotLight(0xffb060, 0, 5, 1.4, 0.8, 2); lamp.position.set(0.35, RH - T / 2 - 0.5, 0.1); lamp.target.position.set(0.25, 0, 0.1); inner.add(lamp, lamp.target);
+  const lamp = new THREE.SpotLight(0xffc890, 0, 5, 1.4, 0.8, 2); lamp.position.set(0.35, RH - T / 2 - 0.8, 0.1); lamp.target.position.set(0.25, 0, 0.1); inner.add(lamp, lamp.target);
   // floor and ceiling slabs, and the front posts: the room's own, so it carries its frame when it moves
   // (their hidden faces are bare wood: you see them when the house turns over)
   const pk = room.id % 4;
@@ -414,7 +414,7 @@ export async function init(layout) {
   renderer.setPixelRatio(1); renderer.outputColorSpace = THREE.SRGBColorSpace;
   // film response like a camera (AgX); the picture goes through one more pass (focus, grain, vignette), see post()
   renderer.toneMapping = THREE.AgXToneMapping; renderer.toneMappingExposure = 1.15;
-  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; // (with a blur radius: soft edges, like the still's big desk-lamp shadows)
   renderer.localClippingEnabled = true; renderer.setClearColor(0x050506, 1);
   scene = new THREE.Scene(); scene.background = new THREE.Color(0x050506);
   // image-based light from a real photographed room (a Poly Haven HDRI, shrunk), as in the photo still
@@ -436,7 +436,7 @@ export async function init(layout) {
   // shadows); a cool fill from the right; the house's own bulbs are small extras. The lightning is a cold flash.
   hemi = new THREE.HemisphereLight(0xb8b0c0, 0x2a2018, 0.3); scene.add(hemi);
   key = new THREE.SpotLight(0xffe2c0, 1500, 80, 0.62, 1.0, 2); key.position.set(-8, 7.5, 12.5); key.target.position.set(0.5, 4.2, 0);
-  key.castShadow = true; key.shadow.autoUpdate = false; key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.0006; key.shadow.radius = 14; key.shadow.blurSamples = 16; scene.add(key, key.target);
+  key.castShadow = true; key.shadow.autoUpdate = false; key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.0006; key.shadow.radius = 6; scene.add(key, key.target);
   const fill = new THREE.PointLight(0xc8c0d8, 14, 60, 2); fill.position.set(12, 6, 20); scene.add(fill);
   const table = new THREE.PointLight(0x6a5a50, 6, 14, 1.2); table.position.set(1, 1.2, 8); scene.add(table);
   moon = new THREE.DirectionalLight(0xb8c8ff, 0); moon.position.set(-6, 12, 16); scene.add(moon);
@@ -480,7 +480,7 @@ void main(){vec2 q0=vUv-0.5;float rr=dot(q0,q0);vec2 uv=0.5+q0*(1.0-0.03*rr);
  #include <colorspace_fragment>
  vec2 px=floor(uv*res);float fr=floor(t*24.0);float n1=h(px+fr*1.7)-0.5;float n2=h(floor(px/2.0)+7.3+fr)-0.5;float lum=dot(gl_FragColor.rgb,vec3(0.3,0.59,0.11));
  float amp=mix(0.075,0.03,smoothstep(0.0,0.5,lum));gl_FragColor.rgb+=(n1*0.6+n2*0.4)*amp;
- vec2 q=(vUv-vc)*vec2(res.x/res.y,1.0);gl_FragColor.rgb*=1.0-dot(q,q)*0.32;}`,
+ vec2 q=(vUv-vc)*vec2(res.x/res.y,1.0);gl_FragColor.rgb*=clamp(1.0-dot(q,q)*0.45,0.0,1.0);}`,
   });
   post = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), m); post.frustumCulled = false;
   post.userData.scene = new THREE.Scene(); post.userData.scene.add(post); post.userData.cam = new THREE.Camera();
@@ -544,7 +544,7 @@ export function render(view, w, h) {
   d.dg.rotation.y += ((open ? -1.2 : 0) - d.dg.rotation.y) * 0.12;
   d.doorGlow.material.opacity = open * (0.55 + 0.15 * Math.sin(t * 3)); porchLight.intensity = 1.2 + open * 2;
   // lightning
-  const f = view.flash || 0; moon.intensity = 9 * f; hemi.intensity = 0.3 * (view.dim || 1) + 3 * f; key.intensity = 1500 * (view.dim || 1);
+  const f = view.flash || 0; moon.intensity = 9 * f; hemi.intensity = 0.3 * (view.dim || 1) + 3 * f; key.intensity = 1050 * (view.dim || 1);
   // shadows are redrawn only when something moved (they're most of the cost of a frame)
   // the desk lamp's big shadow map at once when the rooms move, at most every fourth frame when only a figure moved;
   // the lantern's small one whenever you or it moved
@@ -563,8 +563,8 @@ function place(g, [px, py], rv, t) {
   // upside down: the furniture hangs from the ceiling (the doll's house was turned over, everything is glued in)
   u.inner.scale.y = rv.flipped ? -1 : 1; u.inner.position.y = rv.flipped ? RH : 0;
   const lit = rv.lit;
-  u.bulbM.emissiveIntensity = 3 * lit; u.bulbM.color.setHex(lit > 0.5 ? 0xffe0a0 : 0x2a2622); u.shadeM.emissiveIntensity = 1.6 * lit;
-  if (u.lamp) u.lamp.intensity = 14 * lit;
+  u.bulbM.emissiveIntensity = 3 * lit; u.bulbM.color.setHex(lit > 0.5 ? 0xffe0a0 : 0x2a2622); u.shadeM.emissiveIntensity = 3 * lit;
+  if (u.lamp) u.lamp.intensity = 13 * lit;
   if (u.fire) u.fire.intensity = 2.2 + 0.6 * Math.sin(t * 9) * Math.sin(t * 3.7);
   if (u.trims) for (const s of ["l", "r"]) if (u.trims[s]) {
     const on = rv.door && rv.door.side === s ? 0.55 + 0.45 * Math.sin(t * 8) : 0;
