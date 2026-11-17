@@ -235,7 +235,7 @@ function buildRoom(room) {
   const shade = new THREE.Mesh(sg, shadeM); shade.position.set(lx, RH - T / 2 - cl + 0.02, 0); shade.rotation.set((rr() - 0.5) * 0.08, rr() * 6, (rr() - 0.5) * 0.08); shade.scale.setScalar(0.85 + rr() * 0.3); shade.castShadow = true; inner.add(shade);
   // the shade sends its light down: a pool on the floor and the lower walls, the ceiling left in shadow
   const lamp = new THREE.SpotLight([0xffc890, 0xffb878, 0xffd8a8, 0xffa860][Math.floor(rr() * 4)], 0, 4, 1.1 + rr() * 0.3, 0.9, 2); lamp.position.set(lx, RH - T / 2 - cl - 0.06, 0.1); lamp.target.position.set(lx - 0.1 + (rr() - 0.5) * 0.6, 0, 0.1 + (rr() - 0.5) * 0.4); inner.add(lamp, lamp.target);
-  lamp.userData.pw = [0.55, 0.8, 1, 1.15, 1.35][Math.floor(rr() * 5)]; LAMPS.push(lamp); lamp.userData.a = lamp.angle; lamp.userData.c = lamp.color.clone(); lamp.userData.pc = new THREE.Color([0xffb070, 0xffd2a0, 0xff9a50, 0xe8e4ff, 0xffc080, 0xfff0d8][room.id % 6]); // (bulbs of different strengths: the light is uneven across the house)
+  lamp.userData.pw = [0.55, 0.8, 1, 1.15, 1.35][Math.floor(rr() * 5)]; LAMPS.push(lamp); lamp.userData.mood = [1.9, 0.35, 0, 1, 0.55, 1.3, 0.12, 0.8, 2.3, 0.45, 1, 0.2][room.id % 12]; lamp.userData.cold = room.id % 12 === 6 || room.id % 12 === 11; lamp.userData.a = lamp.angle; lamp.userData.c = lamp.color.clone(); lamp.userData.pc = new THREE.Color([0xffb070, 0xffd2a0, 0xff9a50, 0xe8e4ff, 0xffc080, 0xfff0d8][room.id % 6]); // (bulbs of different strengths: the light is uneven across the house)
   // floor and ceiling slabs, and the front posts: the room's own, so it carries its frame when it moves
   // (their hidden faces are bare wood: you see them when the house turns over)
   const pk = room.id % 4;
@@ -650,8 +650,10 @@ function place(g, [px, py], rv, t) {
   // upside down: the furniture hangs from the ceiling (the doll's house was turned over, everything is glued in)
   u.inner.scale.y = rv.flipped ? -1 : 1; u.inner.position.y = rv.flipped ? RH : 0;
   const lit = rv.lit;
-  u.bulbM.emissiveIntensity = 3 * lit; u.bulbM.color.setHex(lit > 0.5 ? 0xffe0a0 : 0x2a2622); u.shadeM.emissiveIntensity = 3 * lit;
-  if (u.lamp) { const L = u.lamp; L.intensity = (PHOTO_ON ? 34 : 16) * lit * (L.userData.pw || 1); L.angle = PHOTO_ON ? 1.45 : L.userData.a; L.penumbra = PHOTO_ON ? 0.6 : 0.9; L.decay = 2; L.distance = PHOTO_ON ? 0 : 4; L.color.copy(PHOTO_ON ? L.userData.pc : L.userData.c); } // (photo: a tight pool under each shade, dark upper corners, each bulb its own colour)
+    // the photo: no two rooms lit alike. One bright, one dim, one with its lamp off, a couple lit only cold and blue as if by a window
+  const md = PHOTO_ON && u.lamp ? u.lamp.userData.mood : 1, bl = lit * Math.min(1, md * 1.4);
+  u.bulbM.emissiveIntensity = 3 * bl; u.bulbM.color.setHex(bl > 0.3 ? 0xffe0a0 : 0x2a2622); u.shadeM.emissiveIntensity = 3 * bl;
+  if (u.lamp) { const L = u.lamp; L.intensity = (PHOTO_ON ? 34 * md : 16) * lit * (L.userData.pw || 1); L.angle = PHOTO_ON ? 1.45 : L.userData.a; L.penumbra = PHOTO_ON ? 0.6 : 0.9; L.decay = 2; L.distance = PHOTO_ON ? 0 : 4; L.color.copy(PHOTO_ON ? L.userData.pc : L.userData.c); if (PHOTO_ON && L.userData.cold) { L.color.setHex(0x8aa8ff); L.intensity = 14 * lit; L.angle = 0.9; } } // (photo: a tight pool under each shade, dark upper corners, each bulb its own colour)
   if (u.fire) u.fire.intensity = 2.2 + 0.6 * Math.sin(t * 9) * Math.sin(t * 3.7);
   if (u.trims) for (const s of ["l", "r"]) if (u.trims[s]) {
     const on = rv.door && rv.door.side === s ? 0.55 + 0.45 * Math.sin(t * 8) : 0;
