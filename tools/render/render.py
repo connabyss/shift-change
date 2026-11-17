@@ -79,15 +79,24 @@ for o in list(sc.objects):
         tx = bpy.data.textures.new('warp%d' % nw, 'CLOUDS'); tx.noise_scale = 0.9 + rnd.random() * 0.6
         dm = o.modifiers.new('warp', 'DISPLACE'); dm.texture = tx; dm.strength = 0.012; dm.mid_level = 0.5; dm.texture_coords = 'GLOBAL'
         o.rotation_mode = 'XYZ'; o.rotation_euler.x += (rnd.random() - 0.5) * 0.008; o.rotation_euler.y += (rnd.random() - 0.5) * 0.008; nw += 1
+    elif max(d) > 0.9:  # the frame timbers and slabs (already finely cut): a slow warp along their length, as old wood bows
+        tx = bpy.data.textures.new('bow%d' % nw, 'CLOUDS'); tx.noise_scale = 2.5 + rnd.random() * 2
+        dm = o.modifiers.new('bow', 'DISPLACE'); dm.texture = tx; dm.strength = 0.03; dm.mid_level = 0.5; dm.texture_coords = 'GLOBAL'; nw += 1
 print('warped', nw, flush=True)
 # each room its own brightness: some bulbs dim, some bright, some off (positions hashed, so the same every render)
 import hashlib
 for o in sc.objects:
     if o.type == 'LIGHT' and o.data.type in ('POINT', 'SPOT') and abs(o.matrix_world.translation.x) < 7 and -2 < o.matrix_world.translation.z < 11:
         h = int(hashlib.md5(('%.1f%.1f' % (o.matrix_world.translation.x, o.matrix_world.translation.z)).encode()).hexdigest(), 16)
-        o.data.energy *= [0.05, 0.25, 0.6, 1, 1.9, 3.4, 0, 0.4][h % 8]
+        o.data.energy *= [0.08, 0.3, 0.6, 1, 1.6, 2.6, 0, 0.45][h % 8]
+# light doesn't stay politely in its room: a lit room leaks a little through the doorway and the gaps into the room beside it
+for o in [o for o in sc.objects if o.type == 'LIGHT' and o.data.type in ('POINT', 'SPOT') and abs(o.matrix_world.translation.x) < 7 and -2 < o.matrix_world.translation.z < 11 and o.data.energy > 0]:
+    t = o.matrix_world.translation
+    for sd in (-1, 1):
+        ld = bpy.data.lights.new('leak', 'POINT'); ld.energy = o.data.energy * 0.07; ld.color = o.data.color; ld.shadow_soft_size = 0.3
+        lo = bpy.data.objects.new('leak', ld); sc.collection.objects.link(lo); lo.location = (t.x + sd * 1.7, t.y + 0.2, t.z - 1.0)
 sc.render.engine = 'CYCLES'; sc.cycles.device = 'CPU'; sc.cycles.samples = S; sc.cycles.use_denoising = DN
-sc.cycles.max_bounces = 6; sc.render.resolution_x = W; sc.render.resolution_y = H; sc.render.resolution_percentage = 100
+sc.cycles.max_bounces = 12; sc.cycles.diffuse_bounces = 8; sc.render.resolution_x = W; sc.render.resolution_y = H; sc.render.resolution_percentage = 100
 sc.view_settings.view_transform = 'AgX'; sc.view_settings.look = 'AgX - Medium High Contrast'; sc.view_settings.exposure = 0
 sc.render.filepath = out; sc.render.threads_mode = 'AUTO'
 t0 = time.time(); bpy.ops.render.render(write_still=True); print('render', round(time.time() - t0), 's', flush=True)
