@@ -19,7 +19,8 @@ function serve() {
       const p = new URL(req.url, "http://x").pathname;
       try {
         const body = await readFile(join(ROOT, p === "/" ? "index.html" : p));
-        res.writeHead(200, { "content-type": extname(p) === ".js" ? "text/javascript" : "text/html" }).end(body);
+        const type = { ".js": "text/javascript", ".glb": "model/gltf-binary", ".jpg": "image/jpeg", ".md": "text/plain" }[extname(p)] || "text/html";
+        res.writeHead(200, { "content-type": type }).end(body);
       } catch { res.writeHead(404).end(); }
     }).listen(0, "127.0.0.1", () => ok(s));
   });
@@ -909,5 +910,53 @@ test("with \"reduce motion\" on, no screen shake and lightning is one soft glow,
     assert.equal(calm.calm, true); assert.ok(!rises(calm.f), "calm: it only fades, never flashes again");
     assert.ok(Math.max(...calm.f) <= 0.6, "calm: never full white");
     assert.ok(calm.f[0] > 0.3, "calm: still bright enough to show the shadow for a moment");
+  } finally { await browser.close(); server.close(); }
+});
+
+test("the 3D doll's house: it loads its scans, follows the house when a row slides and when it turns over, and steps aside on a software renderer", { skip, timeout: 600000 }, async () => {
+  const server = await serve(), browser = await chromium.launch();
+  try {
+    const open = async (q) => {
+      const page = await browser.newPage({ viewport: { width: 960, height: 600 } }), errors = [];
+      page.on("pageerror", (e) => errors.push(String(e)));
+      // frames are driven by hand below: in a headless browser each 3D frame takes seconds
+      await page.addInitScript(() => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (f) => (window.__stop ? 0 : raf(f)); });
+      await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+      await page.goto(`http://127.0.0.1:${server.address().port}/${q}`); await page.waitForFunction(() => window.__dh);
+      return { page, errors };
+    };
+    // 1. headless Chromium draws with SwiftShader (no graphics card): the flat house is the better game there
+    const soft = await open("?seed=4242"); await soft.page.waitForTimeout(4000);
+    assert.equal(await soft.page.evaluate(() => window.__dh.in3d()), false, "software rendering keeps the flat house");
+    assert.deepEqual(soft.errors, []); await soft.page.close();
+    // 2. forced on, the 3D house loads and draws into the game's canvas
+    const { page, errors } = await open("?seed=4242&3d=1"); await page.evaluate(() => { window.__stop = 1; });
+    await page.waitForFunction(() => window.__dh.in3d(), null, { timeout: 300000, polling: 1000 });
+    const a = await page.evaluate(() => {
+      const D = window.__dh, st = D.st(); D.begin(); D.hush(); D.render();
+      const p = D.find(st.g, st.player.id), row = st.g[p.y].map((r) => r.id), px = document.getElementById("game").getContext("2d").getImageData(2 * (44 + 75), 2 * (74 + p.y * 146 + 73), 1, 1).data;
+      return { row, before: row.map((id) => D.roomAt3d(id)), calls: D.info3d().calls, px: [...px], y: p.y };
+    });
+    assert.ok(a.calls > 50, "it drew the house");
+    assert.ok(a.px[0] + a.px[1] + a.px[2] > 60, "a room shows in the canvas, not the night sky");
+    // 3. a row slides east: once it settles, every room of that row has moved one room along in 3D too
+    const b = await page.evaluate(() => {
+      const D = window.__dh, st = D.st(), li = st.g.flat().find((r) => r.id === st.player.id).lines.findIndex((l) => l.kind === "row");
+      D.edit(li, 1); D.tick(1 / 60, 20); D.render(); const mid = D.st().anim && D.st().anim.kind;
+      D.tick(1 / 60, 120); D.render(); return { mid, li };
+    });
+    assert.equal(b.mid, "row");
+    const after = await page.evaluate((row) => row.map((id) => window.__dh.roomAt3d(id)), a.row);
+    const xs = a.before.map((r) => r.x).sort((u, v) => u - v), step = xs[1] - xs[0];
+    a.before.forEach((r, i) => { const want = r.x + step > xs[3] + 1e-3 ? xs[0] : r.x + step; assert.ok(Math.abs(after[i].x - want) < 1e-3, `room ${a.row[i]} slid east in 3D`); assert.equal(after[i].y, r.y); });
+    // 4. turned over: the furniture hangs from the ceiling, and floors change places
+    const c = await page.evaluate(() => {
+      const D = window.__dh; D.newGame(777, 3); D.begin(); D.hush(); const st = D.st(); D.render();
+      let m = null; for (const row of st.g) for (const r of row) r.lines.forEach((l, li) => { if (l.kind === "flip") m = { id: r.id, li, dir: 1 }; });
+      const top = st.g[0][0].id, y0 = D.roomAt3d(top).y; D.houseMove(m); D.tick(1 / 60, 200); D.render();
+      return { flipped: D.roomAt3d(top).flipped, y0, y1: D.roomAt3d(top).y, anim: !!st.anim };
+    });
+    assert.equal(c.anim, false); assert.equal(c.flipped, true, "upside down: furniture on the ceiling"); assert.ok(c.y1 < c.y0, "the top floor went to the bottom");
+    assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });

@@ -343,6 +343,8 @@ export async function init(layout) {
   ready = true; return true;
 }
 let player, playerTwin, shadowFig, shadowTwin, lastSig = "";
+// for the tests: where a room's 3D copy sits (world x, y), and whether its furniture hangs upside down
+export const roomAt = (id) => { const r = rooms.get(id); return r && r.main.visible ? { x: +r.main.position.x.toFixed(3), y: +r.main.position.y.toFixed(3), flipped: PARTS.get(r.main).inner.scale.y < 0, key: r.key } : null; };
 export const info = () => renderer && { ...renderer.info.render, programs: renderer.info.programs.length, textures: renderer.info.memory.textures };
 function clipAll(o) { o.traverse((m) => { if (m.material) for (const mm of [].concat(m.material)) { mm.clippingPlanes = clip; mm.clipShadows = true; } }); }
 
