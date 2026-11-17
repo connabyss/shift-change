@@ -666,7 +666,7 @@ function drawPlate(room, cx, cy, o, gx, gy) {
     const x0 = s === "l" ? cx : cx + CW - POST, y0 = fy - DOORH;
     if (room[s]) {
       // (through it, the next room's lamp, or the dark when its light is off)
-      const nb = st.g[gy] && st.g[gy][gx + (s === "l" ? -1 : 1)], nl = nb ? 0.55 * roomLit(nb, {}) : 0, w = (c, f) => Math.round(c * f);
+      const nb = st.g[gy] && st.g[gy][gx + (s === "l" ? -1 : 1)], nl = nb ? 0.32 * roomLit(nb, {}) : 0, w = (c, f) => Math.round(c * f);
       const g = ctx.createLinearGradient(0, y0, 0, fy), a = s === "l" ? [0, 1] : [1, 0];
       g.addColorStop(0, `rgb(${w(150, nl)},${w(105, nl)},${w(62, nl)})`); g.addColorStop(1, `rgb(${6 + w(225, nl)},${4 + w(160, nl)},${4 + w(96, nl)})`); ctx.fillStyle = g; ctx.fillRect(x0, y0, POST, DOORH);
       const e = ctx.createLinearGradient(x0, 0, x0 + POST, 0); e.addColorStop(a[0], "rgba(0,0,0,0)"); e.addColorStop(a[1], "rgba(0,0,0,0.55)"); ctx.fillStyle = e; ctx.fillRect(x0, y0, POST, DOORH);
@@ -687,7 +687,7 @@ function drawPlate(room, cx, cy, o, gx, gy) {
   ctx.restore();
   // the brass name plate on the floor's front edge (as on the 3D house: it stays put when the room turns over)
   { ctx.save(); ctx.font = `9px "IM Fell English SC", Georgia, serif`; const tw = ctx.measureText(room.name).width + 14, h = 11, h2 = [...room.name].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) % 9973, 7);
-    const nx = cx + CW / 2 + ((h2 >> 3) % 9 - 4) * 0.09 / PS - tw / 2, ny = cy + CH - 0.17 / PS - h / 2, k = 0.55 + 0.45 * L;
+    const nx = cx + CW / 2 + ((h2 >> 3) % 9 - 4) * 0.09 / PS - tw / 2, ny = cy + CH - 0.17 / PS - h / 2, k = 0.3 + 0.35 * L; // (lit by the room, not a label on the screen)
     ctx.translate(nx + tw / 2, ny + h / 2); ctx.rotate(((room.name.length * 5) % 7 - 3) * 0.012); ctx.translate(-tw / 2, -h / 2);
     const g = ctx.createLinearGradient(0, 0, 0, h); g.addColorStop(0, shade([200, 178, 120], k)); g.addColorStop(0.5, shade([150, 128, 78], k)); g.addColorStop(1, shade([96, 78, 42], k));
     ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(1, 1.5, tw, h); ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(0, 0, tw, h, 1.5); ctx.fill();
