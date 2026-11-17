@@ -78,8 +78,9 @@ function materials() {
   M.shade.emissiveMap = M.shade.map;
   // the cut front edges are raw birch plywood, like a real kit doll's house (two sets: the rooms' posts are clipped
   // at the house's edges when a row slides, the outer frame never is)
-  M.plyH = [0, 1, 2, 3].map((i) => ply(false, i)); M.plyV = [0, 1, 2, 3].map((i) => ply(true, i));
+  M.plyH = [0, 1, 2, 3].map((i) => ply(false, i)); M.plyV = [0, 1, 2, 3].map((i) => ply(true, i)); for (const m of [...M.plyH, ...M.plyV]) m.name = "ply"; // (named so the offline render can give it scanned grain)
   M.plyHo = [0, 1, 2, 3].map((i) => ply(false, i)); M.plyVo = [0, 1, 2, 3].map((i) => ply(true, i));
+  for (const m of [...M.plyHo, ...M.plyVo]) m.name = "ply";
   M.aoSide = [0, 1, 2, 3, 4, 5].map((i) => grime(101 + i * 7, true));
 }
 

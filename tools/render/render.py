@@ -1,5 +1,5 @@
 # bpyenv/bin/python render.py house.glb out.png W H samples [lightscale]
-import bpy, sys, json, math, mathutils, time
+import bpy, sys, json, math, mathutils, time, os
 glb, out, W, H, S = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5])
 LS = float(sys.argv[6]) if len(sys.argv) > 6 else 1.0
 WS = float(sys.argv[7]) if len(sys.argv) > 7 else 0.25
@@ -63,6 +63,18 @@ for m in bpy.data.materials:
     else: radd.inputs[0].default_value = rr.default_value
     rj = N.new('ShaderNodeMath'); rj.operation = 'MULTIPLY_ADD'; rj.inputs[1].default_value = 0.35; rj.inputs[2].default_value = -0.12; L.new(nf.outputs['Fac'], rj.inputs[0]); L.new(rj.outputs['Value'], radd.inputs[1])
     L.new(radd.outputs['Value'], rr)
+PLY = os.environ.get('PLY_DIR', '/tmp/claude-0/ptex/plywood')
+for m in bpy.data.materials:
+    if not m.name.startswith('ply') or not m.use_nodes: continue
+    N = m.node_tree.nodes; L = m.node_tree.links; bs = next((n for n in N if n.type == 'BSDF_PRINCIPLED'), None)
+    if not bs or not bs.inputs['Base Color'].links: continue
+    tc = N.new('ShaderNodeTexCoord'); mp = N.new('ShaderNodeMapping'); mp.inputs['Scale'].default_value = (0.35, 0.35, 0.35); L.new(tc.outputs['Object'], mp.inputs['Vector'])
+    im = N.new('ShaderNodeTexImage'); im.image = bpy.data.images.load(PLY + '/Color.jpg'); im.projection = 'BOX'; im.projection_blend = 0.3; L.new(mp.outputs['Vector'], im.inputs['Vector'])
+    src = bs.inputs['Base Color'].links[0].from_socket
+    mx = N.new('ShaderNodeMix'); mx.data_type = 'RGBA'; mx.blend_type = 'OVERLAY'; mx.inputs['Factor'].default_value = 0.75; L.new(src, mx.inputs['A']); L.new(im.outputs['Color'], mx.inputs['B'])
+    L.new(mx.outputs['Result'], bs.inputs['Base Color'])
+    rim = N.new('ShaderNodeTexImage'); rim.image = bpy.data.images.load(PLY + '/Roughness.jpg'); rim.image.colorspace_settings.name = 'Non-Color'; rim.projection = 'BOX'; L.new(mp.outputs['Vector'], rim.inputs['Vector'])
+    L.new(rim.outputs['Color'], bs.inputs['Roughness'])
 # no glow: emissive shades, bulbs and the window give light, not a halo
 for m in bpy.data.materials:
     if m.use_nodes:
@@ -79,9 +91,6 @@ for o in list(sc.objects):
         tx = bpy.data.textures.new('warp%d' % nw, 'CLOUDS'); tx.noise_scale = 0.9 + rnd.random() * 0.6
         dm = o.modifiers.new('warp', 'DISPLACE'); dm.texture = tx; dm.strength = 0.012; dm.mid_level = 0.5; dm.texture_coords = 'GLOBAL'
         o.rotation_mode = 'XYZ'; o.rotation_euler.x += (rnd.random() - 0.5) * 0.008; o.rotation_euler.y += (rnd.random() - 0.5) * 0.008; nw += 1
-    elif max(d) > 0.9:  # the frame timbers and slabs (already finely cut): a slow warp along their length, as old wood bows
-        tx = bpy.data.textures.new('bow%d' % nw, 'CLOUDS'); tx.noise_scale = 2.5 + rnd.random() * 2
-        dm = o.modifiers.new('bow', 'DISPLACE'); dm.texture = tx; dm.strength = 0.03; dm.mid_level = 0.5; dm.texture_coords = 'GLOBAL'; nw += 1
 print('warped', nw, flush=True)
 # each room its own brightness: some bulbs dim, some bright, some off (positions hashed, so the same every render)
 import hashlib
@@ -89,14 +98,8 @@ for o in sc.objects:
     if o.type == 'LIGHT' and o.data.type in ('POINT', 'SPOT') and abs(o.matrix_world.translation.x) < 7 and -2 < o.matrix_world.translation.z < 11:
         h = int(hashlib.md5(('%.1f%.1f' % (o.matrix_world.translation.x, o.matrix_world.translation.z)).encode()).hexdigest(), 16)
         o.data.energy *= [0.08, 0.3, 0.6, 1, 1.6, 2.6, 0, 0.45][h % 8]
-# light doesn't stay politely in its room: a lit room leaks a little through the doorway and the gaps into the room beside it
-for o in [o for o in sc.objects if o.type == 'LIGHT' and o.data.type in ('POINT', 'SPOT') and abs(o.matrix_world.translation.x) < 7 and -2 < o.matrix_world.translation.z < 11 and o.data.energy > 0]:
-    t = o.matrix_world.translation
-    for sd in (-1, 1):
-        ld = bpy.data.lights.new('leak', 'POINT'); ld.energy = o.data.energy * 0.07; ld.color = o.data.color; ld.shadow_soft_size = 0.3
-        lo = bpy.data.objects.new('leak', ld); sc.collection.objects.link(lo); lo.location = (t.x + sd * 1.7, t.y + 0.2, t.z - 1.0)
 sc.render.engine = 'CYCLES'; sc.cycles.device = 'CPU'; sc.cycles.samples = S; sc.cycles.use_denoising = DN
-sc.cycles.max_bounces = 12; sc.cycles.diffuse_bounces = 8; sc.render.resolution_x = W; sc.render.resolution_y = H; sc.render.resolution_percentage = 100
+sc.cycles.max_bounces = 6; sc.render.resolution_x = W; sc.render.resolution_y = H; sc.render.resolution_percentage = 100
 sc.view_settings.view_transform = 'AgX'; sc.view_settings.look = 'AgX - Medium High Contrast'; sc.view_settings.exposure = 0
 sc.render.filepath = out; sc.render.threads_mode = 'AUTO'
 t0 = time.time(); bpy.ops.render.render(write_still=True); print('render', round(time.time() - t0), 's', flush=True)
