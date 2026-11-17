@@ -150,6 +150,22 @@ function dust(seed) {
 }
 
 // ---------- building blocks ----------
+// hand-cut wood: no edge dead straight. Every vertex nudged by a smooth noise of where it is (same place, same nudge, so
+// faces stay joined), plus the odd chip knocked out of an edge
+function roughen(geo, amp = 0.006, chip = 0.012) {
+  const p = geo.attributes.position, v = new THREE.Vector3(); geo.computeBoundingBox(); const bb = geo.boundingBox;
+  const n = (a, b, c) => Math.sin(a * 7.3 + b * 3.1 + c * 5.7) * 0.5 + Math.sin(a * 17.9 - b * 11.3 + c * 2.9) * 0.3 + Math.sin(a * 41.7 + b * 29.3 - c * 37.1) * 0.2;
+  for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i);
+    const onX = Math.min(v.x - bb.min.x, bb.max.x - v.x) < 1e-4, onY = Math.min(v.y - bb.min.y, bb.max.y - v.y) < 1e-4, onZ = Math.min(v.z - bb.min.z, bb.max.z - v.z) < 1e-4;
+    const edge = (onX + onY + onZ) >= 2, h = n(v.x * 3, v.y * 3, v.z * 3), k = edge && Math.sin(v.x * 91.7 + v.y * 57.3 + v.z * 33.1) > 0.82 ? chip : 0;
+    v.x += (h * amp + (onX ? -Math.sign(v.x - (bb.min.x + bb.max.x) / 2) * k : 0)); v.y += (n(v.y * 3, v.z * 3, v.x * 3) * amp + (onY ? -Math.sign(v.y - (bb.min.y + bb.max.y) / 2) * k : 0)); v.z += (n(v.z * 3, v.x * 3, v.y * 3) * amp + (onZ ? -Math.sign(v.z - (bb.min.z + bb.max.z) / 2) * k : 0));
+    p.setXYZ(i, v.x, v.y, v.z); }
+  geo.computeVertexNormals(); return geo;
+}
+function rbox(w, h, d, m, x, y, z, parent) { // a rough-cut box (slabs, posts, the outer frame)
+  const g = new THREE.Mesh(roughen(new THREE.BoxGeometry(w, h, d, Math.max(1, Math.round(w * 10)), Math.max(1, Math.round(h * 10)), Math.max(1, Math.round(d * 10)))), m);
+  g.position.set(x, y, z); g.castShadow = g.receiveShadow = true; parent.add(g); return g;
+}
 function box(w, h, d, m, x, y, z, parent, round = false) {
   const g = new THREE.Mesh(round ? new RoundedBoxGeometry(w, h, d, 2, Math.min(0.03, Math.min(w, h, d) * 0.3)) : new THREE.BoxGeometry(w, h, d), m);
   g.position.set(x, y, z); g.castShadow = g.receiveShadow = true; parent.add(g); return g;
@@ -223,9 +239,9 @@ function buildRoom(room) {
   // floor and ceiling slabs, and the front posts: the room's own, so it carries its frame when it moves
   // (their hidden faces are bare wood: you see them when the house turns over)
   const pk = room.id % 4;
-  box(RW, T / 2, RD, [M.slab, M.slab, M.floor, M.slab, M.plyH[pk], M.slab], 0, T / 4, 0, g);
-  box(RW, T / 2, RD, [M.slab, M.slab, M.slab, M.ceil, M.plyH[(pk + 1) % 4], M.slab], 0, RH - T / 4, 0, g);
-  for (const sd of [-1, 1]) { const po = box(0.14, RH, 0.14, M.plyV[(pk + (sd > 0 ? 2 : 3)) % 4], sd * (RW / 2 - 0.07), RH / 2, RD / 2 + 0.06, g, true); const k = room.id * 13.7 + sd * 7.1; po.position.z += Math.cos(k * 1.3) * 0.01; po.rotation.z = Math.sin(k * 2.1) * 0.004; }
+  rbox(RW, T / 2, RD, [M.slab, M.slab, M.floor, M.slab, M.plyH[pk], M.slab], 0, T / 4, 0, g);
+  rbox(RW, T / 2, RD, [M.slab, M.slab, M.slab, M.ceil, M.plyH[(pk + 1) % 4], M.slab], 0, RH - T / 4, 0, g);
+  for (const sd of [-1, 1]) { const po = rbox(0.14, RH, 0.14, M.plyV[(pk + (sd > 0 ? 2 : 3)) % 4], sd * (RW / 2 - 0.07), RH / 2, RD / 2 + 0.06, g); const k = room.id * 13.7 + sd * 7.1; po.position.z += Math.cos(k * 1.3) * 0.01; po.rotation.z = Math.sin(k * 2.1) * 0.004; }
   g.add(nameplate(room.name));
   // corner shade on the side walls too: darker toward the back corner and along the floor
   for (const sd of [-1, 1]) { const ao = new THREE.Mesh(new THREE.PlaneGeometry(RD - 0.02, RH - T), M.aoSide[(room.id * 2 + (sd > 0 ? 1 : 0)) % 6]); ao.rotation.y = sd < 0 ? Math.PI / 2 : -Math.PI / 2; if (sd > 0) ao.scale.x = -1; ao.position.set(sd * (RW / 2 - T / 2 - 0.006), RH / 2, 0); ao.renderOrder = 1; g.add(ao); }
@@ -398,8 +414,8 @@ function surroundings() {
   box(HWd + 0.3, HHd, 0.1, M.back, 0, HHd / 2, -RD / 2 - 0.12, scene);
   // the outer frame of the house front, and a beam along each floor (rooms slide behind them)
   const fz = RD / 2 + 0.07;
-  for (let y = 0; y <= G.H; y++) { const b = box(HWd + 0.36, y === 0 || y === G.H ? 0.26 : 0.14, 0.14, M.plyHo[y % 4], 0, y * RH, fz, scene, true); b.material = M.plyHo[y % 4].clone(); b.material.map = b.material.map.clone(); b.material.map.repeat.set(4, 1); }
-  for (const sd of [-1, 1]) box(0.22, HHd + 0.26, 0.16, M.plyVo[sd > 0 ? 1 : 2], sd * (HWd / 2 + 0.09), HHd / 2, fz, scene, true);
+  for (let y = 0; y <= G.H; y++) { const b = rbox(HWd + 0.36, y === 0 || y === G.H ? 0.26 : 0.14, 0.14, M.plyHo[y % 4], 0, y * RH, fz, scene); b.material = M.plyHo[y % 4].clone(); b.material.map = b.material.map.clone(); b.material.map.repeat.set(4, 1); }
+  for (const sd of [-1, 1]) rbox(0.22, HHd + 0.26, 0.16, M.plyVo[sd > 0 ? 1 : 2], sd * (HWd / 2 + 0.09), HHd / 2, fz, scene);
   // the house's outer side walls, plain painted boards (seen from the photo camera at the side)
   { const sm = mat("Planks037A", [1, 4], 0x14110e, 1, true); sm.envMapIntensity = 0.3; sm.normalScale.set(0.4, 0.4); /* (the side away from the desk lamp stays dark, as in a real photo) */ for (const sd of [-1, 1]) { const w = box(0.1, HHd + 0.13, RD + 0.1, sm, sd * (HWd / 2 + 0.16), HHd / 2, 0, scene); w.castShadow = w.receiveShadow = true; } }
   // gable roof: real overlapping clapboards on the front (geometry, not a texture), a little window, wooden barge boards
