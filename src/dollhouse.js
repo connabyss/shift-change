@@ -243,8 +243,8 @@ function buildRoom(room) {
   const pk = room.id % 4;
   rbox(RW, T / 2, RD, [M.slab, M.slab, M["floor_" + name] || M.floor, M.slab, M.plyH[pk], M.slab], 0, T / 4, 0, g);
   rbox(RW, T / 2, RD, [M.slab, M.slab, M.slab, M.ceil, M.plyH[(pk + 1) % 4], M.slab], 0, RH - T / 4, 0, g);
-  for (const sd of [-1, 1]) { const po = rbox(0.14, RH, 0.14, M.plyV[(pk + (sd > 0 ? 2 : 3)) % 4], sd * (RW / 2 - 0.07), RH / 2, RD / 2 + 0.06, g); const k = room.id * 13.7 + sd * 7.1; po.position.z += Math.cos(k * 1.3) * 0.01; po.rotation.z = Math.sin(k * 2.1) * 0.004; }
-  g.add(nameplate(room.name));
+  for (const sd of [-1, 1]) { const po = rbox(0.14, RH, 0.14, M.plyV[(pk + (sd > 0 ? 2 : 3)) % 4], sd * (RW / 2 - 0.07), RH / 2, RD / 2 + 0.06, g); po.name = "post"; const k = room.id * 13.7 + sd * 7.1; po.position.z += Math.cos(k * 1.3) * 0.01; po.rotation.z = Math.sin(k * 2.1) * 0.004; }
+  { const np = nameplate(room.name); np.name = "nameplate"; g.add(np); }
   // corner shade on the side walls too: darker toward the back corner and along the floor
   for (const sd of [-1, 1]) { const ao = new THREE.Mesh(new THREE.PlaneGeometry(RD - 0.02, RH - T), M.aoSide[(room.id * 2 + (sd > 0 ? 1 : 0)) % 6]); ao.rotation.y = sd < 0 ? Math.PI / 2 : -Math.PI / 2; if (sd > 0) ao.scale.x = -1; ao.position.set(sd * (RW / 2 - T / 2 - 0.006), RH / 2, 0); ao.renderOrder = 1; g.add(ao); }
   const vary = new THREE.Group(); vary.name = "vary"; g.add(vary);
@@ -565,7 +565,7 @@ export async function init(layout) {
   try { await document.fonts.load('64px "IM Fell English SC"'); } catch { /* fine */ }
   await new Promise((ok) => { const im = new Image(); im.onload = () => { WOODIMG = im; ok(); }; im.onerror = ok; im.src = "assets/tex/Wood049/Color.jpg"; });
   props();
-  player = pegDoll(); playerTwin = pegDoll(); shadowFig = hooded(); shadowTwin = hooded();
+  player = pegDoll(); playerTwin = pegDoll(); shadowFig = hooded(); shadowTwin = hooded(); for (const f of [player, playerTwin, shadowFig, shadowTwin]) f.name = "fig";
   for (const f of [player, playerTwin, shadowFig, shadowTwin]) { clipAll(f); grid.add(f); }
   ready = true; return true;
 }

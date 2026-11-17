@@ -10,18 +10,22 @@ await pg.goto(`http://127.0.0.1:${port}/${process.argv[3]||'?seed=4242&3d=1&phot
 await pg.waitForFunction(()=>window.__dh,null,{timeout:120000});await pg.evaluate(()=>{window.__stop=1});
 await pg.waitForFunction(()=>window.__dh.in3d(),null,{timeout:180000,polling:1000});
 await pg.waitForTimeout(3000);
-await pg.evaluate(()=>{__dh.begin();__dh.hush();__dh.tick(0.05,100);__dh.hush();__dh.draw3d();});
-const out=await pg.evaluate(async()=>{
+await pg.evaluate(()=>{__dh.begin();__dh.hush();__dh.tick(0.05,100);__dh.hush();});
+// PRE: JS run on the page before the picture (e.g. set every room's state); HIDE: names to leave out, as a regex
+if(process.env.PRE)await pg.evaluate(process.env.PRE);
+await pg.evaluate(()=>__dh.draw3d());
+const out=await pg.evaluate(async(HIDE)=>{
   const { GLTFExporter } = await import('/vendor/addons/exporters/GLTFExporter.js');
   const { scene, photoCam } = window.__dh.scene3d();
   // leave out the unlit see-through overlays (painted-on grime and dust: the path tracer makes its own shade) and helpers
   const hidden=[]; scene.traverse(o=>{ if(o.isMesh && o.material && !Array.isArray(o.material) && o.material.isMeshBasicMaterial && o.material.transparent && o.visible){o.visible=false;hidden.push(o);} });
+  if(HIDE){const re=new RegExp(HIDE);scene.traverse(o=>{if(o.visible&&o.name&&re.test(o.name)){o.visible=false;hidden.push(o);}});}
   scene.updateMatrixWorld(true);
   const glb = await new GLTFExporter().parseAsync(scene,{binary:true,onlyVisible:true,maxTextureSize:2048});
   hidden.forEach(o=>o.visible=true);
   const CH=40e6;let parts=0;for(let o=0;o<glb.byteLength;o+=CH){await fetch('/upload?i='+parts,{method:'POST',body:glb.slice(o,o+CH)});parts++;}
   const cam={pos:photoCam.position.toArray(),quat:photoCam.quaternion.toArray(),fov:photoCam.fov,aspect:photoCam.aspect,focus:photoCam.userData.focus};
   return {parts,cam,n:glb.byteLength,t:Object.prototype.toString.call(glb)};
-});
+},process.env.HIDE||'');
 fs.writeFileSync(process.argv[2],Buffer.concat([...Array(out.parts).keys()].map(i=>{const f=process.argv[2]+'.part'+i,b=fs.readFileSync(f);fs.unlinkSync(f);return b;})));fs.writeFileSync(process.argv[2]+'.cam.json',JSON.stringify(out.cam));
 console.log("ok",out.n,out.t,fs.statSync(process.argv[2]).size,JSON.stringify(out.cam));await b.close();srv.close();})();

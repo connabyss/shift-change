@@ -634,7 +634,7 @@ test("never a dead floor: after a grab, if no way out is left, the house puts th
 // pixels off: every name twice, ladders through the ceiling, red X marks. Now each room's bones are drawn once, in
 // its own perspective, and the moon picks them out in the dark.
 test("in the dark, each room's name is drawn once, its open doorways show, and pointing at a word lights the rooms it moves", { skip }, async () => {
-  const { page, errors, close } = await open("/?seed=4242");
+  const { page, errors, close } = await open("/?seed=4242&plates=0"); // (the flat house: the photographed one has its own test)
   try {
     await page.evaluate(() => { const D = window.__dh; D.newGame(99, 2); D.begin(); const st = D.st(); st.floorT = 9; st.gag = true; D.hush(); });
     await page.mouse.move(5, 5); await page.waitForTimeout(300);
@@ -742,7 +742,7 @@ test("a lock in reach in the preview is tagged in words, not only in red", { ski
 });
 
 test("the screen break draws the game once, not every frame, so the WOW moment stays smooth", { skip }, async () => {
-  const { page, errors, close } = await open("/");
+  const { page, errors, close } = await open("/?plates=0"); // (measured against the flat house's frame, the dearer one)
   try {
     const r = await page.evaluate(() => {
       const D = window.__dh; D.newGame(null, 3); D.begin(); const st = D.st(); st.gag = true; st.faced = true; st.floorT = 9;
@@ -930,7 +930,7 @@ test("the 3D doll's house: it loads its scans, follows the house when a row slid
     assert.equal(await soft.page.evaluate(() => window.__dh.in3d()), false, "software rendering keeps the flat house");
     assert.deepEqual(soft.errors, []); await soft.page.close();
     // 2. forced on, the 3D house loads and draws into the game's canvas
-    const { page, errors } = await open("?seed=4242&3d=1"); await page.evaluate(() => { window.__stop = 1; });
+    const { page, errors } = await open("?seed=4242&3d=1&plates=0"); await page.evaluate(() => { window.__stop = 1; }); // (in play the photographed rooms take over from it: see their test)
     await page.waitForFunction(() => window.__dh.in3d(), null, { timeout: 300000, polling: 1000 });
     const a = await page.evaluate(() => {
       const D = window.__dh, st = D.st(); D.begin(); D.hush(); D.render();
@@ -961,4 +961,49 @@ test("the 3D doll's house: it loads its scans, follows the house when a row slid
     assert.equal(c.anim, false); assert.equal(c.flipped, true, "upside down: furniture on the ceiling"); assert.ok(c.y1 < c.y0, "the top floor went to the bottom");
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
+});
+
+// CH 11-17 ("its cross section not open roof. its from the side"; then "that shifting house side view is insaneee"):
+// in play the rooms are path-traced pictures taken straight from the side (tools/render), one per room, lights on and
+// off. They must move with the rules: each room's picture in its own slot, carried along by a slide, hanging upside
+// down when the house turns over, every name on its plate once, and open doorways showing in the posts.
+test("the photographed house: each room's picture sits in its slot, slides with its row, turns over with the house, and shows its doorways", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    await page.waitForFunction(() => { const D = window.__dh; D.begin(); return D.plates(); }, null, { timeout: 30000 });
+    const grab = () => page.evaluate(() => {
+      const D = window.__dh, P = CanvasRenderingContext2D.prototype, di = P.drawImage, ft = P.fillText, imgs = [], txt = [];
+      P.drawImage = function (im, ...a) { const m = this.getTransform(); if (im && im.src && /plates\/\w+_(lit|dark)\.jpg/.test(im.src)) imgs.push({ k: im.src.match(/plates\/(\w+)_(lit|dark)/).slice(1), x: m.a * a[0] + m.e, y: m.d * a[1] + m.f, sy: m.d }); return di.call(this, im, ...a); };
+      P.fillText = function (t, ...a) { txt.push(String(t)); return ft.call(this, t, ...a); };
+      try { D.render(); } finally { P.drawImage = di; P.fillText = ft; }
+      const st = D.st(), k = document.getElementById("game").width / 960;
+      return { imgs: imgs.map((i) => ({ ...i, x: i.x / k, y: i.y / k, sy: i.sy / k })), txt, g: st.g.map((r) => r.map((x) => ({ id: x.id, name: x.name, l: x.l }))) };
+    });
+    const at = (f, name) => f.imgs.filter((i) => i.k[0] === name && i.k[1] === "dark").map((i) => [Math.round(i.x), Math.round(i.y), Math.sign(i.sy)]);
+    const a = await grab();
+    for (let y = 0; y < 3; y++) for (let x = 0; x < 4; x++) {
+      const r = a.g[y][x], cell = [44 + x * 150, 74 + y * 146];
+      assert.deepEqual(at(a, r.name), [[cell[0], cell[1], 1]], `${r.name}'s picture is in its own slot`);
+      assert.equal(a.txt.filter((t) => t === r.name).length, 1, `${r.name}'s plate is written once`);
+    }
+    // a row slides east: once it settles, each of its rooms' pictures is one slot along (the end one wraps round)
+    const row = await page.evaluate(() => { const D = window.__dh, st = D.st(), p = D.find(st.g, st.player.id), li = D.byId(st.g, st.player.id).lines.findIndex((l) => l.kind === "row"); if (li < 0) return null; D.edit(li, 1); D.tick(1 / 60, 150); return p.y; });
+    assert.notEqual(row, null, "the start room has a row line");
+    const b = await grab();
+    for (let x = 0; x < 4; x++) { const was = a.g[row][x].name; assert.deepEqual(at(b, was), [[44 + ((x + 1) % 4) * 150, 74 + row * 146, 1]], `${was} slid one slot east`); }
+    // an open doorway is a gap in the room's post (the next room's light through it), not the post's own wood
+    const door = await page.evaluate(() => {
+      const st = window.__dh.st(), c = document.getElementById("game").getContext("2d"), k = c.canvas.width / 960;
+      const lum = (x, y) => { const d = c.getImageData(Math.round(x * k) - 2, Math.round(y * k) - 2, 4, 4).data; let t = 0; for (let i = 0; i < d.length; i += 4) t += d[i] + d[i + 1] + d[i + 2]; return t / 16; };
+      for (let y = 0; y < 3; y++) for (let x = 1; x < 4; x++) if (st.g[y][x].l && st.g[y][x - 1].lights) { const cx = 44 + x * 150 + 3, fy = 74 + y * 146 + 146 - 4; return { gap: lum(cx, fy - 30), post: lum(cx, fy - 110) }; }
+      return null;
+    });
+    assert.ok(door && Math.abs(door.gap - door.post) > 40, `an open doorway stands out from its post (${JSON.stringify(door)})`);
+    // turned over: every room's picture is drawn mirrored top to bottom
+    await page.evaluate(() => { const D = window.__dh; D.newGame(777, 3); D.begin(); D.hush(); const st = D.st(); let m = null;
+      for (const r of st.g.flat()) r.lines.forEach((l, li) => { if (l.kind === "flip") m = { id: r.id, li, dir: 1 }; }); D.houseMove(m); D.tick(1 / 60, 200); });
+    const c = await grab();
+    assert.ok(c.imgs.length >= 12 && c.imgs.every((i) => i.sy < 0), "upside down, the rooms hang from their ceilings");
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
 });

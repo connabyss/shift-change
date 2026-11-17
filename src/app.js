@@ -1,6 +1,6 @@
 // The Shifting House: a doll's house cut open. Click a room to walk there; click a word in the house's code
 // to change the house. Two locks, a front door, and a shadow that hunts you through the rooms.
-import { W, H, FLOOR, shiftRow, byId, find, nbrs, path, reach, clone, applyEdit, edits, solve, pickHouse, pageRoom, houseMoves, steps, NEW_WORD } from "./house.js";
+import { W, H, FLOOR, shiftRow, byId, find, nbrs, path, reach, clone, applyEdit, edits, solve, pickHouse, pageRoom, houseMoves, steps, NEW_WORD, NAMES } from "./house.js";
 import { COMMITS, PAGES, VOICE, ENDING, HOUSE_LINES, FINALE, JOKES, HOLD, AWAY, CREDITS } from "./story.js";
 import * as sfx from "./sound.js";
 import * as art from "./art.js";
@@ -20,6 +20,15 @@ const cv = document.getElementById("game"), ctx = cv.getContext("2d");
 const FLAT = /[?&]flat=1/.test(location.search); const PHOTO = /[?&]photo=1/.test(location.search); // (photo=1: the photo camera all the time, for stills)
 if (!FLAT) dh.init({ VW: 960, VH: 600, HX, HY, CW, CH, W, H }).catch((e) => console.warn("3D house unavailable:", e));
 const in3d = () => !FLAT && dh.isReady();
+// Play uses path-traced pictures (tools/render): each room photographed straight from the side, lights on and off, and
+// the empty house around them. The game slides and turns those pictures over; doors, ladders and the figures go on top.
+// The title and the shots between floors stay the live 3D photo camera. ?plates=0 turns the pictures off.
+const PL = { on: !FLAT && !PHOTO && !/[?&]plates=0/.test(location.search), ready: false, img: {} };
+if (PL.on) {
+  const want = ["shell", "wood", ...NAMES.flatMap((n) => [n + "_lit", n + "_dark"])]; let left = want.length;
+  for (const k of want) { const im = new Image(); im.onload = () => { if (--left === 0) PL.ready = true; }; im.onerror = () => { PL.on = false; }; im.src = k === "wood" ? "assets/tex/Wood049/Color.jpg" : `assets/plates/${k}.jpg`; PL.img[k] = im; }
+}
+const plates = () => PL.on && PL.ready && st.scene !== "title" && st.scene !== "floor";
 cv.width = VW * DPR; cv.height = VH * DPR;
 const MONO = LOOK.mono, SERIF = '"IM Fell English", Georgia, serif', TITLE = LOOK.title;
 let INK = "#d6ccb6", DIM = "rgba(214,204,182,0.45)", YEL = "#ffd36a", RED = "#ff5a4e", GRN = "#8fe39a";
@@ -637,6 +646,97 @@ function drawRoom(room, cx, cy, o) {
   vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.45)"); ctx.fillStyle = vg; ctx.fillRect(ox, oy, ow, oh);
   if (lit < 0.5) { ctx.save(); ctx.globalCompositeOperation = "multiply"; ctx.fillStyle = "rgba(120,150,220,1)"; ctx.fillRect(ox, oy, ow, oh); ctx.restore(); ctx.save(); ctx.globalCompositeOperation = "lighter"; const mg = ctx.createLinearGradient(ox + ow, oy, ox, oy + oh); mg.addColorStop(0, "rgba(90,120,200,0.16)"); mg.addColorStop(1, "rgba(90,120,200,0)"); ctx.fillStyle = mg; ctx.fillRect(ox, oy, ow, oh); ctx.restore(); }
 }
+// ---------- the photographed rooms ----------
+// One room's picture, lit or dark (cross-faded), turned over with the house; then what changes with the code, drawn
+// where the 3D house has it: doorways in the side posts, the ladder up and its hatch, the hole down, the lock, the page.
+const PS = 3.2 / 150, POST = 0.14 / PS, SLAB = 0.08 / PS, DOORH = 1.5 / PS, LADX = 0.8 / PS;
+function drawPlate(room, cx, cy, o, gx, gy) {
+  const lit = roomLit(room, o), shHere = st.shadow.mode !== "sleep" && st.shadow.id === room.id;
+  ctx.save(); ctx.beginPath(); ctx.rect(cx, cy, CW, CH); ctx.clip();
+  if (st.flipped) { ctx.translate(0, 2 * cy + CH); ctx.scale(1, -1); }
+  ctx.drawImage(PL.img[room.name + "_dark"], cx, cy, CW, CH);
+  if (lit > 0) { ctx.globalAlpha = lit; ctx.drawImage(PL.img[room.name + "_lit"], cx, cy, CW, CH); ctx.globalAlpha = 1; }
+  ctx.restore();
+  ctx.save(); ctx.beginPath(); ctx.rect(cx, cy, CW, CH); ctx.clip();
+  if (shHere && Math.random() < 0.18) { ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(cx, cy, CW, CH); } // (its bulb stutters when the thing is in the room)
+  const fy = cy + CH - SLAB, cyT = cy + SLAB, L = 0.35 + 0.65 * lit;
+  // doorways: an open one is a dark gap in the post with the next room's light at its edge, a shut one a panelled door
+  for (const s of ["l", "r"]) {
+    const hasLine = room.lines.some((l) => l.kind === "door" && (l.side === "west") === (s === "l"));
+    const x0 = s === "l" ? cx : cx + CW - POST, y0 = fy - DOORH;
+    if (room[s]) {
+      // (through it, the next room's lamp, or the dark when its light is off)
+      const nb = st.g[gy] && st.g[gy][gx + (s === "l" ? -1 : 1)], nl = nb ? 0.55 * roomLit(nb, {}) : 0, w = (c, f) => Math.round(c * f);
+      const g = ctx.createLinearGradient(0, y0, 0, fy), a = s === "l" ? [0, 1] : [1, 0];
+      g.addColorStop(0, `rgb(${w(150, nl)},${w(105, nl)},${w(62, nl)})`); g.addColorStop(1, `rgb(${6 + w(225, nl)},${4 + w(160, nl)},${4 + w(96, nl)})`); ctx.fillStyle = g; ctx.fillRect(x0, y0, POST, DOORH);
+      const e = ctx.createLinearGradient(x0, 0, x0 + POST, 0); e.addColorStop(a[0], "rgba(0,0,0,0)"); e.addColorStop(a[1], "rgba(0,0,0,0.55)"); ctx.fillStyle = e; ctx.fillRect(x0, y0, POST, DOORH);
+      ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(x0 - 0.5, y0 - 2, POST + 1, 2); // (the lintel's shadow)
+    } else if (hasLine) {
+      woodRects([[x0, y0, POST, DOORH]], 0.45 * L + 0.1, "#6a7888");
+      ctx.strokeStyle = "rgba(0,0,0,0.55)"; ctx.lineWidth = 1; ctx.strokeRect(x0 + 0.5, y0 + 0.5, POST - 1, DOORH - 1);
+      ctx.fillStyle = `rgba(214,180,96,${0.5 + 0.5 * L})`; ctx.beginPath(); ctx.arc(x0 + POST / 2, fy - DOORH * 0.48, 1.4, 0, 7); ctx.fill();
+    }
+    if (o.door && o.door.side === s) {
+      ctx.save(); ctx.globalAlpha = 0.55 + 0.45 * Math.sin(st.t * 8); ctx.strokeStyle = o.door.open ? GRN : RED; ctx.lineWidth = 2.5; ctx.strokeRect(x0 - 1, y0 - 1, POST + 2, DOORH + 2); ctx.restore();
+    }
+  }
+  // the ladder up to a hatch; where nothing meets it above, the hatch is boarded over. A hole down shows the ladder below's top
+  const lx = cx + CW / 2 + LADX, up = room.up, upJ = up && gy > 0 && st.g[gy - 1][gx].down, downJ = room.down && gy + 1 < H && st.g[gy + 1][gx].up;
+  if (up) { ladder(lx, cyT - (upJ ? SLAB + 2 : 0), fy, L); if (!upJ) planks(lx, cyT + 1, L); else { ctx.fillStyle = "rgba(4,3,6,0.9)"; ctx.fillRect(lx - 14, cy - 1, 28, SLAB + 1); } }
+  if (room.down) { ctx.fillStyle = "rgba(4,3,6,0.9)"; ctx.fillRect(lx - 14, fy, 28, SLAB + 1); if (downJ) ladder(lx, fy - 16, cy + CH + 1, L, true); else planks(lx, fy - 3, L); }
+  ctx.restore();
+  // the brass name plate on the floor's front edge (as on the 3D house: it stays put when the room turns over)
+  { ctx.save(); ctx.font = `9px "IM Fell English SC", Georgia, serif`; const tw = ctx.measureText(room.name).width + 14, h = 11, h2 = [...room.name].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) % 9973, 7);
+    const nx = cx + CW / 2 + ((h2 >> 3) % 9 - 4) * 0.09 / PS - tw / 2, ny = cy + CH - 0.17 / PS - h / 2, k = 0.55 + 0.45 * L;
+    ctx.translate(nx + tw / 2, ny + h / 2); ctx.rotate(((room.name.length * 5) % 7 - 3) * 0.012); ctx.translate(-tw / 2, -h / 2);
+    const g = ctx.createLinearGradient(0, 0, 0, h); g.addColorStop(0, shade([200, 178, 120], k)); g.addColorStop(0.5, shade([150, 128, 78], k)); g.addColorStop(1, shade([96, 78, 42], k));
+    ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(1, 1.5, tw, h); ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(0, 0, tw, h, 1.5); ctx.fill();
+    ctx.fillStyle = "rgba(30,22,10,0.8)"; for (const sx of [3, tw - 3]) { ctx.beginPath(); ctx.arc(sx, h / 2, 1, 0, 7); ctx.fill(); }
+    ctx.textAlign = "center"; ctx.fillStyle = "rgba(255,240,200,0.25)"; ctx.fillRect(2, 1, tw - 4, 0.8);
+    ctx.fillStyle = `rgba(48,34,14,${0.75 + 0.2 * k})`; ctx.fillText(room.name, tw / 2, h - 2.6); ctx.restore(); }
+  if (room.lines.some((l) => l.kind === "lock")) {
+    const px = cx + CW * 0.3, py = cy + CH * 0.42, col = st.unlocked ? GRN : RED;
+    glows.push(() => padlock(px, py, col, 8 + 4 * Math.sin(st.t * 4))); padlock(px, py, col, 6);
+  }
+  if (st.page.id === room.id && !st.page.got) {
+    const px = cx + CW * 0.36, py = fy - 4, k = 0.6 + 0.4 * Math.sin(st.t * 3 + 1);
+    ctx.save(); ctx.globalCompositeOperation = "lighter"; const pg = ctx.createRadialGradient(px, py, 1, px, py, 26);
+    pg.addColorStop(0, `rgba(255,240,200,${0.35 * k})`); pg.addColorStop(1, "rgba(255,240,200,0)"); ctx.fillStyle = pg; ctx.fillRect(px - 28, py - 28, 56, 56); ctx.restore();
+    ctx.save(); ctx.translate(px, py); ctx.rotate(-0.08); ctx.fillStyle = shade([232, 220, 192], Math.max(L, 0.6));
+    ctx.beginPath(); ctx.moveTo(-9, -2); ctx.lineTo(8, -3); ctx.lineTo(9, 1.5); ctx.lineTo(-8, 2); ctx.closePath(); ctx.fill(); ctx.restore();
+  }
+}
+let woodP = null;
+const woodPat = () => woodP || (woodP = ctx.createPattern(PL.img.wood, "repeat"));
+// wood (the 3D house's ladder and door texture) in a shape, darkened to the room's light (ctx.filter isn't everywhere)
+function woodRects(rects, k, tint = "#b08a62") {
+  ctx.save(); ctx.beginPath(); for (const r of rects) ctx.rect(...r); ctx.clip();
+  ctx.fillStyle = woodPat(); for (const r of rects) ctx.fillRect(...r);
+  ctx.globalCompositeOperation = "multiply"; ctx.fillStyle = tint; for (const r of rects) ctx.fillRect(...r); // (the 3D house's stain on the bare wood)
+  ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = `rgba(8,5,3,${clamp(1 - k, 0, 1)})`; for (const r of rects) ctx.fillRect(...r); ctx.restore();
+}
+// a wooden ladder seen straight on: two rails and round rungs, its shadow on the back wall
+function ladder(x, y0, y1, L, stub) {
+  const k = 0.2 + 0.6 * L, h = y1 - y0, R = [];
+  ctx.fillStyle = "rgba(0,0,0,0.35)"; for (const sx of [-1, 1]) ctx.fillRect(x + sx * 10.3 + 1, y0 + 3, 3, h - 3);
+  for (let r = y1 - 14; r > y0 + 4; r -= 14) R.push([x - 10, r - 1.1, 20, 2.2]);
+  for (const sx of [-1, 1]) R.push([x + sx * 10.3 - 1.6, y0, 3.3, h]);
+  woodRects(R, k);
+  ctx.fillStyle = `rgba(255,220,170,${0.1 * k})`; for (const sx of [-1, 1]) ctx.fillRect(x + sx * 10.3 - 1.6, y0, 1, h); // (a lit edge)
+  if (stub) { ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fillRect(x - 12, y0, 24, 2); }
+}
+function planks(x, y, L) {
+  woodRects([[x - 17, y, 34, 3]], 0.3 + 0.45 * L);
+  ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(x - 17, y + 3, 34, 1); ctx.fillStyle = "rgba(20,14,10,0.8)"; for (const dx of [-12, 12]) ctx.fillRect(x + dx, y + 1, 1.2, 1.2);
+}
+// over the photographed house: lightning, and your own little lamp's warm light where you stand
+function plateLight() {
+  const pp = walkerPos(st.player), px = pp[0], py = pp[1] - 30, hot = HOT[st.floor] || HOT[1], f = flash();
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  if (st.scene !== "end") { const g = ctx.createRadialGradient(px, py, 0, px, py, 90); g.addColorStop(0, `rgba(${hot},0.32)`); g.addColorStop(1, `rgba(${hot},0)`); ctx.fillStyle = g; ctx.fillRect(px - 100, py - 100, 200, 200); }
+  if (f > 0) { ctx.fillStyle = `rgba(170,190,240,${0.35 * f})`; ctx.fillRect(HX, HY, HW, HH); }
+  ctx.restore();
+}
 // a padlock hanging on the back wall: shackle, body, keyhole. Open (green) lifts its shackle.
 function padlock(x, y, col, blur) {
   const up = st.unlocked ? 5 : 0;
@@ -649,7 +749,17 @@ function padlock(x, y, col, blur) {
   ctx.restore();
 }
 
-const drawPlayer = (x, y) => art.player(ctx, x, y, st.t, !!st.player.way);
+const drawPlayer = (x, y) => plates() && DOLL.ok === 4 ? dollSprite(x, y) : art.player(ctx, x, y, st.t, !!st.player.way);
+// the 3D house's peg doll, path-traced and cut out (tools/render/render.py SPRITE=1): straight on, turned each way, from behind
+const DOLL = { ok: 0 }, DOLLW = 1.5 / PS;
+if (PL.on) for (const k of ["front", "right", "left", "back"]) { const im = new Image(); im.onload = () => DOLL.ok++; im.src = `assets/plates/doll_${k}.png`; DOLL[k] = im; }
+function dollSprite(x, y) {
+  const w = walkerInfo(st.player), walking = w.walking, bob = walking ? Math.abs(Math.sin(st.t * 16)) * 0.04 / PS : 0;
+  const im = DOLL[w.climb ? "back" : w.dir > 0 ? "right" : w.dir < 0 ? "left" : "front"];
+  ctx.save(); ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.beginPath(); ctx.ellipse(x, y, 9, 2.2, 0, 0, 7); ctx.fill(); // (where it stands)
+  ctx.translate(x, y - bob); if (walking && !w.climb) ctx.rotate(Math.sin(st.t * 16) * 0.06);
+  ctx.drawImage(im, -DOLLW / 2, -DOLLW + 0.05 / PS, DOLLW, DOLLW); ctx.restore();
+}
 function drawShadow(x, y) {
   const sh = st.shadow, pp = walkerPos(st.player), end = st.scene === "end";
   // in the dark you only see it when it is in your light, or when lightning shows it
@@ -695,9 +805,10 @@ function drawHouse() {
   ctx.fillStyle = YEL; ctx.fillText(t, HCX, HY - 14); ctx.restore();
 }
 function drawHouseNow() {
-  const D3 = in3d() && draw3d();
-  if (!D3) art.roof(ctx, { x: HX, y: HY, w: HW, h: HH }, st.t, HX + HW + 8);
-  if (!D3 && st.scene !== "end") { ctx.save(); ctx.fillStyle = `rgba(2,5,16,${0.8 - 0.5 * flash()})`; ctx.beginPath(); ctx.moveTo(HX - 22, HY); ctx.lineTo(HCX, HY - 62); ctx.lineTo(HX + HW + 22, HY); ctx.closePath(); ctx.fill();
+  const P = plates(), D3 = !P && in3d() && draw3d();
+  if (P) ctx.drawImage(PL.img.shell, 0, 0, VW, VH);
+  if (!D3 && !P) art.roof(ctx, { x: HX, y: HY, w: HW, h: HH }, st.t, HX + HW + 8);
+  if (!D3 && !P && st.scene !== "end") { ctx.save(); ctx.fillStyle = `rgba(2,5,16,${0.8 - 0.5 * flash()})`; ctx.beginPath(); ctx.moveTo(HX - 22, HY); ctx.lineTo(HCX, HY - 62); ctx.lineTo(HX + HW + 22, HY); ctx.closePath(); ctx.fill();
     ctx.fillRect(HX + HW * 0.72 - 4, HY - 64, 32, 64); ctx.restore(); }
   ctx.save(); ctx.beginPath(); ctx.rect(HX, HY, HW, HH); ctx.clip();
   const pv = st.preview;
@@ -709,9 +820,10 @@ function drawHouseNow() {
   if (!D3) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const room = st.g[y][x], o = {};
     if (pv && pv.roomId === room.id) { if (pv.door) o.door = pv.door; if (pv.light) o.lightPreview = 0.5 + 0.5 * Math.sin(st.t * 5); }
-    for (const [cx, cy] of drawPositions({ x, y })) drawRoom(room, cx, cy, o);
+    for (const [cx, cy] of drawPositions({ x, y })) (P ? drawPlate : drawRoom)(room, cx, cy, o, x, y);
   }
-  if (!D3) lampLight();
+  if (P) plateLight();
+  else if (!D3) lampLight();
   // reach outlines
   // rooms you could walk to after the word: dashed. A lock in reach gets a solid double frame and a tag, so it
   // reads without telling red from green (about 1 in 12 men can't)
@@ -759,10 +871,12 @@ function drawHouseNow() {
   if (pv && pv.band && (pv.band.kind === "row" || pv.band.kind === "col")) chalkArrow(pv.band, YEL);
   ctx.restore();
   // beams between rooms
-  drawLookFrame(D3);
+  drawLookFrame(D3 || P);
   // front door, in the house's frame (bottom left)
   const fx = HX - 30, fy = HY + HH - 64, hov = st.hover && st.hover.type === "door";
-  if (D3) { // the door itself is in the 3D porch; under the pointer it gets a frame
+  if (D3 || P) { // the door itself is in the 3D porch (or its picture); under the pointer it gets a frame
+    if (P && st.unlocked) { ctx.save(); ctx.globalCompositeOperation = "lighter"; const g = ctx.createRadialGradient(fx + 13, fy + 30, 4, fx + 13, fy + 30, 60);
+      g.addColorStop(0, `rgba(190,215,255,${0.45 + 0.1 * Math.sin(st.t * 3)})`); g.addColorStop(1, "rgba(190,215,255,0)"); ctx.fillStyle = g; ctx.fillRect(fx - 50, fy - 30, 126, 120); ctx.restore(); }
     if (hov) { ctx.strokeStyle = st.unlocked ? "#fff" : RED; ctx.lineWidth = 1.5; ctx.strokeRect(fx - 3, fy - 3, 32, 66); }
   } else {
   ctx.fillStyle = "#1c1820"; ctx.fillRect(fx - 4, fy - 4, 34, 68);
@@ -1624,6 +1738,6 @@ requestAnimationFrame(frame);
 window.__dh = {
   pickHouseMove: () => pickHouseMove(), houseMove: (m) => performEdit(m.id, m.li, m.dir, true), houseMoves, st: () => st, begin: () => { st.scene = "play"; }, choose: (w) => choose(w), say: (k) => say(k), choiceRects: () => choiceRects, nextFloor: () => nextFloor(), solve, hint: () => doHint(), edit: (li, d) => doEdit(li, d), edits, path, walk: (id, exit) => walkTo(id, exit, 0, 0),
   reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(), sticky: () => sticky, gag: () => ({ gag: !!st.gag, nudged: !!st.nudged, sign: !!st.sign, sticker: !!st.sticker }), undone: () => undone, undo: () => undo(), line: (t) => sayLine(t), hush: () => { st.voice = null; st.voiceQ = []; st.quiet = 99; st.sign = st.sticker = null; }, lift: () => lift(), junk: () => junk.length, tick: (dt, n) => { for (let i = 0; i < n; i++) update(dt); }, render: () => render(), upright: () => upright.matches, dragBack: () => dragBack(), previewLit: () => [...previewLit()], deskHit: desk.deskHit, shiftK: () => shiftK, goneFor, openDesk: () => openDesk(), trapped: (b) => trapped(b), awayLine: () => awayLine, calm: () => CALM, flash: () => flash(),
-  in3d: () => in3d(), info3d: () => dh.info(), roomAt3d: (id) => dh.roomAt(id), draw3d: () => draw3d(), scene3d: () => dh.forExport(), // (stills: the 3D picture alone, no page or buttons on top)
+  plates: () => plates(), in3d: () => in3d(), info3d: () => dh.info(), roomAt3d: (id) => dh.roomAt(id), draw3d: () => draw3d(), scene3d: () => dh.forExport(), // (stills: the 3D picture alone, no page or buttons on top)
   paused: () => paused, restart: () => restartFloor(), hudRects: () => hudRects, pauseRects: () => pauseRects, roomGeo: (x, y) => roomGeo(x, y),
 };

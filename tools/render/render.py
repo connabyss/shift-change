@@ -110,4 +110,25 @@ sc.render.engine = 'CYCLES'; sc.cycles.device = 'CPU'; sc.cycles.samples = S; sc
 sc.cycles.max_bounces = 6; sc.render.resolution_x = W; sc.render.resolution_y = H; sc.render.resolution_percentage = 100
 sc.view_settings.view_transform = 'AgX'; sc.view_settings.look = 'AgX - Medium High Contrast'; sc.view_settings.exposure = 0
 sc.render.filepath = out; sc.render.threads_mode = 'AUTO'
-t0 = time.time(); bpy.ops.render.render(write_still=True); print('render', round(time.time() - t0), 's', flush=True)
+if os.environ.get('SPRITE'):  # SPRITE=1: the peg doll alone, cut out (RGBA, the rest of the house kept as a holdout for its light
+    # and shadow), straight on and turned: out_front.png, out_right.png, out_left.png, out_back.png (the turns figure() uses)
+    def kids(o): return [o] + [k for c in o.children for k in kids(c)]
+    roots = [o for o in sc.objects if o.name.split('.')[0] == 'fig' and (o.parent is None or o.parent.name.split('.')[0] != 'fig')]
+    def box(r):
+        pts = [o.matrix_world @ mathutils.Vector(v) for o in kids(r) if o.type == 'MESH' for v in o.bound_box]
+        return mathutils.Vector([min(p[i] for p in pts) for i in range(3)]), mathutils.Vector([max(p[i] for p in pts) for i in range(3)])
+    doll = min((r for r in roots if any(o.type == 'MESH' for o in kids(r))), key=lambda r: (box(r)[1] - box(r)[0]).z)
+    mine = {o.name for o in kids(doll)}
+    for o in sc.objects:
+        if o.type == 'MESH' and o.name not in mine: o.is_holdout = True
+    sc.render.film_transparent = True; sc.render.image_settings.color_mode = 'RGBA'; sc.render.image_settings.file_format = 'PNG'
+    lo, hi = box(doll); ctr = (lo + hi) / 2; wd = float(os.environ.get('SPRITE_W', '1.5'))
+    c.data.type = 'ORTHO'; c.data.ortho_scale = wd; c.data.sensor_fit = 'HORIZONTAL'; c.data.dof.use_dof = False
+    c.rotation_mode = 'XYZ'; c.rotation_euler = (math.pi / 2, 0, 0); c.location = (ctr.x, -40, lo.z - 0.05 + wd / 2)
+    doll.rotation_mode = 'XYZ'; z0 = doll.rotation_euler.z
+    for tag, a in (('front', 0), ('right', 0.8 * math.pi / 2), ('left', -0.8 * math.pi / 2), ('back', math.pi)):
+        doll.rotation_euler.z = z0 + a; sc.render.filepath = out.replace('.png', '_' + tag + '.png')
+        t0 = time.time(); bpy.ops.render.render(write_still=True); print('sprite', tag, round(time.time() - t0), 's', flush=True)
+    print('sprite at', tuple(round(v, 3) for v in ctr), 'base z', round(lo.z, 3), flush=True)
+else:
+    t0 = time.time(); bpy.ops.render.render(write_still=True); print('render', round(time.time() - t0), 's', flush=True)
