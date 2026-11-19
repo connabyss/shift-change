@@ -659,8 +659,20 @@ test("floor 2 fairness: a hint holds the house off, reading holds its move, a gr
       // a room out of reach says what's in the way
       const far = st.g.flat().find((x) => !D.reach(st.g, st.player.id).has(x.id));
       out.why = far ? D.whyNoWay(st.player.id, far.id) : "No way there yet: (all in reach)";
+      // you follow the hint: the house lets that move go without a reply
+      out.spared = null;
+      for (const seed of [99, 1, 2, 3, 5, 7, 11, 13, 17, 19]) {
+        D.newGame(seed, 2); D.begin(); const s2 = D.st(); s2.shadow.mode = "hunt"; D.hint(); const h = s2.hint;
+        if (!h || h.id !== s2.player.id || h.li == null) continue;
+        s2.anim = null; D.edit(h.li, h.dir); out.spared = s2.houseNext == null;
+        s2.anim = null; s2.lastEdit = null; const li = D.byId(s2.g, s2.player.id).lines.findIndex((l) => l.kind === "row" || l.kind === "col" || l.kind === "swap");
+        if (li >= 0) { D.edit(li, 1); out.nextReplies = s2.houseNext != null; }
+        break;
+      }
       return out;
     });
+    assert.equal(r.spared, true, "following the hint gets no reply from the house");
+    assert.notEqual(r.nextReplies, false, "and the move after that does");
     assert.ok(r.held > 0, "some floor had a hint that held the house off");
     assert.ok(r.after > 0, "and the house moves again once the hint is old");
     assert.ok(r.waited, "the house's move waits while you're pointing at a word");

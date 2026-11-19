@@ -188,6 +188,9 @@ function doEdit(li, dir = 1) {
   if (c.kind === "lock" && st.unlocked) return;
   st.used.add(c.kind);
   const res = performEdit(room.id, li, dir, false);
+  // you did what the hint said: the house lets that one go (testers lost the hinted room to its very next reply)
+  const followed = st.hint && st.hint.id === room.id && st.hint.li === li && st.hint.dir === dir;
+  if (followed) st.spare = true;
   st.edits++; st.hint = null; if (res.kind !== "lights" && res.kind !== "lock") st.moves++;
   st.writeBack = { li, t: 0 };
   if (res.kind === "lock") {
@@ -223,6 +226,7 @@ const pick = (a) => a[(Math.random() * a.length) | 0];
 function houseTurn() {
   if (st.finale || st.scene !== "play" || st.floor === 1) return; // floor 1 is calm: it starts fighting back on floor 2
   st.playerEdits++; st.houseIdle = 0;
+  if (st.spare) { st.spare = false; think("house.let(it).go();  // this once"); return; }
   st.houseNext = { t: -HOUSE_WAIT, move: null };
 }
 function pickHouseMove() {
@@ -457,7 +461,10 @@ function update(dt) {
   const pp = walkerPos(st.player), sp = walkerPos(sh);
   if (sh.mode !== "sleep" && st.finale && Math.hypot(pp[0] - sp[0], pp[1] - sp[1]) < 24) shoved();
   else if (sh.mode !== "sleep" && Math.hypot(pp[0] - sp[0], pp[1] - sp[1]) < 24) { st.scene = "caught"; st.caughtT = 0; think("found(you);"); sfx.caught(); say("caught"); }
-  sfx.update(dt, nearness());
+  // it's one room away: say so, once each time it closes in (testers were grabbed without seeing it coming)
+  const near = nearness(); if (near === 1 && (st.lastNear ?? 9) > 1 && sh.mode !== "sleep") { float(pp[0] - 40, pp[1] - 64, "it's in the next room", RED); st.shake = Math.max(st.shake || 0, 0.15); }
+  st.lastNear = near;
+  sfx.update(dt, near);
   if (st.player.way && (st.stepT -= dt) <= 0) { sfx.step(); st.stepT = 0.27; }
 }
 // it wakes. On floor 2 every lamp in the house dies with it, for a moment.
@@ -910,8 +917,8 @@ function drawHouseNow() {
     ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(HX + p.x * CW + 20, HY + p.y * CH + 22, CW - 40, 6);
     ctx.fillStyle = k > 0.3 ? GRN : RED; ctx.fillRect(HX + p.x * CW + 20, HY + p.y * CH + 22, (CW - 40) * k, 6);
     const left = Math.max(0, Math.ceil(TRAPS[st.floor - 1] - st.shadow.noPath)), tag = `claws out in ${left}s`;
-    ctx.save(); ctx.font = `13px ${MONO}`; const tw = ctx.measureText(tag).width + 10; ctx.fillStyle = "rgba(10,6,8,0.8)"; ctx.fillRect(HX + p.x * CW + (CW - tw) / 2, HY + p.y * CH + CH - 34, tw, 18);
-    ctx.fillStyle = "#d8f5dc"; ctx.fillText(tag, HX + p.x * CW + (CW - tw) / 2 + 5, HY + p.y * CH + CH - 21); ctx.restore();
+    ctx.save(); ctx.font = `13px ${MONO}`; const tw = ctx.measureText(tag).width + 10; ctx.fillStyle = "rgba(10,6,8,0.8)"; ctx.fillRect(HX + p.x * CW + (CW - tw) / 2, HY + p.y * CH + 32, tw, 18);
+    ctx.fillStyle = "#d8f5dc"; ctx.fillText(tag, HX + p.x * CW + (CW - tw) / 2 + 5, HY + p.y * CH + 45); ctx.restore();
   }
   if (st.scene === "play" && !st.anim && !flipPeek()) drawWays();
   // figures
@@ -1069,6 +1076,7 @@ function codeLine(parts, x, y, size, opts) {
 function drawPanel() {
   // the house's source: a typewritten page clipped beside the house
   LOOK.panelBg(ctx, PX - 16, 22, PW + 26, VH - 44);
+  ctx.save(); ctx.globalCompositeOperation = "multiply"; // typed ink soaks into the paper, it doesn't sit on top of it
   inInk(() => {
     // the file's name, typed at the top right; in the finale it becomes yours
     const yours = !!st.finale || (st.scene === "end" && st.floor === FLOORS);
@@ -1076,6 +1084,7 @@ function drawPanel() {
     ctx.fillText(yours ? glitchText("you.js", st.finale && st.finale.t < 1 ? 0.6 : 0) : "house.js", PX + PW - 8, 44); ctx.textAlign = "left";
     panelBody();
   });
+  ctx.restore();
 }
 function panelBody() {
   const x = PX, w = PW - 6;
