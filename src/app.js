@@ -59,10 +59,11 @@ function newGame(seed, floor = 1, carry = null, house = null) {
     // story
     page: { id: pageRoom(h, floor), got: false }, pages: carry ? carry.pages : 0, found: carry ? carry.found : [], said: carry ? carry.said : new Set(),
     used: carry ? carry.used : new Set(), playerEdits: 0, houseNext: null, finale: null, finalePath: null,
+    sheets: carry && carry.sheets ? carry.sheets : [],
     voice: null, pageShow: null, started: false, blackout: 0, faceBolt: false, faced: false, typed: null, ending: null, endT2: 0, idleSaid: false,
   };
   st.g0 = clone(h.g); // the floor as it began, in case the house ever leaves no way out (and for Restart)
-  st.carry0 = carry && { grabs: carry.grabs, total: { ...carry.total }, bolt: carry.bolt, pages: carry.pages, found: [...carry.found], said: new Set(carry.said), used: new Set(carry.used) };
+  st.carry0 = carry && { grabs: carry.grabs, total: { ...carry.total }, bolt: carry.bolt, pages: carry.pages, found: [...carry.found], said: new Set(carry.said), used: new Set(carry.used), sheets: [...(carry.sheets || [])] };
   if (carry) { st.grabs = carry.grabs; st.scene = "play"; st.shadow.mode = "sleep"; }
   setTitle("The Shifting House");
 }
@@ -74,7 +75,7 @@ function restartFloor() {
   if (!(st.scene === "play" || st.scene === "caught")) return;
   const c = st.carry0 || { grabs: 0, total: { moves: 0, par: 0, hints: 0 }, bolt: st.bolt, pages: 0, found: [], used: new Set() };
   const house = { ...st.h, g: clone(st.g0) };
-  newGame(null, st.floor, { ...c, total: { ...c.total }, found: [...c.found], used: new Set(c.used), said: st.said }, house);
+  newGame(null, st.floor, { ...c, total: { ...c.total }, found: [...c.found], used: new Set(c.used), said: st.said, sheets: [...(c.sheets || [])] }, house);
   sfx.reset(); sfx.duck(false); sfx.slide(); st.shake = 0.4;
   const [x, y] = walkerPos(st.player); float(x - 30, y - 50, "house.reset();", YEL);
 }
@@ -84,8 +85,16 @@ function setPaused(on) {
 }
 function setTitle(t) { try { document.title = t; } catch { /* fine */ } }
 function nextFloor() {
-  const carry = { grabs: st.grabs, total: st.total, bolt: st.bolt, pages: st.pages, found: st.found, said: st.said, used: st.used };
+  const carry = { grabs: st.grabs, total: st.total, bolt: st.bolt, pages: st.pages, found: st.found, said: st.said, used: st.used, sheets: st.sheets };
   newGame(st.floor + 1 === 3 ? null : (Math.random() * 1e9) | 0, st.floor + 1, carry);
+}
+// the page as you leave a floor, stains and all: the ending lays the three side by side
+function keepSheet() {
+  try {
+    const x = (PX - 22) * DPR, y = 14 * DPR, w = (PW + 38) * DPR, h = (VH - 28) * DPR, c = document.createElement("canvas");
+    c.width = Math.round(w / 2); c.height = Math.round(h / 2); c.getContext("2d").drawImage(cv, x, y, w, h, 0, 0, c.width, c.height);
+    st.sheets = [...(st.sheets || []), c].slice(-FLOORS);
+  } catch { /* (no canvas: a test) */ }
 }
 function floorDone() {
   // the chase: the front door holds shut until the house lets you go (about half a minute)
@@ -95,6 +104,7 @@ function floorDone() {
     return;
   }
   st.total.moves += st.moves; st.total.par += st.h.par;
+  st.wantSheet = true;
   if (st.floor < FLOORS) { st.scene = "floor"; st.endT = 0; } else { st.scene = "end"; st.endT = 0; }
   sfx.frontDoor();
 }
@@ -183,6 +193,11 @@ function doEdit(li, dir = 1) {
     st.queued = { li, dir, id: st.player.id }; return;
   }
   st.lastEdit = { li, dir, t: st.t };
+  { const r = st.wordRects.find((w) => w.li === li && w.dir === dir), ly = st.lineYs && st.lineYs[li];
+    if (r && ly != null) { // the old word's ink runs off the page into the margin by its line number, and dries there
+      st.smear = { x: r.x, y: r.y, w: r.w, h: r.h, t: 0 };
+      st.stains = (st.stains || []).slice(-23); { const h = (k) => hash01(st.t * k + ly); st.stains.push({ x: PX - 9 + (h(1) - 0.5) * 4, y: ly + 9 + h(2) * 3, t: 0, seed: (st.t * 1000) | 0, r: 4.5 + h(3) * 2.5, tall: 1.3 + h(7) * 1.2, run: h(11) < 0.4 ? 0 : 6 + h(13) * 22, rough: 0.25 + h(17) * 0.5, n: 12 + ((h(19) * 16) | 0) }); }
+      st.total.retyped = (st.total.retyped || 0) + 1; st.retype = { li, t: 0, n: 0, len: st.total.retyped <= 3 ? 0.4 : 0.2 }; } }
   st.queued = null; st.houseIdle = 0;
   const room = byId(st.g, st.player.id), c = room.lines[li];
   if (c.kind === "lock" && st.unlocked) return;
@@ -268,8 +283,9 @@ function houseUpdate(dt) {
   hn.t += dt;
   if (hn.t >= 0 && !hn.move) {
     const m = pickHouseMove(); if (!m) { st.houseNext = null; return; }
-    hn.move = m; hn.code = houseCode(m); sfx.creak(0.35);
+    hn.move = m; hn.code = houseCode(m); hn.typed = 0; sfx.creak(0.35);
   }
+  if (hn.move) { const n = Math.floor(clamp(hn.t * 40, 0, hn.code.length)); while (hn.typed < n) { const ch = hn.code[hn.typed++]; if (ch !== " ") { sfx.clack(0.8 + Math.random() * 0.3); st.jolt = 1; } } }
   // reading a word or a room on the page: it waits a little longer, so the page doesn't change under your click
   const reading = st.hover && (st.hover.type === "word" || st.hover.type === "room");
   if (hn.move && hn.t >= HOUSE_WARN && !(reading && hn.t < HOUSE_WARN + 2.5)) {
@@ -278,7 +294,7 @@ function houseUpdate(dt) {
     const still = houseMoves(st.g, st.player.id, st.shadow.id, false).find((x) => x.id === m.id && x.li === m.li && x.dir === m.dir);
     if (!still || !solve(still.g, st.player.id, st.h.lockIds, st.unlocked, 3)) return; // you moved first: it lets it go
     const c = room.lines[m.li], wasOpen = c.kind === "door" && room[c.side === "west" ? "l" : "r"];
-    st.lastHouse = houseCode(m); performEdit(m.id, m.li, m.dir, true); st.total.house = (st.total.house || 0) + 1;
+    st.lastHouse = houseCode(m); st.houseLog = [st.lastHouse, ...(st.houseLog || [])].slice(0, 4); performEdit(m.id, m.li, m.dir, true); st.total.house = (st.total.house || 0) + 1;
     const lines = m.reuse ? HOUSE_LINES.reuse : c.kind === "door" ? HOUSE_LINES.door[wasOpen ? "shut" : "open"] : HOUSE_LINES[c.kind];
     if (!st.voice && !jokeDue()) sayLine(pick(lines)); think(`house.${c.kind === "door" ? (wasOpen ? "shut" : "open") : "move"}(${room.name});`);
   }
@@ -419,10 +435,16 @@ function update(dt) {
   if (st.sticker && (st.sticker.t += dt) > 7) st.sticker = null;
   if (st.desk) { st.desk.t += dt; if (st.desk.bin != null) st.desk.bin += dt; }
   st.floats = st.floats.filter((f) => (f.t += dt) < 1.4);
+  for (const sn of st.stains || []) sn.t += dt;
+  if (st.smear && (st.smear.t += dt) > 0.6) st.smear = null;
+  if (st.retype) { const R = st.retype; R.t += dt; const n = Math.floor(R.t / R.len * 12); while (R.n < Math.min(n, 12)) { R.n++; sfx.clack(0.5 + Math.random() * 0.4); } if (R.t > R.len + 0.05) st.retype = null; }
+  st.jolt = Math.max(0, (st.jolt || 0) - dt * 14);
+  pageInk(dt);
   st.dust = st.dust.filter((d) => { d.t += dt; d.x += d.vx * dt; d.y += d.vy * dt; d.vy += (d.up ? -6 : 40) * dt; return d.t < d.life; });
   gravity(dt);
   if (st.scene === "caught") { st.caughtT += dt; if (st.caughtT > 2.4) dragBack(); return; }
   if (st.scene === "desk") return;
+  if (st.scene === "sheets") { st.sheetT += dt; if (st.sheetT > SHEETS_LEN + 0.8) { st.scene = "credits"; st.credT = 0; sfx.doorShut(); } return; }
   if (st.scene === "credits") { st.credT += dt; if (st.credT > CRED_LEN + 1.5) openDesk(); return; }
   if (st.scene === "title") shuffleUpdate(dt);
   holdUpdate(dt);
@@ -914,11 +936,7 @@ function drawHouseNow() {
   if (st.scene === "play" && st.shadow.mode !== "sleep" && st.shadow.noPath > 0 && !st.shadow.way) {
     const p = find(st.g, st.shadow.id), k = 1 - st.shadow.noPath / TRAPS[st.floor - 1];
     outlineSlot(p.x, p.y, `rgba(143,227,154,${0.5 + 0.3 * Math.sin(st.t * 8)})`, true);
-    ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(HX + p.x * CW + 20, HY + p.y * CH + 22, CW - 40, 6);
-    ctx.fillStyle = k > 0.3 ? GRN : RED; ctx.fillRect(HX + p.x * CW + 20, HY + p.y * CH + 22, (CW - 40) * k, 6);
-    const left = Math.max(0, Math.ceil(TRAPS[st.floor - 1] - st.shadow.noPath)), tag = `claws out in ${left}s`;
-    ctx.save(); ctx.font = `13px ${MONO}`; const tw = ctx.measureText(tag).width + 10; ctx.fillStyle = "rgba(10,6,8,0.8)"; ctx.fillRect(HX + p.x * CW + (CW - tw) / 2, HY + p.y * CH + 32, tw, 18);
-    ctx.fillStyle = "#d8f5dc"; ctx.fillText(tag, HX + p.x * CW + (CW - tw) / 2 + 5, HY + p.y * CH + 45); ctx.restore();
+    void k; // (its countdown is typed on the page now: clawCount())
   }
   if (st.scene === "play" && !st.anim && !flipPeek()) drawWays();
   // figures
@@ -1073,18 +1091,140 @@ function codeLine(parts, x, y, size, opts) {
   ctx.fillStyle = opts.dim ? DIM : INK; ctx.fillText(post, cx, y);
   return rects;
 }
+// The living page. Everything here is ink on the paper, drawn under the typed text (multiplied in), so the circled
+// words always sit sharp on top.
+// - a stain in the left margin by the line you changed: wet black ink spreading along the grain, drying to brown with a
+//   darker tide ring, and it stays all floor (one more each time you change that line)
+// - while the shadow is near, wet ink drips straight down from the letters: none 3+ rooms away, a few at 2, many at 1;
+//   when it backs off they stop and dry to brown streaks that stay until the next floor
+function blob(cx, cy, r, seed, n = 22, rough = 0.42) {
+  ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const a = (i / n) * 6.283, k = 1 - rough * 0.66 + rough * hash01(seed + (i % n) * 13.7) + 0.12 * Math.sin(a * 3 + seed); ctx.lineTo(cx + Math.cos(a) * r * k * 1.15, cy + Math.sin(a) * r * k * 0.85); }
+  ctx.closePath();
+}
+function drawStains() {
+  ctx.save(); ctx.beginPath(); ctx.rect(PX - 16, 22, 15, VH - 44); ctx.clip(); // the margin only: never on the words
+  for (const sn of st.stains || []) {
+    const k = 1 - Math.pow(1 - clamp(sn.t / 0.35, 0, 1), 3), wet = clamp(1 - (sn.t - 0.3) / 1.8, 0, 1), r = sn.r * (0.3 + 0.7 * k), tall = sn.tall || 1;
+    const col = (a) => `rgba(${Math.round(24 + 86 * (1 - wet))},${Math.round(16 + 44 * (1 - wet))},${Math.round(12 + 14 * (1 - wet))},${a})`;
+    ctx.save(); ctx.translate(sn.x, sn.y); ctx.scale(1, tall);
+    const ro = sn.rough ?? 0.42, nn = sn.n || 22;
+    ctx.fillStyle = col(0.22 + 0.2 * wet); blob(0.8, 0.6, r * 1.45, sn.seed + 5, nn, ro * 1.3); ctx.fill(); // it feathers out into the paper
+    ctx.fillStyle = col(0.55 + 0.35 * wet); blob(0, 0, r, sn.seed, nn, ro); ctx.fill();
+    ctx.strokeStyle = col(0.5 + 0.4 * (1 - wet)); ctx.lineWidth = 1.3 / tall; blob(0, 0, r * 1.03, sn.seed, nn, ro); ctx.stroke(); // the tide line, darkest once dry
+    ctx.restore();
+    for (let i = 0; i < 3; i++) if (hash01(sn.seed + i * 7) < 0.6) { const a = hash01(sn.seed + i * 5) * 6.283, d = r * (1.5 + hash01(sn.seed + i) * 1.4); ctx.fillStyle = col(0.5 + 0.3 * wet); ctx.beginPath(); ctx.arc(sn.x + Math.cos(a) * d * 0.6, sn.y + Math.sin(a) * d * tall, 0.5 + hash01(sn.seed + i * 3) * 1.3, 0, 7); ctx.fill(); } // flecks thrown off
+    // what didn't soak in runs a little way down the margin, and dries there
+    const rl = (sn.run || 0) * clamp((sn.t - 0.2) / 1.2, 0, 1), rx = sn.x + (hash01(sn.seed) - 0.5) * r;
+    if (rl > 1) { const y0 = sn.y + r * tall * 0.7, w = 1.6 + hash01(sn.seed + 2) * 1.4; ctx.fillStyle = col(0.6 + 0.3 * wet); ctx.beginPath(); ctx.moveTo(rx - w / 2, y0); ctx.lineTo(rx + w / 2, y0); ctx.lineTo(rx + w * 0.3, y0 + rl); ctx.lineTo(rx - w * 0.3, y0 + rl); ctx.fill(); ctx.beginPath(); ctx.ellipse(rx, y0 + rl, w * 0.75, w, 0, 0, 7); ctx.fill(); }
+  }
+  ctx.restore();
+  // the clicked word's own ink, wet for a moment before the line types itself clean again
+  const sm = st.smear; if (sm) { const a = 0.5 * (1 - sm.t / 0.6); ctx.fillStyle = `rgba(30,22,18,${a})`; blob(sm.x + sm.w / 2, sm.y + sm.h * 0.55, sm.w * 0.5, 77); ctx.fill(); }
+}
+const DRIP_MAX = 32;
+function dripLevel() { if (st.scene !== "play" || st.shadow.mode === "sleep") return 0; const n = nearness(); return n <= 1 ? 1 : n === 2 ? 0.3 : 0; }
+function pageInk(dt) {
+  if (!st.drips) st.drips = [];
+  const lvl = dripLevel(); st.dripK = (st.dripK || 0) + (lvl - (st.dripK || 0)) * Math.min(1, dt * 2.5);
+  // new drips start at the bottom of a typed letter in one of your room's lines
+  if (lvl > 0 && st.lineBoxes && st.lineBoxes.length && st.drips.length < DRIP_MAX && Math.random() < dt * 4.5 * lvl) {
+    const gl = st.glyphs && st.glyphs.length ? st.glyphs[(Math.random() * st.glyphs.length) | 0] : null, L = st.lineBoxes[(Math.random() * st.lineBoxes.length) | 0];
+    const r = Math.random(); // mostly thin runs, now and then a heavy one
+    const x0 = gl ? gl.x + (Math.random() - 0.5) * gl.w * 0.5 : L.x + 4 + Math.random() * (L.w - 24), y0 = gl ? gl.y + 2 : L.y + 2;
+    const below = (st.textBands || []).filter((b) => b.top > y0 + 4).map((b) => b.top).sort((a, b) => a - b)[0]; // the next line of type down
+    st.drips.push({ x: x0, y: y0, stopAt: below != null ? below - y0 - 4 : null, // it never runs through another line: it gathers on top of it
+       len: 0, max: 8 + Math.pow(Math.random(), 1.4) * 230, w: 1 + r * r * 5.5, pool: 0.6 + Math.random() * 1.6, seed: (Math.random() * 1e4) | 0, sp: 10 + Math.random() * 34, wet: 1, ph: Math.random() * 6 });
+  }
+  for (const d of st.drips) {
+    if (d.stopAt != null) d.max = Math.min(d.max, d.stopAt); // it gathers on top of the next line of type
+    if (lvl > 0 && d.len < d.max) d.len = Math.min(d.max, d.len + d.sp * dt * (0.4 + 0.6 * st.dripK));
+    d.wet = lvl > 0 ? Math.min(1, d.wet + dt) : Math.max(0, d.wet - dt / 3);
+    d.len = Math.min(d.len, VH - 30 - d.y); // it stops at the bottom of the sheet
+  }
+}
+function drawDrips() {
+  if (!(st.drips || []).length) return;
+  // the words you can click stay clear: the ink runs behind them, never over them
+  ctx.save(); ctx.beginPath(); ctx.rect(PX - 16, 22, PW + 26, VH - 44);
+  for (const r of st.wordRects || []) ctx.rect(r.x + r.w + 3, r.y - 3, -(r.w + 6), r.h + 6); // (wound the other way: a hole)
+  ctx.clip("nonzero");
+  for (const d of st.drips) {
+    if (d.len < 1) continue;
+    const col = (a) => `rgba(${Math.round(96 + 18 * (1 - d.wet))},${Math.round(10 + 64 * (1 - d.wet))},${Math.round(10 + 34 * (1 - d.wet))},${a})`; // oxblood wet, brown once dry
+    const n = Math.max(2, Math.ceil(d.len / 4)), pts = [];
+    for (let i = 0; i <= n; i++) { const t = i / n, y = d.y + d.len * t; pts.push([d.x + Math.sin(d.ph + y / 37) * 0.9 + Math.sin(d.ph * 2 + y / 11) * 0.3, y, d.w * (0.45 + 0.55 * Math.min(1, t * 2.5)) * (1 - 0.25 * t) * (0.8 + 0.2 * Math.sin(d.ph + y / 6) + 0.12 * Math.sin(d.ph * 3 + y / 2.3))]); }
+    const shape = (grow) => { ctx.beginPath(); pts.forEach(([x, y, w], i) => (i ? ctx.lineTo(x + w * grow / 2, y) : ctx.moveTo(x + w * grow / 2, y))); for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i][0] - pts[i][2] * grow / 2, pts[i][1]); ctx.fill(); };
+    const dry = 1 - d.wet, g = 1 - 0.14 * dry; // drying, it shrinks back a little and leaves a darker edge
+    ctx.fillStyle = col(0.08 + 0.08 * d.wet); shape(2.4 * g); // it soaks sideways into the fibres
+    ctx.fillStyle = col(0.45 + 0.4 * d.wet - 0.12 * dry); shape(g);
+    if (dry > 0.3) { ctx.strokeStyle = col(0.35 * dry); ctx.lineWidth = 0.5; ctx.beginPath(); pts.forEach(([x, y, w], i) => (i ? ctx.lineTo(x + w * g / 2, y) : ctx.moveTo(x + w * g / 2, y))); ctx.stroke(); ctx.beginPath(); pts.forEach(([x, y, w], i) => (i ? ctx.lineTo(x - w * g / 2, y) : ctx.moveTo(x - w * g / 2, y))); ctx.stroke(); } // the tide line down each side
+    const [ex, ey, ew] = pts[pts.length - 1], pooled = d.stopAt != null && d.len >= d.stopAt - 0.5, sd = d.seed || 3;
+    if (pooled) { // it gathers along the top of the next line of type: a flat little puddle, wider than the run
+      const pw = Math.max(3, d.w * (1.6 + (d.pool || 1))), ph = Math.max(1.6, d.w * 0.7);
+      ctx.save(); ctx.translate(ex, ey - ph * 0.3); ctx.scale(1, 0.5); ctx.fillStyle = col(0.08); blob(0, 0, pw * 1.3 * g, sd + 1, 16, 0.5); ctx.fill(); ctx.restore();
+      ctx.save(); ctx.translate(ex, ey - ph * 0.5); ctx.scale(1, ph / pw); ctx.fillStyle = col(0.5 + 0.4 * d.wet - 0.1 * dry); blob(0, 0, pw * g, sd, 16, 0.35); ctx.fill(); ctx.restore();
+    } else { // a drop hangs at the tip, heavier once it stops
+      const b = ew * (d.len >= d.max ? 1.5 : 1.15) * g;
+      ctx.save(); ctx.translate(ex, ey + b * 0.2); ctx.scale(0.85, 1.15); ctx.fillStyle = col(0.5 + 0.4 * d.wet - 0.1 * dry); blob(0, 0, b, sd, 12, 0.22); ctx.fill(); ctx.restore();
+      if (d.wet > 0.5) { ctx.fillStyle = `rgba(255,250,235,${0.22 * d.wet})`; ctx.beginPath(); ctx.ellipse(ex - b * 0.3, ey, b * 0.22, b * 0.32, 0, 0, 7); ctx.fill(); } // wet ink catches the light
+    }
+  }
+  ctx.restore();
+}
+// the sheet's outer edges darken as the shadow closes in
+function drawEdgeDark() {
+  const k = st.dripK || 0; if (k < 0.02) return;
+  const x = PX - 16, y = 22, w = PW + 26, h = VH - 44, g = ctx.createRadialGradient(x + w / 2, y + h / 2, Math.min(w, h) * 0.32, x + w / 2, y + h / 2, Math.max(w, h) * 0.62);
+  g.addColorStop(0, "rgba(60,36,20,0)"); g.addColorStop(1, `rgba(60,36,20,${0.55 * k})`); ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
+}
+const hash01 = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 function drawPanel() {
   // the house's source: a typewritten page clipped beside the house
+  const jy = (st.jolt || 0) * 1.6; ctx.save(); ctx.translate(0, jy); // the paper jumps on each of the house's key strikes
   LOOK.panelBg(ctx, PX - 16, 22, PW + 26, VH - 44);
   ctx.save(); ctx.globalCompositeOperation = "multiply"; // typed ink soaks into the paper, it doesn't sit on top of it
-  inInk(() => {
+  drawEdgeDark(); drawStains(); drawDrips();
+  ctx.fillText = struck; // (only while the page draws: an own property over the prototype's, deleted after)
+  try { inInk(() => {
     // the file's name, typed at the top right; in the finale it becomes yours
     const yours = !!st.finale || (st.scene === "end" && st.floor === FLOORS);
     ctx.font = `15px ${MONO}`; ctx.textAlign = "right"; ctx.fillStyle = yours ? RED : DIM;
     ctx.fillText(yours ? glitchText("you.js", st.finale && st.finale.t < 1 ? 0.6 : 0) : "house.js", PX + PW - 8, 44); ctx.textAlign = "left";
     panelBody();
+  }); } finally { delete ctx.fillText; }
+  ctx.restore(); ctx.restore();
+}
+// On the page every letter is its own key strike: a little off its line, a little lighter or heavier, never the same
+// twice in a spot but steady from frame to frame (the strike is seeded by where it lands).
+// shut in: how long until it claws out, as a line the page types (the number goes down a second at a time)
+function clawCount() {
+  const sh = st.shadow; if (st.scene !== "play" || sh.mode === "sleep" || !(sh.noPath > 0) || sh.way || path(st.g, sh.id, st.player.id)) return "";
+  return `shadow.trapped: claws out in ${Math.max(0, Math.ceil(TRAPS[st.floor - 1] - sh.noPath))}`;
+}
+function drawHouseLog(y, x, w) {
+  const log = st.houseLog || [], busy = (st.hover && st.hover.type === "word") || (st.edits === 0 && st.scene === "play");
+  if (!log.length || busy) return;
+  ctx.font = `13px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText("// what the house did", x, y - 4);
+  log.forEach((code, i) => {
+    const yy = y + 13 + i * 16; if (yy > 326) return;
+    const size = fitFont(code, w - 10, 14); st.textBands && st.textBands.push({ x: x - 2, w: w, top: yy - size * 0.8, bot: yy + size * 0.28 }); ctx.fillStyle = i ? "rgba(110,70,50,0.6)" : "rgba(150,40,30,0.85)"; ctx.fillText(code, x, yy);
+    if (i) { ctx.font = `${size}px ${MONO}`; const lw = ctx.measureText(code).width; ctx.fillStyle = "rgba(60,46,34,0.6)"; ctx.beginPath(); ctx.moveTo(x - 2, yy - size * 0.32); for (let k = 1; k <= 8; k++) ctx.lineTo(x - 2 + (lw + 4) * k / 8, yy - size * 0.32 + (hash01(k + i * 9 + yy) - 0.5) * 1.2); ctx.lineTo(x + lw + 2, yy - size * 0.32 + 1); ctx.lineTo(x - 2, yy - size * 0.32 + 1); ctx.fill(); } // ruled through by hand, still readable
   });
-  ctx.restore();
+}
+const NATIVE_FILL = CanvasRenderingContext2D.prototype.fillText;
+let typedTap = null; // (checks read the page's lines whole from here, since its letters are drawn one at a time)
+function struck(text, x, y) {
+  const raw = NATIVE_FILL, al = ctx.globalAlpha; text = String(text); if (typedTap) typedTap.push(text);
+  const G = st.glyphGrab;
+  let cx = x; if (ctx.textAlign === "right" || ctx.textAlign === "end") cx -= ctx.measureText(text).width; else if (ctx.textAlign === "center") cx -= ctx.measureText(text).width / 2;
+  const keep = ctx.textAlign; ctx.textAlign = "left";
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i], cw = ctx.measureText(ch).width;
+    if (ch !== " ") { const h = hash01(cx * 1.37 + y * 7.1), h2 = hash01(cx * 3.1 + y * 0.7 + 9); ctx.globalAlpha = al * (0.7 + 0.3 * h); raw.call(ctx, ch, cx + (h2 - 0.5) * 0.5, y + (h - 0.5) * 0.9); if (G && /[a-z]/i.test(ch)) G.push({ x: cx + cw / 2, y, w: cw }); }
+    cx += cw;
+  }
+  ctx.textAlign = keep; ctx.globalAlpha = al;
 }
 function panelBody() {
   const x = PX, w = PW - 6;
@@ -1099,12 +1239,12 @@ function panelBody() {
   } else {
     // between its moves: the house's last move, faded
     ctx.font = `16px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText("// the house", x, 42);
-    if (st.lastHouse) { fitFont(st.lastHouse, w, 22); ctx.fillStyle = "rgba(179,38,30,0.45)"; ctx.fillText(st.lastHouse, x, 68); }
   }
+  const cc = clawCount(); if (cc) { ctx.font = `15px ${MONO}`; ctx.fillStyle = RED; ctx.fillText(cc, x, 92); }
   // your room
   const room = byId(st.g, st.player.id);
   ctx.font = `16px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText(`// you are in the ${room.name}`, x, 112);
-  st.wordRects = [];
+  st.wordRects = []; st.lineYs = []; st.lineBoxes = []; st.textBands = []; st.glyphs = [];
   let y = 144;
   room.lines.forEach((c, li) => {
     const parts = lineParts(room, c, true), size = fitFont(flat(parts).replace("|", " | "), w, 28);
@@ -1112,10 +1252,16 @@ function panelBody() {
     const hot = (wd) => (st.hover && st.hover.type === "word" && st.hover.li === li && st.hover.dir === (wd.dir ?? 1)) ||
       (st.hint && st.hint.id === room.id && st.hint.li === li && st.hint.dir === (wd.dir ?? 1) && Math.sin(st.t * 6) > 0);
     ctx.font = `11px ${MONO}`; ctx.fillStyle = "rgba(60,46,34,0.4)"; ctx.textAlign = "right"; ctx.fillText(String(room.id * 4 + li + 7), x - 2, y); ctx.textAlign = "left";
-    const rs = codeLine(parts, x, y, size, { click: !spent, hot, spent }); if (!spent) for (const r of rs) st.wordRects.push({ ...r, li });
+    st.lineYs[li] = y; st.lineBoxes.push({ x, y, w: Math.min(w, ctx.measureText(flat(parts)).width + 20) });
+    const typing = st.retype && st.retype.li === li && st.retype.t < st.retype.len;
+    if (typing) { ctx.save(); ctx.beginPath(); ctx.rect(x - 8, y - size - 6, (w + 16) * clamp(st.retype.t / st.retype.len, 0, 1), size * 1.6); ctx.clip(); }
+    st.textBands.push({ x: x - 4, w: w + 8, top: y - size * 0.8, bot: y + size * 0.28 }); st.glyphGrab = st.glyphs;
+    const rs = codeLine(parts, x, y, size, { click: !spent, hot, spent }); st.glyphGrab = null; if (!spent) for (const r of rs) st.wordRects.push({ ...r, li });
+    if (typing) ctx.restore();
     y += room.lines.length > 3 ? 33 : 38;
   });
   y += 16;
+  drawHouseLog(y, x, w);
   // what the hovered word does, in plain words
   // what the pointed-at word does, in plain words; or, before your first move, what this floor is about
   const hw = st.hover && st.hover.type === "word" ? room.lines[st.hover.li] : null;
@@ -1314,6 +1460,7 @@ function render() {
   // snapshot (again a few times while the house's line types out) instead of every frame. That keeps the WOW
   // moment smooth on slow machines (the critic measured ~83 ms a frame before).
   if (st.tear && st.finale && st.scene === "play" && st.tear.snap && !(st.tear.t < 1.4 && (st.tear.n = (st.tear.n || 0) + 1) % 4 === 0)) { drawTear(false); drawSticky(); return; }
+  if (st.scene === "sheets") { drawSheets(st.sheetT); drawSticky(); return; }
   if (st.scene === "credits") { drawCredits(st.credT); drawSticky(); return; }
   if (st.scene === "desk") { deskClock(); desk.drawDesk(ctx, TG, st.desk, st.found.map((f) => PAGES[f]), JOKES); drawSticky(); return; }
   const z = pullK();
@@ -1385,7 +1532,8 @@ function drawWorld() {
   const L = lift(); if (L) { ctx.translate(HCX, HY + HH); ctx.rotate(Math.sin(st.t * 1.1) * 0.012 * grav); ctx.translate(-HCX, -(HY + HH) - L); }
   drawHouse(); ctx.restore(); if (junk.length) drawJunk();
   const f = flash(); if (f > 0) { ctx.fillStyle = `rgba(210,220,255,${f * 0.22})`; ctx.fillRect(0, 0, PX - 14, VH); }
-  drawPanel(); drawOverlay();
+  drawPanel(); if (st.wantSheet) { st.wantSheet = false; keepSheet(); } // (the page alone, before anything is laid over it)
+  drawOverlay();
   if (st.scene === "play") { if (st.crayon) drawCrayonDoor(st.crayon.t); if (st.note) drawNote(st.note.t); if (st.floorT < 4) drawYou(st.floorT); if (st.sign) drawSign(st.sign.t); if (st.sticker) drawSticker(st.sticker.t); }
 }
 // the first few seconds of each floor: a marker over you, so you can find yourself
@@ -1658,9 +1806,10 @@ cv.addEventListener("pointerdown", (e) => {
   if (st.scene === "title") { begin(); return; }
   if (st.scene === "end") {
     if (!st.ending) { const c = choiceAt(...toView(e)); if (c) choose(c.word === "nobody" ? "free" : "keep"); return; }
-    if (st.endT2 > PULL[st.ending] + 2.5) { st.scene = "credits"; st.credT = 0; sfx.doorShut(); }
+    if (st.endT2 > PULL[st.ending] + 2.5) toCredits();
     return;
   }
+  if (st.scene === "sheets") { st.sheetT = Math.max(st.sheetT, SHEETS_LEN); return; }
   if (st.scene === "credits") { openDesk(); return; }
   if (st.scene === "desk") {
     const d = st.desk, f = desk.deskHit(x, y);
@@ -1759,7 +1908,25 @@ function slideRows(offs) {
 
 // ---------- the credits ----------
 // The shadow is listed as co-author. Then it edits its own line, twice, and shrinks yours.
-const CRED_LEN = 9;
+const CRED_LEN = 9, SHEETS_LEN = 5.5;
+function toCredits() {
+  if ((st.sheets || []).length) { st.scene = "sheets"; st.sheetT = 0; sfx.page(); } else { st.scene = "credits"; st.credT = 0; sfx.doorShut(); }
+}
+// the three pages you leave behind, laid down one after another on the dark, slightly askew
+function drawSheets(t) {
+  ctx.fillStyle = "#050407"; ctx.fillRect(0, 0, VW, VH);
+  const lamp = ctx.createRadialGradient(VW / 2, VH * 0.42, 40, VW / 2, VH * 0.45, VW * 0.62); // one lamp over the table
+  lamp.addColorStop(0, "rgba(120,92,58,0.55)"); lamp.addColorStop(1, "rgba(0,0,0,0)"); ctx.fillStyle = lamp; ctx.fillRect(0, 0, VW, VH);
+  const sh = st.sheets, n = sh.length, H2 = VH - 120, W2 = H2 * (sh[0].width / sh[0].height), gap = 26, x0 = VW / 2 - (n * W2 + (n - 1) * gap) / 2;
+  sh.forEach((c, i) => {
+    const k = clamp((t - 0.3 - i * 0.7) / 0.5, 0, 1); if (!k) return;
+    ctx.save(); ctx.globalAlpha = k; ctx.translate(x0 + i * (W2 + gap) + W2 / 2, 60 + H2 / 2 + (1 - k) * 18); ctx.rotate([-0.035, 0.02, -0.012][i % 3]);
+    ctx.shadowColor = "rgba(0,0,0,0.8)"; ctx.shadowBlur = 24; ctx.drawImage(c, -W2 / 2, -H2 / 2, W2, H2); ctx.shadowColor = "transparent";
+    ctx.globalCompositeOperation = "soft-light"; ctx.fillStyle = "rgba(255,236,200,0.35)"; ctx.fillRect(-W2 / 2, -H2 / 2, W2, H2); ctx.restore(); // in the lamp's light
+  });
+  const a = clamp((t - 0.3 - n * 0.7) / 0.6, 0, 1);
+  if (a) { ctx.globalAlpha = a; centerText("house.js, floors 1 to " + n + ". Typed by you, and by it.", VH - 30, `italic 18px ${SERIF}`, "#d6ccb6"); ctx.globalAlpha = 1; }
+}
 function retype(a, b, k) { return k < 0.5 ? a.slice(0, Math.round(a.length * (1 - 2 * k))) : b.slice(0, Math.round(b.length * (2 * k - 1))); }
 function stepText(list, t, at) {
   let i = 0; for (const a of at) if (t >= a) i++;
@@ -1803,6 +1970,7 @@ window.__dh = {
   pickHouseMove: () => pickHouseMove(), houseMove: (m) => performEdit(m.id, m.li, m.dir, true), houseMoves, st: () => st, begin: () => { st.scene = "play"; }, choose: (w) => choose(w), say: (k) => say(k), choiceRects: () => choiceRects, nextFloor: () => nextFloor(), solve, hint: () => doHint(), edit: (li, d) => doEdit(li, d), edits, path, walk: (id, exit) => walkTo(id, exit, 0, 0),
   reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(), sticky: () => sticky, gag: () => ({ gag: !!st.gag, nudged: !!st.nudged, sign: !!st.sign, sticker: !!st.sticker }), undone: () => undone, undo: () => undo(), line: (t) => sayLine(t), hush: () => { st.voice = null; st.voiceQ = []; st.quiet = 99; st.sign = st.sticker = null; }, lift: () => lift(), junk: () => junk.length, tick: (dt, n) => { for (let i = 0; i < n; i++) update(dt); }, render: () => render(), upright: () => upright.matches, dragBack: () => dragBack(), previewLit: () => [...previewLit()], deskHit: desk.deskHit, shiftK: () => shiftK, goneFor, openDesk: () => openDesk(), trapped: (b) => trapped(b), awayLine: () => awayLine, calm: () => CALM, flash: () => flash(),
   plates: () => plates(), in3d: () => in3d(), info3d: () => dh.info(), roomAt3d: (id) => dh.roomAt(id), draw3d: () => draw3d(), scene3d: () => dh.forExport(), // (stills: the 3D picture alone, no page or buttons on top)
+  tapTyped: (on) => { const t = typedTap || []; typedTap = on ? [] : null; return t; }, keepSheet: () => keepSheet(), toCredits: () => toCredits(), pageInk: (dt) => pageInk(dt),
   whyNoWay: (a, b) => whyNoWay(a, b), hintHolds: () => hintHolds(), houseTick: (dt) => houseUpdate(dt),
   paused: () => paused, restart: () => restartFloor(), hudRects: () => hudRects, pauseRects: () => pauseRects, roomGeo: (x, y) => roomGeo(x, y),
 };

@@ -602,9 +602,9 @@ test("the yellow words you click never scramble when the house glitches", { skip
     const drawn = await page.evaluate(async () => {
       const P = CanvasRenderingContext2D.prototype, orig = P.fillText, out = [];
       window.__dh.st().glitch = 999; await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-      P.fillText = function (t, ...a) { out.push(String(t)); return orig.call(this, t, ...a); };
+      P.fillText = function (t, ...a) { out.push(String(t)); return orig.call(this, t, ...a); }; window.__dh.tapTyped(true); // (the page strikes its letters one by one: read its lines whole)
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-      P.fillText = orig; return out;
+      P.fillText = orig; return out.concat(window.__dh.tapTyped(false));
     });
     const room = await page.evaluate(() => { const st = window.__dh.st(); return st.g.flat().find((r) => r.id === st.player.id).lines.map((l) => l.kind); });
     assert.ok(room.includes("row"), "this room has a row line");
@@ -683,6 +683,49 @@ test("floor 2 fairness: a hint holds the house off, reading holds its move, a gr
   } finally { await close(); }
 });
 
+// CH 11-19: the living page. The house types back key by key; your click's old ink dries into a stain in the left
+// margin (never on the words); ink drips only when the shadow is near; the claw-out countdown is typed on the page;
+// the house's last 4 moves are listed; the ending lays the floors' pages side by side.
+test("the living page: margin stains, quick retypes, drips only when it's near, the countdown, the log, the pages at the end", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    const r = await page.evaluate(() => {
+      const D = window.__dh, out = {}; D.newGame(99, 2); D.begin(); const st = D.st(); st.gag = true; D.hush(); st.houseIdle = -999;
+      D.render(); // lays out the page (word boxes, line places)
+      const li = D.byId(st.g, st.player.id).lines.findIndex((l) => l.kind === "row" || l.kind === "swap" || l.kind === "col");
+      const word = st.wordRects.find((w) => w.li === li);
+      st.anim = null; D.edit(li, word.dir); out.stain = st.stains && st.stains[st.stains.length - 1]; out.word = word; out.len1 = st.retype && st.retype.len;
+      for (let i = 0; i < 3; i++) { st.anim = null; st.lastEdit = null; st.houseNext = null; D.render(); const w2 = st.wordRects.find((w) => w.li === li); D.edit(li, w2.dir); }
+      out.len4 = st.retype && st.retype.len; out.stains = st.stains.length;
+      // drips: none with it far off or asleep, some once it's a room away
+      st.shadow.mode = "sleep"; st.drips = []; for (let i = 0; i < 120; i++) D.pageInk(0.05); out.dripsAsleep = st.drips.length;
+      st.shadow.mode = "hunt"; const me = st.player.id;
+      const next = st.g.flat().find((x) => { const p = D.path(st.g, x.id, me); return p && p.length === 2; });
+      if (next) { st.shadow.id = next.id; st.shadow.way = null; D.render(); for (let i = 0; i < 120; i++) D.pageInk(0.05); out.dripsNear = st.drips.length; out.dripsBelow = st.drips.every((d) => d.len >= 0 && d.y > 100); }
+      // the countdown is typed on the page only while it's really shut in
+      out.countFree = D.tapTyped(true) && (D.render(), D.tapTyped(false)).some((t) => t.startsWith("shadow.trapped"));
+      // the house's log keeps its last 4 moves
+      for (let i = 0; i < 6; i++) { const m = D.pickHouseMove(); if (!m) break; st.lastHouse = "x" + i; st.houseLog = [st.lastHouse, ...(st.houseLog || [])].slice(0, 4); }
+      out.log = (st.houseLog || []).length;
+      // the ending: the pages you kept, side by side, then the credits
+      D.keepSheet(); D.keepSheet(); D.keepSheet(); out.sheets = st.sheets.length; D.toCredits(); out.scene1 = st.scene; D.tick(0.1, 70); out.scene2 = st.scene;
+      return out;
+    });
+    assert.ok(r.stain, "a click leaves a stain");
+    assert.ok(r.stain.x < r.word.x - 30 && r.stain.x < 664, `the stain sits in the left margin, not on the word (${Math.round(r.stain.x)} vs word at ${Math.round(r.word.x)})`);
+    assert.equal(r.len1, 0.4, "the first retypes take 0.4 s");
+    assert.equal(r.len4, 0.2, "after three, 0.2 s");
+    assert.equal(r.stains, 4, "one stain per change");
+    assert.equal(r.dripsAsleep, 0, "no drips while it sleeps");
+    assert.ok(r.dripsNear > 3, `drips once it's a room away (${r.dripsNear})`);
+    assert.ok(r.dripsBelow, "drips start at the typed lines and run down");
+    assert.equal(r.countFree, false, "no countdown while it isn't shut in");
+    assert.ok(r.log <= 4, "the house's log keeps 4 moves at most");
+    assert.equal(r.sheets, 3); assert.equal(r.scene1, "sheets"); assert.equal(r.scene2, "credits");
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
 // CH 11-16 ("super unpolished"): the dark rooms used to get a second, flat outline drawing pasted over them, a few
 // pixels off: every name twice, ladders through the ceiling, red X marks. Now each room's bones are drawn once, in
 // its own perspective, and the moon picks them out in the dark.
@@ -693,8 +736,8 @@ test("in the dark, each room's name is drawn once, its open doorways show, and p
     await page.mouse.move(5, 5); await page.waitForTimeout(300);
     const names = await page.evaluate(async () => {
       const P = CanvasRenderingContext2D.prototype, orig = P.fillText, out = [];
-      P.fillText = function (t, ...a) { out.push(String(t)); return orig.call(this, t, ...a); };
-      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); P.fillText = orig;
+      P.fillText = function (t, ...a) { out.push(String(t)); return orig.call(this, t, ...a); }; window.__dh.tapTyped(true); // (the page's lines, whole)
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); P.fillText = orig; out.push(...window.__dh.tapTyped(false));
       const st = window.__dh.st(), frames = Math.max(1, out.filter((t) => t === "house.js").length);
       return st.g.flat().map((r) => [r.name, out.filter((t) => t === r.name).length / frames]);
     });
