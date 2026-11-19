@@ -226,6 +226,9 @@ function houseTurn() {
   st.houseNext = { t: -HOUSE_WAIT, move: null };
 }
 function pickHouseMove() {
+  // a hint you asked for holds: the house waits until you've made that move (or half a minute), so it can't undo it
+  // (both blind testers quit floor 2 after the house's next move made the hint wrong)
+  if (hintHolds()) { think("house.wait();  // go on, then"); return null; }
   const me = st.player.id, sh = st.shadow;
   const moves = houseMoves(st.g, me, sh.id, sh.mode !== "sleep");
   for (const m of moves) { m.reuse = st.floor > 1 && st.used.has(m.kind); m.score += (m.reuse ? 1.5 : 0) + Math.random() * 0.9; }
@@ -249,6 +252,8 @@ function houseCode(m) {
   const w = c.kind === "door" ? (room[c.side === "west" ? "l" : "r"] ? "shut" : "open") : parts[1].find((x) => (x.dir ?? 1) === m.dir).text;
   return parts[0] + w + parts[2];
 }
+const HINT_HOLD = 30;
+function hintHolds() { return !!(st.hint && st.hint.text && st.hint.text.startsWith("Hint:") && st.hintAt != null && st.floorT - st.hintAt < HINT_HOLD); }
 const HOUSE_IDLE = [14, 10, 8]; // and if you sit still too long, it moves anyway
 function houseUpdate(dt) {
   if (!st.houseNext && !st.finale && st.shadow.mode !== "sleep") {
@@ -261,7 +266,9 @@ function houseUpdate(dt) {
     const m = pickHouseMove(); if (!m) { st.houseNext = null; return; }
     hn.move = m; hn.code = houseCode(m); sfx.creak(0.35);
   }
-  if (hn.move && hn.t >= HOUSE_WARN) {
+  // reading a word or a room on the page: it waits a little longer, so the page doesn't change under your click
+  const reading = st.hover && (st.hover.type === "word" || st.hover.type === "room");
+  if (hn.move && hn.t >= HOUSE_WARN && !(reading && hn.t < HOUSE_WARN + 2.5)) {
     const m = hn.move, room = byId(st.g, m.id); st.houseNext = null;
     if (!room || !room.lines[m.li] || st.player.id === m.id) return;
     const still = houseMoves(st.g, st.player.id, st.shadow.id, false).find((x) => x.id === m.id && x.li === m.li && x.dir === m.dir);
@@ -368,7 +375,7 @@ function gags() {
 // house.hint(): the next word of the shortest way out
 function doHint(asked = true) {
   const plan = solve(st.g, st.player.id, st.h.lockIds, st.unlocked, 4);
-  if (asked) { st.total.hints++; sfx.hint(); }
+  if (asked) { st.total.hints++; sfx.hint(); st.hintAt = st.floorT; }
   if (!plan) st.hint = { text: "Hint: even the house is lost. Try sliding a row back the way it came." };
   else if (!plan.length) st.hint = { text: st.unlocked ? "Hint: the way is open. Click the front door, bottom left." : "Hint: a red lock is in reach. Walk there and click true." };
   else {
@@ -525,7 +532,9 @@ function dragBack() {
   const b = find(st.g, me.id); let best = null, bd = -1;
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { if (x <= 1 && y === H - 1) continue; const d = Math.abs(x - b.x) + Math.abs(y - b.y) + Math.random() * 0.5; if (d > bd) { bd = d; best = st.g[y][x]; } }
   sh.way = null; sh.id = best.id; sh.fx = 0.5; sh.mode = "hunt"; sh.timer = 5; sh.noPath = 0;
-  unseal(); think("house.return(you);  // again"); float(screenPos(me.id, 0.5)[0], screenPos(me.id, 0.5)[1] - 50, "back where you started", RED);
+  st.houseNext = null; st.houseIdle = 0; // no house move the moment you're back
+  if (st.hint && st.hint.text && st.hint.text.startsWith("Hint:")) { const t = st.hint.t, at = st.hintAt; doHint(false); st.hint.t = t; st.hintAt = at; } // the hint follows you back
+  unseal(); think("house.return(you);  // again"); float(screenPos(me.id, 0.5)[0], screenPos(me.id, 0.5)[1] - 50, "back to the start. the rooms stay put", RED);
 }
 
 // ---------- drawing ----------
@@ -755,15 +764,62 @@ function dollSprite(x, y) {
 function drawShadow(x, y) {
   const sh = st.shadow, pp = walkerPos(st.player), end = st.scene === "end";
   // in the dark you only see it when it is in your light, or when lightning shows it
-  const seen = end ? 1 : Math.max(clamp(1.5 - Math.hypot(pp[0] - x, pp[1] - y) / 110, 0, 1), flash() * 0.9);
+  // awake, it never goes fully out: a faint shape stays (testers lost it in dark rooms and felt grabbed from nowhere)
+  const seen = end ? 1 : Math.max(clamp(1.5 - Math.hypot(pp[0] - x, pp[1] - y) / 110, 0, 1), flash() * 0.9, sh.mode === "sleep" ? 0 : 0.3);
   if (seen > 0) { ctx.save(); ctx.globalAlpha = seen; art.shadow(ctx, x, y, st.t, { asleep: sh.mode === "sleep", seep: sh.seep, near: nearness(), look: clamp((pp[0] - x) / 60, -1, 1) }); ctx.restore(); }
   if (end || sh.seep) return;
   // two red eyes in the dark: shut while it sleeps, wider the closer it gets
   const ey = y - 44 + Math.sin(st.t * 1.4) * 2, lx = clamp((pp[0] - x) / 60, -1, 1) * 1.5, blink = Math.sin(st.t * 0.9 + x * 0.01) > 0.97;
   ctx.save(); ctx.shadowColor = "#ff2a1e";
   if (sh.mode === "sleep") { ctx.globalAlpha = 0.35 * (1 - seen); ctx.fillStyle = "#ff3b2e"; ctx.fillRect(x - 6 + lx, ey + 1, 4, 1); ctx.fillRect(x + 2 + lx, ey + 1, 4, 1); }
-  else if (!blink) { const n = nearness(), r = n <= 1 ? 4 : 3; ctx.shadowBlur = n <= 1 ? 16 : 10; ctx.fillStyle = "#ff3b2e"; ctx.fillRect(x - 6 + lx, ey, r, r - 1); ctx.fillRect(x + 2.5 + lx, ey, r, r - 1); }
+  else if (!blink) { const n = nearness(), r = n <= 1 ? 6 : 5; ctx.shadowBlur = n <= 1 ? 22 : 16;
+    const hg = ctx.createRadialGradient(x + lx, ey + 2, 2, x + lx, ey + 2, 30); hg.addColorStop(0, `rgba(255,40,30,${n <= 1 ? 0.35 : 0.22})`); hg.addColorStop(1, "rgba(255,40,30,0)"); ctx.fillStyle = hg; ctx.fillRect(x + lx - 30, ey - 28, 60, 60); ctx.fillStyle = "#ff3b2e"; ctx.fillRect(x - 3 - r + lx, ey, r, r - 1); ctx.fillRect(x + 2.5 + lx, ey, r, r - 1); }
   ctx.restore();
+}
+// the ways you can walk, drawn on the house: open doorways glow, ladders and floor holes get arrows
+// (testers couldn't tell an open doorway or which way a ladder went in the photographed rooms)
+function drawWays() {
+  const me = st.player.id, rs = reach(st.g, me), seen = new Set(), pulse = 0.5 + 0.5 * Math.sin(st.t * 4);
+  for (const id of rs) {
+    const a = find(st.g, id), here = id === me;
+    for (const [nx, ny] of nbrs(st.g, a.x, a.y)) {
+      const key = [a.x, a.y, nx, ny].sort().join(); if (seen.has(key)) continue; seen.add(key);
+      const near = here || st.g[ny][nx].id === me, al = near ? 0.55 + 0.35 * pulse : 0.28;
+      ctx.save(); ctx.globalAlpha = al; ctx.fillStyle = "#cfe9a8"; ctx.strokeStyle = "#cfe9a8"; ctx.lineWidth = 3;
+      if (ny === a.y) { // a doorway: a glowing strip in the shared wall, lower half
+        const wx = HX + Math.max(a.x, nx) * CW, y0 = HY + a.y * CH + CH * 0.42, y1 = HY + a.y * CH + CH - 14;
+        const gl = ctx.createLinearGradient(wx - 14, 0, wx + 14, 0); gl.addColorStop(0, "rgba(207,233,168,0)"); gl.addColorStop(0.5, "rgba(207,233,168,0.9)"); gl.addColorStop(1, "rgba(207,233,168,0)");
+        ctx.fillStyle = gl; ctx.fillRect(wx - 14, y0, 28, y1 - y0);
+      } else { // a ladder or a hole: an arrow across the floor line, pointing the way it goes from where you are
+        const up = ny < a.y, fx = HX + a.x * CW + CW * 0.78, fy = HY + Math.max(a.y, ny) * CH;
+        const dir = here ? (up ? -1 : 1) : st.g[ny][nx].id === me ? (up ? 1 : -1) : 0;
+        const tri = (cy, d) => { ctx.beginPath(); ctx.moveTo(fx, cy + d * 9); ctx.lineTo(fx - 9, cy - d * 5); ctx.lineTo(fx + 9, cy - d * 5); ctx.closePath(); ctx.fill(); };
+        ctx.fillStyle = "rgba(10,6,8,0.6)"; ctx.beginPath(); ctx.arc(fx, fy, 15, 0, 7); ctx.fill(); ctx.fillStyle = "#cfe9a8";
+        if (dir) tri(fy + dir * 2, dir); else { tri(fy - 6, -1); tri(fy + 6, 1); }
+      }
+      ctx.restore();
+    }
+  }
+}
+// why you can't walk to a room: the closest you can get, and the wall, floor or ceiling in the way
+function whyNoWay(fromId, toId) {
+  const t = find(st.g, toId); let best = null, bd = 1e9;
+  for (const id of reach(st.g, fromId)) { const p = find(st.g, id), d = Math.abs(p.x - t.x) + Math.abs(p.y - t.y); if (d < bd) { bd = d; best = p; } }
+  const a = st.g[best.y][best.x], from = best.x === find(st.g, fromId).x && best.y === find(st.g, fromId).y ? "this room" : `the ${a.name}`;
+  let why;
+  if (best.x !== t.x) { const d = Math.sign(t.x - best.x), b = st.g[best.y][best.x + d], side = d > 0 ? "east" : "west", far = d > 0 ? "west" : "east";
+    why = !(d > 0 ? a.r : a.l) ? `${from} has its ${side} door shut` : `the ${b.name} next to it has a wall on its ${far} side`;
+  } else { const d = Math.sign(t.y - best.y), b = st.g[best.y + d][best.x];
+    why = d < 0 ? (!a.up ? `${from} has no ladder up` : `the ${b.name} above has no hole in its floor`) : (!a.down ? `${from} has no hole in its floor` : `the ${b.name} below has no ladder up`);
+  }
+  return `No way there yet: ${why}. Change a word to open it.`;
+}
+// a hint stays in sight while the page is showing something else
+function drawHintBanner() {
+  ctx.save(); ctx.font = `italic 15px ${SERIF}`; const lines = [], words = st.hint.text.split(" "); let line = "";
+  for (const w of words) { const t = line ? line + " " + w : w; if (ctx.measureText(t).width > HW - 30 && line) { lines.push(line); line = w; } else line = t; } if (line) lines.push(line);
+  const h = lines.length * 18 + 10, y = HY - h - 4;
+  ctx.fillStyle = "rgba(10,6,8,0.85)"; ctx.fillRect(HX, y, HW, h); ctx.fillStyle = YEL; lines.forEach((l, i) => ctx.fillText(l, HX + 15, y + 18 + i * 18)); ctx.restore();
 }
 // how many rooms the shadow is from you along open ways (Infinity: asleep, or no way through)
 function nearness() {
@@ -791,7 +847,10 @@ function chalkArrow(b, color) {
 // (a fresh player couldn't picture where they'd land from outlines on the house as it is)
 const flipPeek = () => { const pv = st.preview; return pv && pv.g && pv.band && pv.band.kind === "flip" && !st.anim && st.scene === "play" ? pv.g : null; };
 function drawHouse() {
-  drawHouseNow(); if (!flipPeek()) return;
+  drawHouseNow();
+  const hid = st.hover && (st.hover.type === "word" || (st.hover.type === "room" && st.hover.id !== st.player.id));
+  if (st.hint && hid && st.scene === "play" && !flipPeek()) drawHintBanner();
+  if (!flipPeek()) return;
   ctx.save(); ctx.font = `15px ${MONO}`; ctx.textAlign = "center"; const t = "upside down: where you'd be";
   const w = ctx.measureText(t).width + 16; ctx.fillStyle = "rgba(10,6,8,0.85)"; ctx.fillRect(HCX - w / 2, HY - 30, w, 22);
   ctx.fillStyle = YEL; ctx.fillText(t, HCX, HY - 14); ctx.restore();
@@ -850,7 +909,11 @@ function drawHouseNow() {
     outlineSlot(p.x, p.y, `rgba(143,227,154,${0.5 + 0.3 * Math.sin(st.t * 8)})`, true);
     ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(HX + p.x * CW + 20, HY + p.y * CH + 22, CW - 40, 6);
     ctx.fillStyle = k > 0.3 ? GRN : RED; ctx.fillRect(HX + p.x * CW + 20, HY + p.y * CH + 22, (CW - 40) * k, 6);
+    const left = Math.max(0, Math.ceil(TRAPS[st.floor - 1] - st.shadow.noPath)), tag = `claws out in ${left}s`;
+    ctx.save(); ctx.font = `13px ${MONO}`; const tw = ctx.measureText(tag).width + 10; ctx.fillStyle = "rgba(10,6,8,0.8)"; ctx.fillRect(HX + p.x * CW + (CW - tw) / 2, HY + p.y * CH + CH - 34, tw, 18);
+    ctx.fillStyle = "#d8f5dc"; ctx.fillText(tag, HX + p.x * CW + (CW - tw) / 2 + 5, HY + p.y * CH + CH - 21); ctx.restore();
   }
+  if (st.scene === "play" && !st.anim && !flipPeek()) drawWays();
   // figures
   const freed = st.scene === "end" && st.ending === "free";
   for (const [w, draw] of freed || D3 ? [] : [[st.shadow, drawShadow], [st.player, drawPlayer]]) {
@@ -1060,10 +1123,10 @@ function panelBody() {
   st.hintRect = null;
   if (hv) {
     ctx.font = `16px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText(`// the ${hv.name}`, x, sep + 22);
-    let yy = sep + 46; for (const c of hv.lines) { const parts = lineParts(hv, c, false); codeLine(parts, x, yy, fitFont(flat(parts), w, 22), { dim: true }); yy += 23; }
+    let yy = sep + 44; for (const c of hv.lines) { const parts = lineParts(hv, c, false); codeLine(parts, x, yy, fitFont(flat(parts), w, 20), { dim: true }); yy += 21; }
     ctx.font = `italic 15px ${SERIF}`; ctx.fillStyle = DIM;
     if (reach(st.g, room.id).has(hv.id)) ctx.fillText("Click the room to walk there.", x, yy);
-    else wrap("No way there right now. Rooms join through open doorways, a ladder up, or a hole in the floor down.", x, yy, w, 18);
+    else { ctx.font = `italic 14px ${SERIF}`; wrap(whyNoWay(room.id, hv.id), x, yy, w, 17); }
   } else if (st.hint && !hw) {
     ctx.font = `italic 16px ${SERIF}`; ctx.fillStyle = YEL; wrap(st.hint.text, x, sep + 24, w, 19);
   } else if (!hw) {
@@ -1731,5 +1794,6 @@ window.__dh = {
   pickHouseMove: () => pickHouseMove(), houseMove: (m) => performEdit(m.id, m.li, m.dir, true), houseMoves, st: () => st, begin: () => { st.scene = "play"; }, choose: (w) => choose(w), say: (k) => say(k), choiceRects: () => choiceRects, nextFloor: () => nextFloor(), solve, hint: () => doHint(), edit: (li, d) => doEdit(li, d), edits, path, walk: (id, exit) => walkTo(id, exit, 0, 0),
   reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(), sticky: () => sticky, gag: () => ({ gag: !!st.gag, nudged: !!st.nudged, sign: !!st.sign, sticker: !!st.sticker }), undone: () => undone, undo: () => undo(), line: (t) => sayLine(t), hush: () => { st.voice = null; st.voiceQ = []; st.quiet = 99; st.sign = st.sticker = null; }, lift: () => lift(), junk: () => junk.length, tick: (dt, n) => { for (let i = 0; i < n; i++) update(dt); }, render: () => render(), upright: () => upright.matches, dragBack: () => dragBack(), previewLit: () => [...previewLit()], deskHit: desk.deskHit, shiftK: () => shiftK, goneFor, openDesk: () => openDesk(), trapped: (b) => trapped(b), awayLine: () => awayLine, calm: () => CALM, flash: () => flash(),
   plates: () => plates(), in3d: () => in3d(), info3d: () => dh.info(), roomAt3d: (id) => dh.roomAt(id), draw3d: () => draw3d(), scene3d: () => dh.forExport(), // (stills: the 3D picture alone, no page or buttons on top)
+  whyNoWay: (a, b) => whyNoWay(a, b), hintHolds: () => hintHolds(), houseTick: (dt) => houseUpdate(dt),
   paused: () => paused, restart: () => restartFloor(), hudRects: () => hudRects, pauseRects: () => pauseRects, roomGeo: (x, y) => roomGeo(x, y),
 };

@@ -630,6 +630,47 @@ test("never a dead floor: after a grab, if no way out is left, the house puts th
   } finally { await close(); }
 });
 
+// Playtest round 1 (11-19): both blind testers quit on floor 2. The house's next move made the hint wrong, the page
+// changed under a click, a grab felt like the house reshuffled, and "no way there" never said why.
+test("floor 2 fairness: a hint holds the house off, reading holds its move, a grab keeps the rooms, no way says why", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    const r = await page.evaluate(() => {
+      const D = window.__dh, out = {};
+      // a hint you asked for: the house won't pick a move until you've made it (or 30 s pass)
+      let held = 0, after = 0;
+      for (const seed of [99, 1, 2, 3, 5, 7, 11, 13]) {
+        D.newGame(seed, 2); D.begin(); const st = D.st(); st.shadow.mode = "hunt"; D.hint();
+        if (!st.hint || !st.hint.text.startsWith("Hint:")) continue;
+        if (D.pickHouseMove() === null && D.hintHolds()) held++;
+        st.hintAt = st.floorT - 31; if (!D.hintHolds() && D.pickHouseMove()) after++;
+      }
+      out.held = held; out.after = after;
+      // pointing at a word: the house's warned move waits (up to 2.5 s more) instead of landing under the click
+      for (const seed of [99, 1, 2, 3, 5, 7, 11, 13]) {
+        D.newGame(seed, 2); D.begin(); const st = D.st(); st.shadow.mode = "hunt"; st.hint = null; const m = D.pickHouseMove(); if (!m) continue;
+        st.houseNext = { t: 1.5, move: m, code: "" }; st.hover = { type: "word", li: 0, dir: 1 };
+        D.houseTick(0.5); out.waited = !!st.houseNext;
+        st.hover = null; D.houseTick(0.05); out.landed = !st.houseNext; break;
+      }
+      // a grab: back to the start, but the rooms stay where they were
+      D.newGame(99, 2); D.begin(); const st = D.st(); const before = st.g.flat().map((r) => r.id).join();
+      if (D.solve(st.g, st.h.startId, st.h.lockIds, st.unlocked, 4)) { D.dragBack(); out.same = st.g.flat().map((r) => r.id).join() === before; } else out.same = true;
+      // a room out of reach says what's in the way
+      const far = st.g.flat().find((x) => !D.reach(st.g, st.player.id).has(x.id));
+      out.why = far ? D.whyNoWay(st.player.id, far.id) : "No way there yet: (all in reach)";
+      return out;
+    });
+    assert.ok(r.held > 0, "some floor had a hint that held the house off");
+    assert.ok(r.after > 0, "and the house moves again once the hint is old");
+    assert.ok(r.waited, "the house's move waits while you're pointing at a word");
+    assert.ok(r.landed, "and lands once you look away");
+    assert.ok(r.same, "a grab doesn't reshuffle the rooms");
+    assert.match(r.why, /^No way there yet: .*(door|ladder|hole|wall|reach)/);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
 // CH 11-16 ("super unpolished"): the dark rooms used to get a second, flat outline drawing pasted over them, a few
 // pixels off: every name twice, ladders through the ceiling, red X marks. Now each room's bones are drawn once, in
 // its own perspective, and the moon picks them out in the dark.
