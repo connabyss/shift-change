@@ -224,7 +224,7 @@ function performEdit(id, li, dir, byHouse) {
   settle(st.player); settle(st.shadow); st.player.pending = null;
   const res = applyEdit(st.g, id, li, st, dir); unseal();
   if (byHouse && st.hint && st.hint.text && st.hint.text.startsWith("Hint:")) { const t = st.hint.t; doHint(false); st.hint.t = t; } // the house moved: the hint follows
-  if (st.shadow.mode !== "sleep" && !path(st.g, st.shadow.id, st.player.id) && st.shadow.noPath === 0) { trapped(!byHouse); st.shadow.noPath = st.floorT - (st.shadow.freedAt ?? -99) < 10 ? Math.max(0.01, st.shadow.lastNoPath || 0) : 0.01; }
+  if (st.shadow.mode !== "sleep" && !path(st.g, st.shadow.id, st.player.id) && st.shadow.noPath === 0) { trapped(!byHouse); st.shadow.noPath = st.floorT - (st.shadow.freedAt ?? -99) < 30 ? Math.max(0.01, st.shadow.lastNoPath || 0) : 0.01; }
   st.glitch = 0.5; st.shake = res.kind === "row" || res.kind === "col" ? 0.6 : 0.25;
   st.alert = 4; st.preview = null; st.previewKey = "";
   if (res.kind === "row" || res.kind === "col") { st.anim = { ...res, t: 0 }; sfx.slide(); dustBurst(res); }
@@ -514,7 +514,7 @@ function planShadow() {
   const sh = st.shadow, me = st.player, here = byId(st.g, me.id);
   const p = path(st.g, sh.id, me.id), dark = !here.lights && st.alert <= 0;
   if (!p) {
-    if (sh.noPath === 0) { trapped(false); if (st.floorT - (sh.freedAt ?? -99) < 10) sh.noPath = sh.lastNoPath || 0; } // shut in again soon: the count picks up where it was (testers saw it jump 4, 8, 1, 8)
+    if (sh.noPath === 0) { trapped(false); if (st.floorT - (sh.freedAt ?? -99) < 30) sh.noPath = sh.lastNoPath || 0; } // shut in again soon: the count picks up where it was (testers saw it jump 4, 8, 1, 8)
     sh.noPath += 0.5; sh.timer = 0.5;
     if (sh.noPath >= TRAPS[st.floor - 1]) breakOut();
     return;
@@ -583,7 +583,9 @@ function grabCost() {
   // flung: the room you can reach that's farthest from it (by steps), else you stay put
   const R = [...reach(st.g, me.id)]; let best = me.id, bd = -1;
   const door = st.finale ? doorRoom() : null;
-  for (const id of R) { const d = door ? (steps(path(st.g, id, door)) ?? 9) * 2 + (steps(path(st.g, sh.id, id)) ?? 9) : steps(path(st.g, sh.id, id)) ?? 9; if (id !== sh.id && d > bd) { bd = d; best = id; } }
+  // (before the chase: a nearby room at least two rooms from it, not the far end of the house; testers lost track
+  // of the house when every grab sent them somewhere new)
+  for (const id of R) { const fromIt = steps(path(st.g, sh.id, id)) ?? 9, d = door ? (steps(path(st.g, id, door)) ?? 9) * 2 + fromIt : (fromIt >= 2 ? 20 : fromIt) - (steps(path(st.g, me.id, id)) ?? 9); if (id !== sh.id && d > bd) { bd = d; best = id; } }
   me.id = best;
   // never a dead floor: if no way out is left within a few steps, the house opens one
   if (!solve(st.g, me.id, st.h.lockIds, st.unlocked, 4)) { if (st.unlocked) carve(); else { st.g = clone(st.g0); st.flipped = false; } }
@@ -1307,7 +1309,7 @@ function coachLine(room) {
 }
 function clawCount() {
   const sh = st.shadow; if (st.scene !== "play" || sh.mode === "sleep" || !(sh.noPath > 0) || sh.way || path(st.g, sh.id, st.player.id)) return "";
-  return `It is shut in. It claws out in ${Math.max(0, Math.ceil(TRAPS[st.floor - 1] - sh.noPath))}.`;
+  { const n = Math.max(0, Math.ceil(TRAPS[st.floor - 1] - sh.noPath)); return `It is shut in. It claws out in ${n} second${n === 1 ? "" : "s"}.`; }
 }
 function slipShown() {
   const hn = st.houseNext && st.houseNext.move ? st.houseNext : null;
