@@ -408,21 +408,28 @@ function pegDoll() {
   g.scale.setScalar(1.1);
   return g;
 }
-function hooded() {
-  const g = new THREE.Group(), prof = []; const blob = contact(0.42, 0.8); g.add(blob);
-  for (let i = 0; i <= 24; i++) { const t = i / 24, h = t * 1.6; const r = t < 0.08 ? 0.2 + 0.25 * t : t < 0.7 ? 0.22 - 0.07 * (t - 0.08) / 0.62 : t < 0.86 ? 0.15 - 0.02 * (t - 0.7) / 0.16 : Math.max(0.001, 0.13 * Math.cos((t - 0.86) / 0.14 * Math.PI / 2)); prof.push(new THREE.Vector2(r, h)); }
-  const geo = new THREE.LatheGeometry(prof, 40), pa = geo.attributes.position;
-  for (let i = 0; i < pa.count; i++) { const vx = pa.getX(i), vy = pa.getY(i), vz = pa.getZ(i), ang = Math.atan2(vz, vx); if (vy < 0.35) { const k = (0.35 - vy) / 0.35, w = 1 + k * (0.35 * Math.sin(ang * 5 + 1) + 0.2 * Math.sin(ang * 11)); pa.setXYZ(i, vx * w, vy + k * 0.06 * Math.sin(ang * 7), vz * w); } }
-  geo.computeVertexNormals();
-  const coreM = new THREE.MeshStandardMaterial({ map: tex("Fabric030", "Color", [3, 3]), color: 0x0a0a0c, roughness: 1, transparent: true });
-  const core = new THREE.Mesh(geo, coreM); core.castShadow = true; g.add(core);
-  const smokes = [];
-  for (const [sc, op] of [[1.08, 0.4], [1.2, 0.18], [1.36, 0.07]]) { const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: op, depthWrite: false })); m.scale.set(sc, 1 + (sc - 1) * 0.4, sc); m.position.y = -(sc - 1) * 0.1; m.userData.op = op; g.add(m); smokes.push(m); }
-  const eyeM = new THREE.MeshBasicMaterial({ color: 0xff3a22, transparent: true });
-  const eyes = [-1, 1].map((sd) => { const e = new THREE.Mesh(new THREE.SphereGeometry(0.016, 8, 8), eyeM); e.position.set(sd * 0.045, 1.42, 0.12); g.add(e); return e; });
-  g.userData = { coreM, smokes, eyes, eyeM, blob };
-  return g;
+// The shadow: the burnt twin, a charred copy of your peg doll (CH 11-20 picked it from three rendered designs)
+function crackTex(seed, hot) { // charred wood: near-black with a web of cracks (hot: the cracks glow like embers)
+  const c = document.createElement("canvas"); c.width = c.height = 512; const x = c.getContext("2d");
+  let q = seed; const rn = () => { q = (q * 16807) % 2147483647; return q / 2147483647; };
+  x.fillStyle = hot ? "#000" : "#141110"; x.fillRect(0, 0, 512, 512);
+  if (!hot) for (let i = 0; i < 900; i++) { x.fillStyle = `rgba(${30 + rn() * 25},${24 + rn() * 18},${20 + rn() * 14},${0.5})`; x.fillRect(rn() * 512, rn() * 512, 4 + rn() * 30, 1 + rn() * 3); }
+  x.strokeStyle = hot ? "#ff8a3a" : "#030202"; x.lineWidth = hot ? 1.1 : 3.2; x.lineJoin = "round";
+  for (let i = 0; i < 46; i++) { let px = rn() * 512, py = rn() * 512; x.beginPath(); x.moveTo(px, py); for (let k = 0; k < 7; k++) { px += (rn() - 0.5) * 40; py += (rn() - 0.3) * 34; x.lineTo(px, py); } x.stroke(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
+function burntTwin() { // A: the copy of you the house kept, burnt black, taller than you, ember cracks and two pinhole eyes
+  const g = new THREE.Group(); const blob = contact(0.36, 0.85); g.add(blob);
+  const prof = [[0, 0], [0.17, 0], [0.19, 0.05], [0.16, 0.45], [0.11, 0.6], [0.09, 0.66], [0.105, 0.7], [0, 0.7]].map(([a, b]) => new THREE.Vector2(a, b));
+  const coreM = new THREE.MeshStandardMaterial({ map: crackTex(7), emissiveMap: crackTex(7, true), emissive: 0xff6a24, emissiveIntensity: 1.25, roughness: 0.75, transparent: true });
+  const body = new THREE.Mesh(new THREE.LatheGeometry(prof, 32), coreM); body.castShadow = true; g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.115, 32, 20), coreM); head.position.y = 0.8; head.castShadow = true; g.add(head);
+  const eyeM = new THREE.MeshBasicMaterial({ color: 0xffd8a0, transparent: true });
+  const eyes = [-1, 1].map((sd) => { const e = new THREE.Mesh(new THREE.SphereGeometry(0.012, 8, 8), eyeM); e.position.set(sd * 0.04, 0.82, 0.108); g.add(e); return e; });
+  const ember = new THREE.PointLight(0xff5a22, 0.8, 2.6, 2); ember.position.set(0, 0.5, 0.35); g.add(ember); // its cracks light the room red
+  g.scale.setScalar(1.45); g.userData = { coreM, smokes: [], eyes, eyeM, blob, ember }; return g;
+}
+function hooded() { return burntTwin(); }
 
 // ---------- the scene around the house ----------
 function surroundings() {
@@ -708,7 +715,7 @@ function figure(f, p, isPlayer, t) {
     u.coreM.opacity = a * (p.asleep ? 0.8 : 1); u.blob.material.opacity = 0.8 * a; for (const m of u.smokes) m.material.opacity = m.userData.op * a * (1 + 0.3 * Math.sin(t * 2 + m.userData.op * 20));
     f.scale.set(1, 1 + 0.02 * Math.sin(t * 1.4), 1);
     const blink = Math.sin(t * 0.9 + p.x * 0.01) > 0.97;
-    u.eyeM.opacity = p.asleep ? 0.2 * (1 - a) : blink ? 0 : 1; for (const e of u.eyes) e.scale.setScalar(p.near <= 1 ? 1.4 : 1);
+    u.eyeM.opacity = p.asleep ? 0.2 * (1 - a) : blink ? 0 : 1; if (u.ember) u.ember.intensity = (p.asleep ? 0.15 : p.near <= 1 ? 1.2 : 0.7) * (0.85 + 0.1 * Math.sin(t * 9.1) + 0.06 * Math.sin(t * 23.7)); for (const e of u.eyes) e.scale.setScalar(p.near <= 1 ? 1.4 : 1);
     f.visible = a > 0.01 || u.eyeM.opacity > 0.01;
   }
 }

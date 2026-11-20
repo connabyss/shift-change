@@ -514,7 +514,7 @@ test("floor 1 has no counter-moves; floor 3's lock waits for the door; the chase
     assert.equal(after.grabs, c.grabs + 1, "the grab counts");
     assert.notEqual(after.me, after.sh, "and you're apart again");
     // the front door holds shut while it's still chasing
-    await page.evaluate(() => { const st = window.__dh.st(); st.player.id = st.g[2][0].id; st.player.way = null; st.shadow.timer = 99; st.shadow.way = null; window.__dh.walk(st.g[2][0].id, true); });
+    await page.evaluate(() => { const st = window.__dh.st(); st.unlockAt = st.floorT + 99; st.player.id = st.g[2][0].id; st.player.way = null; st.shadow.timer = 99; st.shadow.way = null; window.__dh.walk(st.g[2][0].id, true); }); // (kept safe from another grab here: this part is about the door)
     await page.waitForFunction(() => !window.__dh.st().player.way, null, { timeout: 4000 });
     assert.equal(await page.evaluate(() => window.__dh.st().scene), "play", "the door won't open yet");
     assert.ok(await page.evaluate(() => window.__dh.st().player.fx >= 0), "pushed back inside, not left on the doorstep");
@@ -838,7 +838,7 @@ test("a lock in reach in the preview is tagged in words, not only in red", { ski
       P.fillText = function (t, ...a) { out.push(String(t)); return orig.call(this, t, ...a); };
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); P.fillText = orig; return out;
     });
-    assert.ok(drawn.includes("lock in reach"));
+    assert.ok(drawn.includes("LOCK IN REACH"), "the paper tag (printed in capitals like the sheet)");
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });

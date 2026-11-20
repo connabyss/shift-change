@@ -157,7 +157,7 @@ export function goodHouse(h, floor) {
 // Tries seeds from the given one until a house is right for this floor (a few dozen tries, well under a second).
 export const EXTRA = 4;
 export const NEW_WORD = {
-  2: { kind: "swap", code: "this.swap(east)", step: "\"Swap rooms with\"", text: "trades this room with the one next to it. You go with it." },
+  2: { kind: "swap", code: "this.swap(east)", step: "\"Swap rooms with\"", text: "trades places with the room beside it, and you move with it." },
   3: { kind: "flip", code: "house.upsideDown = true", step: "\"The house stands: UPSIDE DOWN\"", text: "turns the whole house over. Floors change places, and ladders become holes." },
 };
 // Floor 3 houses are slow to check (no way out without the flip, up to 7 moves), so these seeds were checked ahead of time.

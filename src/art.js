@@ -227,8 +227,38 @@ export function player(ctx, x, y, t, walking) {
   ctx.fillStyle = "#3a3026"; ctx.fillRect(lx - 3, ly - 4, 6, 8);
   ctx.fillStyle = `rgba(255,210,110,${fl})`; ctx.fillRect(lx - 1.8, ly - 2, 3.6, 4.5);
 }
-// o: { asleep, seep, near (rooms away), look (-1..1 toward you) }
+// The shadow is the burnt twin: a charred copy of your own peg doll (rendered with the same lathe profile,
+// assets/plates/shadow_*.png), taller than you, cracks glowing like embers. Its cracks light the floor red around it,
+// stronger as it gets near, so you see its light before you see it (CH 11-20 picked it from three rendered designs).
+const TWIN = {}; let twinOk = 0;
+if (typeof Image !== "undefined") for (const k of ["front", "left", "right"]) for (const e of ["", "_embers"]) { const im = new Image(); im.onload = () => twinOk++; im.src = `assets/plates/shadow_${k}${e}.png`; TWIN[k + e] = im; }
+export const twinReady = () => twinOk === 6;
+export const twinImage = () => (twinOk === 6 ? TWIN.front : null);
+export const TWIN_PX = 113; // the sprite is 2 house units across, drawn 1.2x like the doll (so both read at game size)
+export function emberGlow(ctx, x, y, t, k) { // the red light its cracks throw on the floor and the wall behind it
+  if (k <= 0) return; const fl = 0.85 + 0.1 * Math.sin(t * 9.1) + 0.06 * Math.sin(t * 23.7);
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  const g = ctx.createRadialGradient(x, y - 22, 2, x, y - 22, 70); g.addColorStop(0, `rgba(255,90,30,${0.5 * k * fl})`); g.addColorStop(0.45, `rgba(200,50,20,${0.2 * k * fl})`); g.addColorStop(1, "rgba(160,30,10,0)");
+  ctx.fillStyle = g; ctx.fillRect(x - 72, y - 94, 144, 100);
+  ctx.translate(x, y); ctx.scale(1, 0.25); const f = ctx.createRadialGradient(0, 0, 2, 0, 0, 60); f.addColorStop(0, `rgba(255,110,40,${0.7 * k * fl})`); f.addColorStop(1, "rgba(255,80,20,0)");
+  ctx.fillStyle = f; ctx.fillRect(-62, -62, 124, 124); ctx.restore();
+}
 export function shadow(ctx, x, y, t, o) {
+  if (twinOk === 6) {
+    const k = o.look < -0.35 ? "left" : o.look > 0.35 ? "right" : "front", w = TWIN_PX, a = o.seep ? 0.45 : 1;
+    emberGlow(ctx, x, y, t, (o.asleep ? 0.25 : o.near <= 0 ? 1 : o.near === 1 ? 0.8 : 0.5) * a);
+    ctx.save(); ctx.globalAlpha *= a;
+    ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.beginPath(); ctx.ellipse(x, y, 13, 3, 0, 0, 7); ctx.fill(); // where it stands
+    ctx.translate(x, y);
+    if (o.asleep) ctx.rotate(-0.22); // slumped against the wall while it sleeps
+    if (o.crouch) ctx.scale(1.08, 0.86); // the tell before it lunges
+    ctx.drawImage(TWIN[k], -w / 2, -w + 2, w, w);
+    // the cracks and eyes glow on their own: in a dark room they're what you see of it (o.embers: how bright)
+    const fl = 0.8 + 0.12 * Math.sin(t * 9.1) + 0.08 * Math.sin(t * 23.7);
+    ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = clamp((o.embers ?? ctx.globalAlpha) * (o.asleep ? 0.3 : 1) * fl * a, 0, 1);
+    ctx.drawImage(TWIN[k + "_embers"], -w / 2, -w + 2, w, w);
+    ctx.restore(); return;
+  }
   ctx.save(); ctx.globalAlpha = o.seep ? 0.45 : o.asleep ? 0.75 : 1;
   const g = ctx.createRadialGradient(x, y - 28, 4, x, y - 28, 56); g.addColorStop(0, "rgba(0,0,0,0.75)"); g.addColorStop(1, "rgba(0,0,0,0)");
   ctx.fillStyle = g; ctx.fillRect(x - 60, y - 90, 120, 110);

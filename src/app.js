@@ -32,6 +32,7 @@ const plates = () => PL.on && PL.ready && st.scene !== "title" && st.scene !== "
 cv.width = VW * DPR; cv.height = VH * DPR;
 const MONO = LOOK.mono, SERIF = '"IM Fell English", Georgia, serif', TITLE = LOOK.title;
 let INK = "#d6ccb6", DIM = "rgba(214,204,182,0.45)", YEL = "#ffd36a", RED = "#ff5a4e", GRN = "#f0d9a4";
+const LAMP = "#f0d9a4"; // (marks on the house: never swapped for the paper's ink, which drew them dark green)
 // draw fn in ink on paper: the panel's colours stand in for the night's while it runs
 function inInk(fn) { const keep = [INK, DIM, YEL, RED, GRN]; ({ INK, DIM, YEL, RED, GRN } = LOOK.panel); try { fn(); } finally { [INK, DIM, YEL, RED, GRN] = keep; } }
 
@@ -400,7 +401,7 @@ function doHint(asked = true) {
   else if (!plan.length) st.hint = { text: st.unlocked ? "Hint: the way is open. Click the front door, bottom left." : "Hint: a red lock is in reach. Walk there and tick UNLOCK." };
   else {
     const m = plan[0], room = byId(st.g, m.id), c = room.lines[m.li], word = stepWord(room, c, m.dir), no = STEP_NO(room, m.li);
-    st.hint = { ...m, text: m.id === st.player.id ? `Hint: tick ${word} on step ${no} (${stepView(room, c).lead.toLowerCase()}).` : `Hint: walk to the ${room.name} (yellow frame), then tick ${word} on its step ${no}.` };
+    st.hint = { ...m, text: m.id === st.player.id ? `Hint: tick ${word} on step ${no} (${stepView(room, c).lead.toLowerCase()}).` : `Hint: walk to the ${room.name} (the lit frame), then tick ${word} on its step ${no}.` };
   }
   // the hint only knows the house: if the shadow is close to where it sends you, it says so
   const sh = st.shadow, dest = st.hint.id != null ? st.hint.id : st.unlocked ? doorRoom() : null;
@@ -657,14 +658,14 @@ function drawRoom(room, cx, cy, o) {
     if (room[s]) poly(q, "rgba(6,5,8,0.92)");
     else if (hasLine) { poly(q, shade([92, 60, 36], L)); const k = G.side(s, 0.6, 0.32); ctx.fillStyle = shade([210, 180, 90], L); ctx.fillRect(k[0] - 1, k[1] - 1, 2.5, 2.5); }
     if (o.door && o.door.side === s) {
-      ctx.save(); ctx.globalAlpha = 0.55 + 0.45 * Math.sin(st.t * 8); ctx.strokeStyle = o.door.open ? GRN : RED; ctx.lineWidth = 2.5;
+      ctx.save(); ctx.globalAlpha = 0.55 + 0.45 * Math.sin(st.t * 8); ctx.strokeStyle = o.door.open ? LAMP : RED; ctx.lineWidth = 2.5;
       ctx.beginPath(); q.forEach((pt, i) => i ? ctx.lineTo(pt[0], pt[1]) : ctx.moveTo(pt[0], pt[1])); ctx.closePath(); ctx.stroke(); ctx.restore();
     }
   }
   // ladders, hatches and the room's name are its "bones", drawn over the dark in lampLight (bones())
   // the lock
   if (room.lines.some((l) => l.kind === "lock")) {
-    const lx = bx + bw * 0.7, ly = by + bh * 0.42, col = st.unlocked ? GRN : RED;
+    const lx = bx + bw * 0.7, ly = by + bh * 0.42, col = st.unlocked ? LAMP : RED;
     glows.push(() => padlock(lx, ly, col, 8 + 4 * Math.sin(st.t * 4)));
     padlock(lx, ly, col, 6);
   }
@@ -728,7 +729,7 @@ function drawPlate(room, cx, cy, o, gx, gy) {
       ctx.fillStyle = "rgba(255,240,200,0.35)"; ctx.fillRect(x0 + POST / 2 - 0.9, fy - DOORH * 0.48 - 1, 0.8, 0.8);
     }
     if (o.door && o.door.side === s) {
-      ctx.save(); ctx.globalAlpha = 0.55 + 0.45 * Math.sin(st.t * 8); ctx.strokeStyle = o.door.open ? GRN : RED; ctx.lineWidth = 2.5; ctx.strokeRect(x0 - 1, y0 - 1, POST + 2, DOORH + 2); ctx.restore();
+      ctx.save(); ctx.globalAlpha = 0.55 + 0.45 * Math.sin(st.t * 8); ctx.strokeStyle = o.door.open ? LAMP : RED; ctx.lineWidth = 2.5; ctx.strokeRect(x0 - 1, y0 - 1, POST + 2, DOORH + 2); ctx.restore();
     }
   }
   // the ladder up to a hatch; where nothing meets it above, the hatch is boarded over. A hole down shows the ladder below's top
@@ -746,7 +747,14 @@ function drawPlate(room, cx, cy, o, gx, gy) {
     const op = st.unlocked, px = cx + CW / 2 + 0.5 / PS, py = cy + CH - (op ? 1.273 : 1.225) / PS, w = 0.7 / PS, col = op ? "120,230,140" : "255,80,64";
     ctx.save(); ctx.globalCompositeOperation = "lighter"; const g = ctx.createRadialGradient(px, py, 2, px, py, 26); g.addColorStop(0, `rgba(${col},${0.35 + 0.15 * Math.sin(st.t * 4)})`); g.addColorStop(1, `rgba(${col},0)`);
     ctx.fillStyle = g; ctx.fillRect(px - 28, py - 28, 56, 56); ctx.restore();
-    ctx.drawImage(PL.img[op ? "lock_open" : "lock_shut"], px - w / 2, py - w / 2, w, w);
+    // hung on an iron hasp screwed to the wall, casting its own shadow there (so it's an object in the room, not a
+    // sticker on the picture)
+    ctx.save(); ctx.fillStyle = "#1b1612"; ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = 3; ctx.shadowOffsetY = 1;
+    ctx.fillRect(px - w * 0.13, py - w * 0.62, w * 0.26, w * 0.34); ctx.restore();
+    ctx.fillStyle = "#5a4c3e"; for (const dy of [0.56, 0.36]) { ctx.beginPath(); ctx.arc(px, py - w * dy, 0.9, 0, 7); ctx.fill(); }
+    const im = PL.img[op ? "lock_open" : "lock_shut"], sw = Math.sin(st.t * 1.7) * 0.03;
+    ctx.save(); ctx.globalAlpha = 0.55; ctx.filter = "blur(2.5px) brightness(0)"; ctx.drawImage(im, px - w / 2 + 3, py - w / 2 + 4, w, w); ctx.restore();
+    ctx.save(); ctx.translate(px, py - w * 0.42); ctx.rotate(sw); ctx.drawImage(im, -w / 2, -w / 2 + w * 0.42, w, w); ctx.restore();
   }
   if (st.page.id === room.id && !st.page.got) {
     const px = cx + CW * 0.36, py = fy - 4, k = 0.6 + 0.4 * Math.sin(st.t * 3 + 1);
@@ -793,7 +801,7 @@ function padlock(x, y, col, blur) {
 
 const drawPlayer = (x, y) => plates() && DOLL.ok === 4 ? dollSprite(x, y) : art.player(ctx, x, y, st.t, !!st.player.way);
 // the 3D house's peg doll, path-traced and cut out (tools/render/render.py SPRITE=1): straight on, turned each way, from behind
-const DOLL = { ok: 0 }, DOLLW = 1.5 / PS;
+const DOLL = { ok: 0 }, DOLLW = 1.8 / PS; // (a little larger than true scale, so you can find yourself at a glance)
 if (PL.on) for (const k of ["front", "right", "left", "back"]) { const im = new Image(); im.onload = () => DOLL.ok++; im.src = `assets/plates/doll_${k}.png`; DOLL[k] = im; }
 function dollSprite(x, y) {
   const w = walkerInfo(st.player), walking = w.walking, bob = walking ? Math.abs(Math.sin(st.t * 16)) * 0.04 / PS : 0;
@@ -807,8 +815,10 @@ function drawShadow(x, y) {
   // in the dark you only see it when it is in your light, or when lightning shows it
   // awake, it never goes fully out: a faint shape stays (testers lost it in dark rooms and felt grabbed from nowhere)
   const seen = end ? 1 : Math.max(clamp(1.5 - Math.hypot(pp[0] - x, pp[1] - y) / 110, 0, 1), flash() * 0.9, sh.mode === "sleep" ? 0 : 0.3);
-  if (seen > 0) { ctx.save(); ctx.globalAlpha = seen; art.shadow(ctx, x, y, st.t, { asleep: sh.mode === "sleep", seep: sh.seep, near: nearness(), look: clamp((pp[0] - x) / 60, -1, 1) }); ctx.restore(); }
-  if (end || sh.seep) return;
+  // its cracks' red light shows on the floor even where it's too dark to see it
+  if (!end && sh.mode !== "sleep" && seen < 1) art.emberGlow(ctx, x, y, st.t, (1 - seen) * (nearness() <= 1 ? 1 : 0.6));
+  if (seen > 0) { ctx.save(); ctx.globalAlpha = seen; art.shadow(ctx, x, y, st.t, { asleep: sh.mode === "sleep", seep: sh.seep, near: nearness(), look: clamp((pp[0] - x) / 60, -1, 1), crouch: sh.lunge > 0, embers: sh.mode === "sleep" ? 0.2 : Math.max(seen, nearness() <= 1 ? 1 : 0.75) }); ctx.restore(); }
+  if (end || sh.seep || art.twinReady()) return; // (the burnt twin has its own eyes; the red dots below are the old blob's)
   // two red eyes in the dark: shut while it sleeps, wider the closer it gets
   const ey = y - 44 + Math.sin(st.t * 1.4) * 2, lx = clamp((pp[0] - x) / 60, -1, 1) * 1.5, blink = Math.sin(st.t * 0.9 + x * 0.01) > 0.97;
   ctx.save(); ctx.shadowColor = "#ff2a1e";
@@ -827,10 +837,13 @@ function drawWays() {
       const key = [a.x, a.y, nx, ny].sort().join(); if (seen.has(key)) continue; seen.add(key);
       const near = here || st.g[ny][nx].id === me, al = near ? 0.55 + 0.35 * pulse : 0.28;
       ctx.save(); ctx.globalAlpha = al; ctx.fillStyle = "#ffdca0"; ctx.strokeStyle = "#ffdca0"; ctx.lineWidth = 3;
-      if (ny === a.y) { // a doorway: a glowing strip in the shared wall, lower half
-        const wx = HX + Math.max(a.x, nx) * CW, y0 = HY + a.y * CH + CH * 0.42, y1 = HY + a.y * CH + CH - 14;
-        const gl = ctx.createLinearGradient(wx - 14, 0, wx + 14, 0); gl.addColorStop(0, "rgba(255,220,160,0)"); gl.addColorStop(0.5, "rgba(255,220,160,0.9)"); gl.addColorStop(1, "rgba(255,220,160,0)");
-        ctx.fillStyle = gl; ctx.fillRect(wx - 14, y0, 28, y1 - y0);
+      if (ny === a.y) { // an open doorway: lamplight spilling through it onto the floor on both sides (not a lit bar
+        // standing in the wall: the critic read that as a UI pillar)
+        const wx = HX + Math.max(a.x, nx) * CW, fy = HY + a.y * CH + CH - 12;
+        ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = al * 0.8;
+        const gl = ctx.createRadialGradient(wx, fy, 2, wx, fy, 46); gl.addColorStop(0, "rgba(255,196,120,0.75)"); gl.addColorStop(0.5, "rgba(255,170,90,0.25)"); gl.addColorStop(1, "rgba(255,170,90,0)");
+        ctx.save(); ctx.translate(wx, fy); ctx.scale(1, 0.32); ctx.translate(-wx, -fy); ctx.fillStyle = gl; ctx.fillRect(wx - 48, fy - 48, 96, 96); ctx.restore();
+        const sl = ctx.createLinearGradient(0, fy - CH * 0.45, 0, fy); sl.addColorStop(0, "rgba(255,200,130,0)"); sl.addColorStop(1, "rgba(255,200,130,0.35)"); ctx.fillStyle = sl; ctx.fillRect(wx - 3, fy - CH * 0.45, 6, CH * 0.45);
       } else { // a ladder or a hole: an arrow across the floor line, pointing the way it goes from where you are
         const up = ny < a.y, fx = HX + a.x * CW + CW * 0.78, fy = HY + Math.max(a.y, ny) * CH;
         const dir = here ? (up ? -1 : 1) : st.g[ny][nx].id === me ? (up ? 1 : -1) : 0;
@@ -868,9 +881,19 @@ function nearness() {
   const p = path(st.g, st.shadow.id, st.player.id); return p ? p.length - 1 : Infinity;
 }
 
+// One way to mark a room, everywhere: its light warms from inside, and a soft hand-drawn line goes round it (not a
+// hard UI rectangle: the critics read three different box styles as web-app chrome). dash: a lighter, broken line.
 function outlineSlot(x, y, color, dash) {
-  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 2; if (dash) ctx.setLineDash([6, 5]);
-  ctx.strokeRect(HX + x * CW + 5, HY + y * CH + 5, CW - 10, CH - 10); ctx.restore();
+  const x0 = HX + x * CW + 6, y0 = HY + y * CH + 6, w = CW - 12, h = CH - 12;
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  const g = ctx.createRadialGradient(x0 + w / 2, y0 + h * 0.6, 10, x0 + w / 2, y0 + h * 0.6, w * 0.7); g.addColorStop(0, dash ? "rgba(255,200,130,0.10)" : "rgba(255,200,130,0.2)"); g.addColorStop(1, "rgba(255,200,130,0)");
+  ctx.fillStyle = g; ctx.fillRect(x0, y0, w, h); ctx.restore();
+  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = dash ? 1.4 : 2; ctx.lineCap = ctx.lineJoin = "round"; ctx.shadowColor = color; ctx.shadowBlur = 6;
+  if (dash) ctx.setLineDash([10, 7]);
+  let q = (x * 7 + y * 13 + 1) * 2654435761 % 2147483647; const j = () => { q = (q * 16807) % 2147483647; return (q / 2147483647 - 0.5) * 2.2; };
+  ctx.beginPath(); const pts = [[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]];
+  pts.forEach(([px, py], i) => { const [nx, ny] = pts[(i + 1) % 4]; if (!i) ctx.moveTo(px + j(), py + j()); for (let k = 1; k <= 4; k++) ctx.lineTo(px + (nx - px) * k / 4 + j(), py + (ny - py) * k / 4 + j()); });
+  ctx.stroke(); ctx.restore();
 }
 
 // a big chalk arrow along a row or column (short: just from one room to the next, for a swap)
@@ -921,12 +944,13 @@ function drawHouseNow() {
   // reads without telling red from green (about 1 in 12 men can't)
   if (pv && pv.reach) for (const id of pv.reach) {
     const p = find(pv.g, id), lock = st.h.lockIds.includes(id) && !st.unlocked;
-    if (!lock) { outlineSlot(p.x, p.y, GRN, true); continue; }
-    outlineSlot(p.x, p.y, RED, false); ctx.save(); ctx.strokeStyle = RED; ctx.lineWidth = 2; ctx.strokeRect(HX + p.x * CW + 10, HY + p.y * CH + 10, CW - 20, CH - 20);
+    if (!lock) { outlineSlot(p.x, p.y, LAMP, true); continue; }
+    outlineSlot(p.x, p.y, RED, false); ctx.save(); // (the paper tag below says it in words, so it doesn't rest on red alone)
     const tx = HX + p.x * CW + CW / 2, ty = HY + p.y * CH + CH - 22, bob = Math.sin(st.t * 6) * 2;
-    ctx.font = `15px ${MONO}`; ctx.textAlign = "center"; const w = ctx.measureText("lock in reach").width + 14;
-    ctx.fillStyle = "rgba(10,6,8,0.85)"; ctx.fillRect(tx - w / 2, ty - 14 + bob, w, 20); ctx.strokeRect(tx - w / 2, ty - 14 + bob, w, 20);
-    ctx.fillStyle = "#ffd0c8"; ctx.fillText("lock in reach", tx, ty + 1 + bob); ctx.textAlign = "left"; ctx.restore();
+    // a little paper tag, like the sheet's own print
+    ctx.font = `700 13px ${ROK}`; ctx.textAlign = "center"; const w = ctx.measureText("LOCK IN REACH").width + 16;
+    ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = 6; ctx.fillStyle = "#e9dcc0"; ctx.fillRect(tx - w / 2, ty - 14 + bob, w, 20); ctx.shadowBlur = 0;
+    ctx.fillStyle = "#a3261b"; ctx.fillText("LOCK IN REACH", tx, ty + 1 + bob); ctx.textAlign = "left"; ctx.restore();
   }
   if (st.reachFlash > 0) { ctx.save(); ctx.globalAlpha = Math.min(1, st.reachFlash); for (const id of reach(st.g, st.player.id)) { const p = find(st.g, id); outlineSlot(p.x, p.y, "rgba(240,230,210,0.7)", true); } ctx.restore(); }
   if (st.hover && st.hover.type === "room" && !pv && st.scene === "play") {
@@ -942,12 +966,12 @@ function drawHouseNow() {
   }
   if (st.finale && st.finalePath && st.scene === "play") for (const id of st.finalePath) { const p = find(st.g, id); outlineSlot(p.x, p.y, `rgba(207,224,255,${0.35 + 0.25 * Math.sin(st.t * 5)})`, true); }
   // the door is open but out of reach: its room pulses so you know where you need a way to (always, after a failed click: brighter)
-  if (st.scene === "play" && st.unlocked && !st.finale && !reach(st.g, st.player.id).has(doorRoom())) outlineSlot(0, H - 1, `rgba(143,227,154,${(st.doorNag > 0 ? 0.6 : 0.25) + 0.3 * Math.sin(st.t * 6)})`, false);
+  if (st.scene === "play" && st.unlocked && !st.finale && !reach(st.g, st.player.id).has(doorRoom())) outlineSlot(0, H - 1, `rgba(240,217,164,${(st.doorNag > 0 ? 0.6 : 0.25) + 0.3 * Math.sin(st.t * 6)})`, false);
   if (st.hint && st.hint.id != null) { const p = find(st.g, st.hint.id); outlineSlot(p.x, p.y, `rgba(255,211,106,${0.5 + 0.4 * Math.sin(st.t * 6)})`, false); }
   // shut in: its room gets a red frame and a bar that drains until it claws out
   if (st.scene === "play" && st.shadow.mode !== "sleep" && st.shadow.noPath > 0 && !st.shadow.way) {
     const p = find(st.g, st.shadow.id), k = 1 - st.shadow.noPath / TRAPS[st.floor - 1];
-    outlineSlot(p.x, p.y, `rgba(143,227,154,${0.5 + 0.3 * Math.sin(st.t * 8)})`, true);
+    outlineSlot(p.x, p.y, `rgba(240,217,164,${0.5 + 0.3 * Math.sin(st.t * 8)})`, true);
     void k; // (its countdown is typed on the page now: clawCount())
   }
   if (st.scene === "play" && !st.anim && !flipPeek()) drawWays();
@@ -969,7 +993,7 @@ function drawHouseNow() {
   if (D3 || P) { // the door itself is in the 3D porch (or its picture); under the pointer it gets a frame
     if (P && st.unlocked) { ctx.save(); ctx.globalCompositeOperation = "lighter"; const g = ctx.createRadialGradient(fx + 13, fy + 30, 4, fx + 13, fy + 30, 60);
       g.addColorStop(0, `rgba(190,215,255,${0.45 + 0.1 * Math.sin(st.t * 3)})`); g.addColorStop(1, "rgba(190,215,255,0)"); ctx.fillStyle = g; ctx.fillRect(fx - 50, fy - 30, 126, 120); ctx.restore(); }
-    if (hov) { ctx.strokeStyle = st.unlocked ? "#fff" : RED; ctx.lineWidth = 1.5; ctx.strokeRect(fx - 3, fy - 3, 32, 66); }
+    if (hov) { ctx.save(); ctx.strokeStyle = st.unlocked ? "#ffdca0" : RED; ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 8; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.roundRect(fx - 3, fy - 3, 32, 66, 3); ctx.stroke(); ctx.restore(); }
   } else {
   ctx.fillStyle = "#1c1820"; ctx.fillRect(fx - 4, fy - 4, 34, 68);
   if (st.unlocked) {
@@ -981,8 +1005,16 @@ function drawHouseNow() {
     ctx.strokeStyle = hov ? RED : "rgba(255,90,78,0.4)"; ctx.lineWidth = 1.5; ctx.strokeRect(fx, fy, 26, 60);
   }
   }
-  ctx.font = `13px ${TITLE}`; ctx.fillStyle = st.unlocked ? "#cfe0ff" : "rgba(255,120,104,0.85)"; ctx.textAlign = "center";
-  ctx.fillText("front", fx + 13, fy - 18); ctx.fillText("door", fx + 13, fy - 7); ctx.textAlign = "left";
+  // an engraved brass plate over the door (not a floating neon label), brighter once it's open
+  const bw = 66, bh = 15, bx = Math.max(fx + 13, bw / 2 + 4), by = fy - 15; // (kept inside the screen)
+  ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.7)"; ctx.shadowBlur = 4; ctx.shadowOffsetY = 1;
+  const bg = ctx.createLinearGradient(0, by - bh / 2, 0, by + bh / 2); const k = st.unlocked ? 1 : 0.62;
+  bg.addColorStop(0, `rgb(${217 * k | 0},${184 * k | 0},${108 * k | 0})`); bg.addColorStop(1, `rgb(${142 * k | 0},${106 * k | 0},${44 * k | 0})`);
+  ctx.fillStyle = bg; ctx.beginPath(); ctx.roundRect(bx - bw / 2, by - bh / 2, bw, bh, 2); ctx.fill(); ctx.restore();
+  ctx.fillStyle = "rgba(40,26,8,0.6)"; for (const sx2 of [-1, 1]) { ctx.beginPath(); ctx.arc(bx + sx2 * (bw / 2 - 4), by, 1.1, 0, 7); ctx.fill(); }
+  ctx.font = `700 9px ${ROK}`; ctx.textAlign = "center"; if ("letterSpacing" in ctx) ctx.letterSpacing = "0.6px";
+  ctx.fillStyle = "rgba(255,240,200,0.35)"; ctx.fillText("FRONT DOOR", bx, by + 3.6); ctx.fillStyle = "#2b1c08"; ctx.fillText("FRONT DOOR", bx, by + 3);
+  if ("letterSpacing" in ctx) ctx.letterSpacing = "0px"; ctx.textAlign = "left";
 }
 
 // ---------- the 3D house ----------
@@ -1070,11 +1102,11 @@ function lineParts(room, c, self) {
 }
 const flat = (parts) => parts[0] + parts[1].map((w) => w.text).join("|") + parts[2];
 function plain(room, c, dir) {
-  if (c.kind === "row") return `Slides this whole row of rooms one step ${DIR.row[dir]}. You ride along. Green: rooms you could walk to after.`;
-  if (c.kind === "col") return `Slides this whole column of rooms one step ${DIR.col[dir]}. You ride along. Green: rooms you could walk to after.`;
+  if (c.kind === "row") return `Slides this whole row of rooms one step ${DIR.row[dir]}. You ride along. The lit frames show the rooms you could walk to after.`;
+  if (c.kind === "col") return `Slides this whole column of rooms one step ${DIR.col[dir]}. You ride along. The lit frames show the rooms you could walk to after.`;
   if (c.kind === "door") return room[c.side === "west" ? "l" : "r"] ? `Shuts this room's ${c.side} door. Nothing gets through a shut door: not you, not it. Shut it in and it has to claw its way out.` : `Opens this room's ${c.side} door.`;
-  if (c.kind === "swap") return `Trades this room with the one to its ${DIR.row[dir]} (wrapping round the ends). You go with it. Green: rooms you could walk to after.`;
-  if (c.kind === "flip") return "Turns the whole house over. The top floor goes to the bottom, and ladders become holes in the floor. Green: rooms you could walk to after.";
+  if (c.kind === "swap") return `Trades this room with the one to its ${DIR.row[dir]} (wrapping round the ends). You move with it. The lit frames show the rooms you could walk to after.`;
+  if (c.kind === "flip") return "Turns the whole house over. The top floor goes to the bottom, and ladders become holes in the floor. The lit frames show the rooms you could walk to after.";
   if (c.kind === "lights") return room.lights ? "Turns the lights off. In the dark it can't see you, but it may still stumble in." : "Turns the lights back on.";
   if (c.kind === "lock") return st.unlocked ? "Already open. Get to the front door, bottom left." : "Unlocks the front door. Then get to it, bottom left. (Two rooms have this lock. Either one works.)";
 }
@@ -1211,10 +1243,15 @@ let NATIVE_FILL = CanvasRenderingContext2D.prototype.fillText;
 let typedTap = null; // (checks read the page's lines from here)
 function printed(text, x, y) { text = String(text); if (typedTap) typedTap.push(text); NATIVE_FILL.call(ctx, text, x, y); }
 function pwrap(text, x, y, maxW, lh, bottom = 1e9, narrowFrom = 1e9, narrowW = maxW) {
-  const words = text.split(" "); let line = "";
-  const mw = () => (y > narrowFrom ? narrowW : maxW);
-  for (const w of words) { const t = line ? line + " " + w : w; if (ctx.measureText(t).width > mw() && line) { if (y <= bottom) ctx.fillText(line, x, y); y += lh; line = w; } else line = t; }
-  if (line && y <= bottom) ctx.fillText(line, x, y); return y + lh;
+  // lay the words out first; if the last line would fall past the bottom, step the type down until it all fits,
+  // so a line is never silently dropped (CH 11-20 saw "You go with" cut off mid-sentence)
+  const lay = (lh2) => { const out = []; let line = "", yy = y; const mw = () => (yy > narrowFrom ? narrowW : maxW);
+    for (const w of text.split(" ")) { const t = line ? line + " " + w : w; if (ctx.measureText(t).width > mw() && line) { out.push([line, yy]); yy += lh2; line = w; } else line = t; }
+    if (line) out.push([line, yy]); return out; };
+  const font0 = ctx.font, m = /(\d+(?:\.\d+)?)px/.exec(font0); let size = m ? +m[1] : 0, l2 = lh, out = lay(l2);
+  while (size > 9 && out.length && out[out.length - 1][1] > bottom) { size -= 0.5; l2 = lh * size / +m[1]; ctx.font = font0.replace(m[0], size + "px"); out = lay(l2); }
+  for (const [t, yy] of out) ctx.fillText(t, x, yy);
+  ctx.font = font0; return (out.length ? out[out.length - 1][1] : y - l2) + l2;
 }
 function rule(y, w = 1, x0 = 16, x1 = SHW - 16) { ctx.fillRect(sx(x0), sy(y) - w / 2, x1 - x0, w); }
 function pencilTick(x, y, a = 1) { // a quick graphite tick in a box whose bottom-left is (x, y)
@@ -1741,7 +1778,7 @@ function lampLight() {
   g = ctx.createRadialGradient(px, py, 0, px, py, 105 * fl); g.addColorStop(0, `rgba(${hot},${0.55 * fl})`); g.addColorStop(1, `rgba(${hot},0)`);
   ctx.fillStyle = g; ctx.fillRect(px - 120, py - 120, 240, 240); ctx.restore();
   // 4. the room frames, barely there, so the puzzle still reads
-  ctx.save(); ctx.strokeStyle = `rgba(110,150,240,${0.13 + 0.25 * bolt})`; ctx.lineWidth = 1.5;
+  ctx.save(); ctx.strokeStyle = `rgba(214,190,150,${0.08 + 0.25 * bolt})`; // (warm, like the house's own wood) ctx.lineWidth = 1.5;
   for (let y = 0; y < st.g.length; y++) for (let x = 0; x < st.g[y].length; x++) ctx.strokeRect(HX + x * CW + 3, HY + y * CH + 3, CW - 6, CH - 6);
   ctx.restore();
   ctx.save(); ctx.strokeStyle = `rgba(${hot},0.4)`; ctx.lineWidth = 1.5;
@@ -1807,19 +1844,31 @@ function previewLit() {
   return out;
 }
 // something enormous stands behind the house: only the lightning shows it
-function drawWatcher(f) {
-  ctx.save(); ctx.globalAlpha = Math.min(1, f * 1.3); ctx.fillStyle = "#07060a";
-  ctx.beginPath(); ctx.ellipse(HCX, HY - 40, 150, 120, 0, 0, 7); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(HCX, HY + 120, 330, 150, 0, Math.PI, 0); ctx.fill();
-  ctx.shadowColor = "#fff4e0"; ctx.shadowBlur = 10; ctx.fillStyle = "rgba(245,240,228,0.95)"; ctx.fillRect(HCX - 56, HY - 72, 10, 5); ctx.fillRect(HCX + 46, HY - 72, 10, 5); ctx.restore();
+function drawWatcher(f) { // in the lightning, the burnt twin stands behind the whole house, as tall as the sky
+  const im = art.twinImage(); if (!im) return;
+  const w = 760, x0 = HCX - w / 2, y0 = HY + HH * 0.55 - w;
+  if (!watchCv.width) { watchCv.width = watchCv.height = 256; const c = watchCv.getContext("2d"); c.drawImage(im, 0, 0, 256, 256); c.globalCompositeOperation = "source-atop"; c.fillStyle = "#07060a"; c.fillRect(0, 0, 256, 256); }
+  ctx.save(); ctx.globalAlpha = Math.min(1, f * 1.3); ctx.drawImage(watchCv, x0, y0, w, w);
+  ctx.shadowColor = "#ffcf90"; ctx.shadowBlur = 12; ctx.fillStyle = "rgba(255,226,180,0.95)";
+  for (const u of [0.469, 0.527]) { ctx.beginPath(); ctx.arc(x0 + u * w, y0 + 0.381 * w, 4.5, 0, 7); ctx.fill(); }
+  ctx.restore();
 }
+const watchCv = document.createElement("canvas");
 // what the house says, typed out under it
 function drawVoice() {
   const v = st.voice; if (!v || (st.scene !== "play" && st.scene !== "caught")) return;
   const n = Math.floor(clamp(v.t * 32, 0, v.text.length)), a = clamp(Math.min(v.t * 4, (v.len - v.t) / 0.6), 0, 1);
-  ctx.font = `italic 20px ${SERIF}`; ctx.textAlign = "center"; ctx.fillStyle = `rgba(0,0,0,${0.5 * a})`;
-  const tw = ctx.measureText(v.text).width; ctx.fillRect(HCX - tw / 2 - 12, VH - 62, tw + 24, 30);
-  ctx.fillStyle = `rgba(255,140,120,${a})`; ctx.fillText(v.text.slice(0, n), HCX, VH - 41); ctx.textAlign = "left";
+  // the house's voice is typed on a torn strip of paper pinned under the house, in oxblood ribbon ink (not pink
+  // screen text: one voice, one look, the same paper as the sheet)
+  ctx.font = `17px "Special Elite", "Courier New", monospace`; const tw = ctx.measureText(v.text).width, w = tw + 34, h = 28, cx = HCX, cy = VH - 47;
+  let q = v.text.length * 977 + 13; const rn = () => { q = (q * 16807) % 2147483647; return q / 2147483647; };
+  ctx.save(); ctx.globalAlpha = a; ctx.translate(cx, cy + (1 - a) * 8); ctx.rotate((rn() - 0.5) * 0.025);
+  ctx.shadowColor = "rgba(0,0,0,0.65)"; ctx.shadowBlur = 8; ctx.shadowOffsetY = 2; ctx.fillStyle = "#e6d8bb";
+  ctx.beginPath(); ctx.moveTo(-w / 2, -h / 2); for (let x = -w / 2; x < w / 2; x += 14) ctx.lineTo(x + 7, -h / 2 + (rn() - 0.5) * 1.2);
+  ctx.lineTo(w / 2, -h / 2); for (let y = -h / 2; y < h / 2; y += 4) ctx.lineTo(w / 2 + (rn() - 0.5) * 4, y); ctx.lineTo(w / 2, h / 2);
+  for (let x = w / 2; x > -w / 2; x -= 14) ctx.lineTo(x - 7, h / 2 + (rn() - 0.5) * 1.2); for (let y = h / 2; y > -h / 2; y -= 4) ctx.lineTo(-w / 2 + (rn() - 0.5) * 4, y); ctx.closePath(); ctx.fill();
+  ctx.shadowColor = "transparent"; const gr = ctx.createLinearGradient(0, -h / 2, 0, h / 2); gr.addColorStop(0, "rgba(120,90,50,0.10)"); gr.addColorStop(1, "rgba(80,50,20,0.22)"); ctx.fillStyle = gr; ctx.fill();
+  ctx.fillStyle = "#8a1f1a"; ctx.textAlign = "left"; ctx.fillText(v.text.slice(0, n), -tw / 2, 6); ctx.restore(); ctx.textAlign = "left";
 }
 // lightning: a double flash, then thunder a moment later
 // "Reduce motion" on: no screen shake, and lightning is a soft single glow instead of a hard double flash.
