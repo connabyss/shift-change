@@ -268,9 +268,9 @@ test("the jokes: Ctrl+Z undoes the moon, then gravity, then your undo; hints 5 a
     await page.waitForTimeout(400); assert.ok(await page.evaluate(() => window.__dh.lift()) < 1, "back on the ground");
     // hints: the fifth says leave, the seventh draws a door, the rest are real
     const hints = await page.evaluate(() => { const out = []; for (let i = 0; i < 8; i++) { window.__dh.hint(); out.push(window.__dh.st().hint.text); } return { out, crayon: !!window.__dh.st().crayon }; });
-    assert.match(hints.out[4], /^Hint: leave\. \.\.\.Fine\. (click|walk|the way|a red|even)/, "the joke, then the real hint");
-    assert.match(hints.out[6], /^Hint: I'm out of hints\. Here's a drawing of a door\. \.\.\.Fine\. (click|walk|the way|a red|even)/);
-    assert.match(hints.out[5], /^Hint: (click|walk|the way|a red|even)/);
+    assert.match(hints.out[4], /^Hint: leave\. \.\.\.Fine\. (tick|walk|the way|a red|even)/, "the joke, then the real hint");
+    assert.match(hints.out[6], /^Hint: I'm out of hints\. Here's a drawing of a door\. \.\.\.Fine\. (tick|walk|the way|a red|even)/);
+    assert.match(hints.out[5], /^Hint: (tick|walk|the way|a red|even)/);
     assert.ok(hints.crayon, "the crayon door is drawn");
     // shut the shadow in: it slides a note under the wall, once
     await page.evaluate(() => { const D = window.__dh, st = D.st(); D.newGame(99, 2); D.begin(); });
@@ -382,7 +382,7 @@ test("on touch, the first tap on a word previews it and the second changes it", 
 test("the house speaks one line at a time: a new line waits its turn, and each stays up long enough to read", { skip }, async () => {
   const { page, errors, close } = await open("/?seed=4242");
   try {
-    await page.evaluate(() => { window.__dh.begin(); window.__dh.hush(); window.__dh.line("Achoo. ...Sorry. Dust."); window.__dh.line("Psst. The circled words. Click one. I never said that."); });
+    await page.evaluate(() => { window.__dh.begin(); window.__dh.hush(); window.__dh.line("Achoo. ...Sorry. Dust."); window.__dh.line("Psst. The little boxes. Tick one. I never said that."); });
     const v = () => page.evaluate(() => { const x = window.__dh.st().voice; return x && { text: x.text, len: x.len }; });
     const first = await v();
     assert.equal(first.text, "Achoo. ...Sorry. Dust.", "the second line didn't cut off the first");
@@ -406,7 +406,7 @@ test("one absurd thing per floor early on, and floor 1 nudges you if you sit sti
     await page.evaluate(() => { window.__dh.hush(); window.__dh.st().sinceStart = 12.5; }); await page.waitForTimeout(150);
     assert.equal((await G()).gag, true); assert.equal(await voice(), "Achoo. ...Sorry. Dust.");
     await page.evaluate(() => { window.__dh.hush(); window.__dh.st().sinceStart = 31; }); await page.waitForTimeout(150);
-    assert.equal((await G()).nudged, true); assert.equal(await voice(), "Psst. The circled words. Click one. I never said that.");
+    assert.equal((await G()).nudged, true); assert.equal(await voice(), "Psst. The little boxes. Tick one. I never said that.");
     assert.match(await page.evaluate(() => window.__dh.st().hint.text), /^Hint: /, "and the hint frames the word to click");
     assert.equal(await page.evaluate(() => window.__dh.st().total.hints), 0, "the nudge isn't counted as a hint you asked for");
     // floor 2: the shadow wakes and holds up a sign
@@ -608,7 +608,7 @@ test("the yellow words you click never scramble when the house glitches", { skip
     });
     const room = await page.evaluate(() => { const st = window.__dh.st(); return st.g.flat().find((r) => r.id === st.player.id).lines.map((l) => l.kind); });
     assert.ok(room.includes("row"), "this room has a row line");
-    assert.ok(drawn.includes("west") && drawn.includes("east"), `the words come out as written (${drawn.filter((t) => t.length < 8).slice(0, 12).join(",")})`);
+    assert.ok(drawn.includes("WEST") && drawn.includes("EAST"), `the words come out as written (${drawn.filter((t) => t.length < 8).slice(0, 12).join(",")})`);
     assert.ok(await page.evaluate(() => window.__dh.st().glitch > 100), "and the glitch was on the whole time");
     assert.deepEqual(errors, []);
   } finally { await close(); }
@@ -712,7 +712,8 @@ test("the living page: margin stains, quick retypes, drips only when it's near, 
       return out;
     });
     assert.ok(r.stain, "a click leaves a stain");
-    assert.ok(r.stain.x < r.word.x - 30 && r.stain.x < 664, `the stain sits in the left margin, not on the word (${Math.round(r.stain.x)} vs word at ${Math.round(r.word.x)})`);
+    assert.ok(r.stain.x < r.word.x - 20 && r.stain.x < 664, // (the step's number disc sits between the margin and its boxes)
+       `the stain sits in the left margin, not on the word (${Math.round(r.stain.x)} vs word at ${Math.round(r.word.x)})`);
     assert.equal(r.len1, 0.4, "the first retypes take 0.4 s");
     assert.equal(r.len4, 0.2, "after three, 0.2 s");
     assert.equal(r.stains, 4, "one stain per change");
@@ -738,7 +739,7 @@ test("in the dark, each room's name is drawn once, its open doorways show, and p
       const P = CanvasRenderingContext2D.prototype, orig = P.fillText, out = [];
       P.fillText = function (t, ...a) { out.push(String(t)); return orig.call(this, t, ...a); }; window.__dh.tapTyped(true); // (the page's lines, whole)
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); P.fillText = orig; out.push(...window.__dh.tapTyped(false));
-      const st = window.__dh.st(), frames = Math.max(1, out.filter((t) => t === "house.js").length);
+      const st = window.__dh.st(), frames = Math.max(1, out.filter((t) => t.startsWith("Assembly instructions")).length);
       return st.g.flat().map((r) => [r.name, out.filter((t) => t === r.name).length / frames]);
     });
     for (const [name, n] of names) assert.equal(n, 1, `${name} is written ${n} times a frame`);
@@ -883,7 +884,7 @@ test("the code panel and the title card are typed paper", { skip }, async () => 
     assert.ok(paperish(await px(480, 300)), "the title card is paper"); // middle of the title card
     await page.evaluate(() => { window.__dh.begin(); window.__dh.hush(); });
     await page.waitForTimeout(300);
-    assert.ok(paperish(await px(800, 420)), "the code panel is paper"); // an empty stretch of the panel
+    assert.ok(paperish(await px(720, 420)), "the sheet is paper"); // an empty stretch of the sheet
     assert.ok(await page.evaluate(() => window.__dh.st().wordRects.length > 0), "its words can still be clicked");
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }

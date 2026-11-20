@@ -294,7 +294,7 @@ function houseUpdate(dt) {
     const still = houseMoves(st.g, st.player.id, st.shadow.id, false).find((x) => x.id === m.id && x.li === m.li && x.dir === m.dir);
     if (!still || !solve(still.g, st.player.id, st.h.lockIds, st.unlocked, 3)) return; // you moved first: it lets it go
     const c = room.lines[m.li], wasOpen = c.kind === "door" && room[c.side === "west" ? "l" : "r"];
-    st.lastHouse = houseCode(m); st.houseLog = [st.lastHouse, ...(st.houseLog || [])].slice(0, 4); performEdit(m.id, m.li, m.dir, true); st.total.house = (st.total.house || 0) + 1;
+    st.slip = { e: errata(m), at: st.floorT }; st.lastHouse = houseCode(m); st.houseLog = [st.lastHouse, ...(st.houseLog || [])].slice(0, 4); performEdit(m.id, m.li, m.dir, true); st.total.house = (st.total.house || 0) + 1;
     const lines = m.reuse ? HOUSE_LINES.reuse : c.kind === "door" ? HOUSE_LINES.door[wasOpen ? "shut" : "open"] : HOUSE_LINES[c.kind];
     if (!st.voice && !jokeDue()) sayLine(pick(lines)); think(`house.${c.kind === "door" ? (wasOpen ? "shut" : "open") : "move"}(${room.name});`);
   }
@@ -397,10 +397,10 @@ function doHint(asked = true) {
   const plan = solve(st.g, st.player.id, st.h.lockIds, st.unlocked, 4);
   if (asked) { st.total.hints++; sfx.hint(); st.hintAt = st.floorT; }
   if (!plan) st.hint = { text: "Hint: even the house is lost. Try sliding a row back the way it came." };
-  else if (!plan.length) st.hint = { text: st.unlocked ? "Hint: the way is open. Click the front door, bottom left." : "Hint: a red lock is in reach. Walk there and click true." };
+  else if (!plan.length) st.hint = { text: st.unlocked ? "Hint: the way is open. Click the front door, bottom left." : "Hint: a red lock is in reach. Walk there and tick UNLOCK." };
   else {
-    const m = plan[0], room = byId(st.g, m.id), word = lineParts(room, room.lines[m.li], true)[1].find((w) => (w.dir ?? 1) === m.dir).text;
-    st.hint = { ...m, text: m.id === st.player.id ? `Hint: click "${word}" in this room's ${lineName(room.lines[m.li])} line.` : `Hint: walk to the ${room.name} (yellow frame), then click "${word}" in its ${lineName(room.lines[m.li])} line.` };
+    const m = plan[0], room = byId(st.g, m.id), c = room.lines[m.li], word = stepWord(room, c, m.dir), no = STEP_NO(room, m.li);
+    st.hint = { ...m, text: m.id === st.player.id ? `Hint: tick ${word} on step ${no} (${stepView(room, c).lead.toLowerCase()}).` : `Hint: walk to the ${room.name} (yellow frame), then tick ${word} on its step ${no}.` };
   }
   // the hint only knows the house: if the shadow is close to where it sends you, it says so
   const sh = st.shadow, dest = st.hint.id != null ? st.hint.id : st.unlocked ? doorRoom() : null;
@@ -414,7 +414,6 @@ function doHint(asked = true) {
   st.hint.t = 0;
 }
 
-const lineName = (c) => ({ row: "row.shift", col: "column.shift", door: `door.${c.side}`, swap: "swap", flip: "upsideDown", lights: "lights", lock: "frontDoor" })[c.kind];
 
 // ---------- update ----------
 function update(dt) {
@@ -841,7 +840,7 @@ function whyNoWay(fromId, toId) {
   } else { const d = Math.sign(t.y - best.y), b = st.g[best.y + d][best.x];
     why = d < 0 ? (!a.up ? `${from} has no ladder up` : `the ${b.name} above has no hole in its floor`) : (!a.down ? `${from} has no hole in its floor` : `the ${b.name} below has no ladder up`);
   }
-  return `No way there yet: ${why}. Change a word to open it.`;
+  return `No way there yet: ${why}. Change a step to open it.`;
 }
 // a hint stays in sight while the page is showing something else
 function drawHintBanner() {
@@ -1072,25 +1071,6 @@ function wrap(text, x, y, maxW, lh) {
   for (const w of words) { const t = line ? line + " " + w : w; if (ctx.measureText(t).width > maxW && line) { ctx.fillText(line, x, y); y += lh; line = w; } else line = t; }
   if (line) ctx.fillText(line, x, y); return y + lh;
 }
-// draws a line; returns a box for each of its words, for clicks
-function codeLine(parts, x, y, size, opts) {
-  const [pre, words, post] = parts, g = opts.click ? 0 : st.glitch, rects = []; // the words you click never scramble
-  ctx.font = `${size}px ${MONO}`; ctx.fillStyle = opts.dim ? DIM : INK; ctx.fillText(glitchText(pre, g), x, y);
-  let cx = x + ctx.measureText(pre).width;
-  words.forEach((w, i) => {
-    if (i) { const pad = opts.click ? 7 : 0; cx += pad; ctx.fillStyle = DIM; ctx.fillText("|", cx, y); cx += ctx.measureText("|").width + pad; }
-    const ww = ctx.measureText(w.text).width, hot = opts.hot && opts.hot(w);
-    if (w.cur) { // what it is now: plain ink, underlined, not a choice
-      ctx.fillStyle = opts.dim ? DIM : INK; ctx.fillText(glitchText(w.text, g), cx, y); ctx.fillRect(cx, y + 3, ww, 1.5); cx += ww; return;
-    }
-    if (opts.click) LOOK.mark(ctx, { x: cx - 3, y: y - size * 0.82, w: ww + 6, h: size * 1.06 }, hot);
-    ctx.fillStyle = opts.spent ? DIM : opts.click ? YEL : opts.dim ? DIM : YEL; ctx.fillText(glitchText(w.text, g), cx, y);
-    rects.push({ x: cx - 4, y: y - size * 0.85, w: ww + 8, h: size * 1.15, dir: w.dir ?? 1 });
-    cx += ww;
-  });
-  ctx.fillStyle = opts.dim ? DIM : INK; ctx.fillText(post, cx, y);
-  return rects;
-}
 // The living page. Everything here is ink on the paper, drawn under the typed text (multiplied in), so the circled
 // words always sit sharp on top.
 // - a stain in the left margin by the line you changed: wet black ink spreading along the grain, drying to brown with a
@@ -1179,128 +1159,182 @@ function drawEdgeDark() {
   g.addColorStop(0, "rgba(60,36,20,0)"); g.addColorStop(1, `rgba(60,36,20,${0.55 * k})`); ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
 }
 const hash01 = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
-function drawPanel() {
-  // the house's source: a typewritten page clipped beside the house
-  const jy = (st.jolt || 0) * 1.6; ctx.save(); ctx.translate(0, jy); // the paper jumps on each of the house's key strikes
-  LOOK.panelBg(ctx, PX - 16, 22, PW + 26, VH - 44);
-  ctx.save(); ctx.globalCompositeOperation = "multiply"; // typed ink soaks into the paper, it doesn't sit on top of it
-  drawEdgeDark(); drawStains(); drawDrips();
-  ctx.fillText = struck; // (only while the page draws: an own property over the prototype's, deleted after)
-  try { inInk(() => {
-    // the file's name, typed at the top right; in the finale it becomes yours
-    const yours = !!st.finale || (st.scene === "end" && st.floor === FLOORS);
-    ctx.font = `15px ${MONO}`; ctx.textAlign = "right"; ctx.fillStyle = yours ? RED : DIM;
-    ctx.fillText(yours ? glitchText("you.js", st.finale && st.finale.t < 1 ? 0.6 : 0) : "house.js", PX + PW - 8, 44); ctx.textAlign = "left";
-    panelBody();
-  }); } finally { delete ctx.fillText; }
-  ctx.restore(); ctx.restore();
+// The sheet beside the house: the doll's house's own assembly instructions, printed in black and one red, folded,
+// taped to the desk. The paper is a photograph (assets/sheet/, path-traced in Blender); everything printed on it is
+// drawn here, so it can change. Each step in your room is a choice: tick a box to change the house.
+const SX = PX - 16, SY = 22, SHW = PW + 26, SHH = VH - 44; // the sheet's rect (304 x 556)
+const SHEET = { img: {}, ok: {} };
+for (const k of ["blank", "slip"]) { const im = new Image(); im.onload = () => { SHEET.ok[k] = true; }; im.src = `assets/sheet/${k}.png`; SHEET.img[k] = im; }
+const sheetReady = (k = "blank") => !!SHEET.ok[k];
+const PRINT = { K: "#1f1914", R: "#a3261b", DIM: "rgba(40,30,22,0.55)", PENCIL: "rgba(62,58,54,0.85)" };
+const ROK = '"Rokkitt", Georgia, serif', CAS = '"Libre Caslon Text", Georgia, serif';
+const sx = (x) => SX + x, sy = (y) => SY + y;
+function pfont(f, track = 0) { ctx.font = f; if ("letterSpacing" in ctx) ctx.letterSpacing = `${track}px`; }
+const STEP_NO = (room, li) => room.id * 4 + li + 7;
+// a step, in words: its lead, and its boxes (cur: what's true now, ticked in pencil, not a choice)
+function stepView(room, c) {
+  const S = (s) => s[0].toUpperCase() + s.slice(1);
+  if (c.kind === "row") return { lead: "Slide this row", ch: [{ t: "WEST", dir: -1 }, { t: "EAST", dir: 1 }] };
+  if (c.kind === "col") return { lead: "Slide this column", ch: [{ t: "UP", dir: -1 }, { t: "DOWN", dir: 1 }] };
+  if (c.kind === "door") { const o = room[c.side === "west" ? "l" : "r"]; return { lead: `${S(c.side)} door`, ch: [{ t: "OPEN", dir: o ? 0 : 1, cur: o }, { t: "SHUT", dir: o ? 1 : 0, cur: !o }] }; }
+  if (c.kind === "swap") return { lead: "Swap rooms with", ch: [{ t: "WEST", dir: -1 }, { t: "EAST", dir: 1 }] };
+  if (c.kind === "flip") { const o = st.flipped; return { lead: "The house stands", ch: [{ t: "UPRIGHT", dir: o ? 1 : 0, cur: !o }, { t: "UPSIDE DOWN", dir: o ? 0 : 1, cur: o }] }; }
+  if (c.kind === "lights") { const o = room.lights; return { lead: "Lights", ch: [{ t: "ON", dir: o ? 0 : 1, cur: o }, { t: "OFF", dir: o ? 1 : 0, cur: !o }] }; }
+  if (c.kind === "lock") return { lead: "Front door", red: true, ch: [{ t: st.unlocked ? "UNLOCKED" : "UNLOCK", dir: 1, cur: st.unlocked }] };
 }
-// On the page every letter is its own key strike: a little off its line, a little lighter or heavier, never the same
-// twice in a spot but steady from frame to frame (the strike is seeded by where it lands).
-// shut in: how long until it claws out, as a line the page types (the number goes down a second at a time)
+const stepWord = (room, c, dir) => { const v = stepView(room, c), w = v.ch.find((x) => !x.cur && (x.dir ?? 1) === dir) || v.ch.find((x) => (x.dir ?? 1) === dir); return w ? w.t : ""; };
+// what the house changed, as an erratum: "Step 20, Kitchen west door: now SHUT"
+function errata(m) {
+  const room = byId(st.g, m.id); if (!room || !room.lines[m.li]) return null;
+  const c = room.lines[m.li], v = stepView(room, c);
+  const w = c.kind === "door" ? (room[c.side === "west" ? "l" : "r"] ? "SHUT" : "OPEN") : stepWord(room, c, m.dir);
+  const lead = c.kind === "door" ? `${room.name[0].toUpperCase() + room.name.slice(1)}, ${c.side} door` : `${room.name[0].toUpperCase() + room.name.slice(1)}: ${v.lead.toLowerCase()}`;
+  return { no: STEP_NO(room, m.li), lead, w };
+}
+let NATIVE_FILL = CanvasRenderingContext2D.prototype.fillText;
+let typedTap = null; // (checks read the page's lines from here)
+function printed(text, x, y) { text = String(text); if (typedTap) typedTap.push(text); NATIVE_FILL.call(ctx, text, x, y); }
+function pwrap(text, x, y, maxW, lh, bottom = 1e9, narrowFrom = 1e9, narrowW = maxW) {
+  const words = text.split(" "); let line = "";
+  const mw = () => (y > narrowFrom ? narrowW : maxW);
+  for (const w of words) { const t = line ? line + " " + w : w; if (ctx.measureText(t).width > mw() && line) { if (y <= bottom) ctx.fillText(line, x, y); y += lh; line = w; } else line = t; }
+  if (line && y <= bottom) ctx.fillText(line, x, y); return y + lh;
+}
+function rule(y, w = 1, x0 = 16, x1 = SHW - 16) { ctx.fillRect(sx(x0), sy(y) - w / 2, x1 - x0, w); }
+function pencilTick(x, y, a = 1) { // a quick graphite tick in a box whose bottom-left is (x, y)
+  ctx.save(); ctx.strokeStyle = PRINT.PENCIL; ctx.globalAlpha *= a; ctx.lineWidth = 1.5; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.beginPath(); ctx.moveTo(x + 1.5, y - 4.5); ctx.quadraticCurveTo(x + 3, y - 2, x + 4, y - 0.5); ctx.quadraticCurveTo(x + 7, y - 7, x + 11.5, y - 12.5); ctx.stroke(); ctx.restore();
+}
+function diagram(kind, y) { // the little printed figure beside a step
+  ctx.save(); ctx.strokeStyle = PRINT.K; ctx.fillStyle = PRINT.K; ctx.lineWidth = 0.8;
+  const arrow = (x0, y0, x1, y1) => { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); const a = Math.atan2(y1 - y0, x1 - x0); ctx.beginPath(); ctx.moveTo(x1 + Math.cos(a) * 2, y1 + Math.sin(a) * 2); ctx.lineTo(x1 - Math.cos(a - 0.45) * 6, y1 - Math.sin(a - 0.45) * 6); ctx.lineTo(x1 - Math.cos(a + 0.45) * 6, y1 - Math.sin(a + 0.45) * 6); ctx.fill(); };
+  if (kind === "row" || kind === "swap") {
+    const x0 = sx(234);
+    if (kind === "row") { for (let k = 0; k < 3; k++) ctx.strokeRect(x0 + k * 15, y + 2, 13, 11); arrow(x0 + 20, y + 7.5, x0 - 10, y + 7.5); arrow(x0 + 24, y + 7.5, x0 + 56, y + 7.5); }
+    else { ctx.strokeRect(x0 + 6, y + 2, 15, 11); ctx.strokeRect(x0 + 25, y + 2, 15, 11); ctx.beginPath(); ctx.arc(x0 + 23, y + 3, 10, Math.PI * 1.12, Math.PI * 1.88); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x0 + 13, y - 2); ctx.lineTo(x0 + 11, y + 2.5); ctx.lineTo(x0 + 16.5, y + 0.5); ctx.fill(); ctx.beginPath(); ctx.moveTo(x0 + 33, y - 2); ctx.lineTo(x0 + 35, y + 2.5); ctx.lineTo(x0 + 29.5, y + 0.5); ctx.fill(); }
+  } else if (kind === "col") {
+    const x0 = sx(252); for (let k = 0; k < 3; k++) ctx.strokeRect(x0, y - 14 + k * 10, 14, 9); arrow(x0 + 20, y + 1, x0 + 20, y - 18); arrow(x0 + 20, y + 3, x0 + 20, y + 22);
+  } else if (kind === "door") {
+    const x0 = sx(250); ctx.strokeRect(x0, y - 4, 26, 20); ctx.beginPath(); ctx.arc(x0, y + 16, 12, -Math.PI / 2, 0); ctx.setLineDash([2, 2]); ctx.stroke(); ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+function drawPanel() {
+  const jy = (st.jolt || 0) * 1.6; ctx.save(); ctx.translate(0, jy); // the sheet jumps when the house strikes
+  if (sheetReady()) ctx.drawImage(SHEET.img.blank, SX - 6, SY - 8, SHW + 12, SHH + 16); else LOOK.panelBg(ctx, SX, SY, SHW, SHH);
+  ctx.save(); ctx.globalCompositeOperation = "multiply"; drawEdgeDark(); drawStains(); drawDrips(); ctx.restore();
+  ctx.fillText = printed; // (only while the sheet prints: an own property over the prototype's, deleted after)
+  try { ctx.save(); ctx.globalCompositeOperation = "multiply"; panelBody(); ctx.restore(); }
+  finally { delete ctx.fillText; if ("letterSpacing" in ctx) ctx.letterSpacing = "0px"; }
+  ctx.restore();
+}
+// shut in: how long until it claws out (the number goes down a second at a time)
 function clawCount() {
   const sh = st.shadow; if (st.scene !== "play" || sh.mode === "sleep" || !(sh.noPath > 0) || sh.way || path(st.g, sh.id, st.player.id)) return "";
-  return `shadow.trapped: claws out in ${Math.max(0, Math.ceil(TRAPS[st.floor - 1] - sh.noPath))}`;
+  return `It is shut in. It claws out in ${Math.max(0, Math.ceil(TRAPS[st.floor - 1] - sh.noPath))}.`;
 }
-function drawHouseLog(y, x, w) {
-  const log = st.houseLog || [], busy = (st.hover && st.hover.type === "word") || (st.edits === 0 && st.scene === "play");
-  if (!log.length || busy) return;
-  ctx.font = `13px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText("// what the house did", x, y - 4);
-  log.forEach((code, i) => {
-    const yy = y + 13 + i * 16; if (yy > 326) return;
-    const size = fitFont(code, w - 10, 14); st.textBands && st.textBands.push({ x: x - 2, w: w, top: yy - size * 0.8, bot: yy + size * 0.28 }); ctx.fillStyle = i ? "rgba(110,70,50,0.6)" : "rgba(150,40,30,0.85)"; ctx.fillText(code, x, yy);
-    if (i) { ctx.font = `${size}px ${MONO}`; const lw = ctx.measureText(code).width; ctx.fillStyle = "rgba(60,46,34,0.6)"; ctx.beginPath(); ctx.moveTo(x - 2, yy - size * 0.32); for (let k = 1; k <= 8; k++) ctx.lineTo(x - 2 + (lw + 4) * k / 8, yy - size * 0.32 + (hash01(k + i * 9 + yy) - 0.5) * 1.2); ctx.lineTo(x + lw + 2, yy - size * 0.32 + 1); ctx.lineTo(x - 2, yy - size * 0.32 + 1); ctx.fill(); } // ruled through by hand, still readable
-  });
-}
-const NATIVE_FILL = CanvasRenderingContext2D.prototype.fillText;
-let typedTap = null; // (checks read the page's lines whole from here, since its letters are drawn one at a time)
-function struck(text, x, y) {
-  const raw = NATIVE_FILL, al = ctx.globalAlpha; text = String(text); if (typedTap) typedTap.push(text);
-  const G = st.glyphGrab;
-  let cx = x; if (ctx.textAlign === "right" || ctx.textAlign === "end") cx -= ctx.measureText(text).width; else if (ctx.textAlign === "center") cx -= ctx.measureText(text).width / 2;
-  const keep = ctx.textAlign; ctx.textAlign = "left";
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i], cw = ctx.measureText(ch).width;
-    if (ch !== " ") { const h = hash01(cx * 1.37 + y * 7.1), h2 = hash01(cx * 3.1 + y * 0.7 + 9); ctx.globalAlpha = al * (0.7 + 0.3 * h); raw.call(ctx, ch, cx + (h2 - 0.5) * 0.5, y + (h - 0.5) * 0.9); if (G && /[a-z]/i.test(ch)) G.push({ x: cx + cw / 2, y, w: cw }); }
-    cx += cw;
-  }
-  ctx.textAlign = keep; ctx.globalAlpha = al;
+function slipShown() {
+  const hn = st.houseNext && st.houseNext.move ? st.houseNext : null;
+  if (hn) return { e: errata(hn.move), k: clamp(hn.t * 5, 0, 1), wet: true };
+  if (st.slip && st.floorT - st.slip.at < 7) return { e: st.slip.e, k: 1 };
+  return null;
 }
 function panelBody() {
-  const x = PX, w = PW - 6;
-  // the shadow's thought
-  const hn = st.houseNext && st.houseNext.move ? st.houseNext : null;
-  if (hn) {
-    // the house's next move, typed out in red before it happens
-    const k = hn.t, n = Math.floor(clamp(k * 40, 0, hn.code.length)), blink = Math.sin(st.t * 14) > 0;
-    ctx.fillStyle = `rgba(179,38,30,${0.08 + 0.05 * Math.sin(st.t * 10)})`; ctx.fillRect(x - 6, 24, w + 12, 54);
-    ctx.font = `16px ${MONO}`; ctx.fillStyle = RED; ctx.fillText("// the house writes", x, 42);
-    fitFont(hn.code, w - 10, 24); ctx.fillStyle = RED; ctx.fillText(hn.code.slice(0, n) + (blink ? "_" : ""), x, 68);
-  } else {
-    // between its moves: the house's last move, faded
-    ctx.font = `16px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText("// the house", x, 42);
+  const room = byId(st.g, st.player.id), L = 16, R = SHW - 16;
+  // header
+  const yours = !!st.finale || (st.scene === "end" && st.floor === FLOORS);
+  ctx.fillStyle = PRINT.K; pfont(`700 20px ${ROK}`, 0.4); ctx.fillText(glitchText("THE SHIFTING HOUSE", st.glitch * 0.3), sx(L), sy(36));
+  ctx.textAlign = "right"; pfont(`600 11px ${ROK}`, 0.3); ctx.fillStyle = yours ? PRINT.R : PRINT.K;
+  ctx.fillText(yours ? glitchText("YOURS", st.finale && st.finale.t < 1 ? 0.6 : 0) : "No. 7", sx(R), sy(36)); ctx.textAlign = "left";
+  ctx.fillStyle = PRINT.K; pfont(`400 10.5px ${ROK}`, 0.2); ctx.fillText(`Assembly instructions · Floor ${st.floor} of ${FLOORS}`, sx(L), sy(50));
+  rule(58, 1.6); rule(61.5, 0.5);
+  // where you are, and a little plan of the house with your room filled in (red dots: the locks)
+  pfont(`600 10.5px ${ROK}`, 0.8); ctx.fillText("YOU ARE IN", sx(L), sy(86));
+  let ns = 19; const nm = `THE ${room.name.toUpperCase()}`; pfont(`700 ${ns}px ${ROK}`, 0.6); while (ctx.measureText(nm).width > 170 && ns > 13) pfont(`700 ${--ns}px ${ROK}`, 0.6);
+  ctx.fillText(nm, sx(L), sy(106));
+  const gx = sx(196), gy = sy(74), cw = 22, chh = 13, me = find(st.g, st.player.id);
+  ctx.strokeStyle = PRINT.K; ctx.lineWidth = 0.8;
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
+    if (r === me.y && c === me.x) { ctx.fillStyle = "rgba(30,24,20,0.82)"; ctx.fillRect(gx + c * cw, gy + r * chh, cw, chh); }
+    ctx.strokeRect(gx + c * cw, gy + r * chh, cw, chh);
+    if (!st.unlocked && st.h.lockIds.includes(st.g[r][c].id)) { ctx.fillStyle = PRINT.R; ctx.beginPath(); ctx.arc(gx + c * cw + cw / 2, gy + r * chh + chh / 2, 2.4, 0, 7); ctx.fill(); }
   }
-  const cc = clawCount(); if (cc) { ctx.font = `15px ${MONO}`; ctx.fillStyle = RED; ctx.fillText(cc, x, 92); }
-  // your room
-  const room = byId(st.g, st.player.id);
-  ctx.font = `16px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText(`// you are in the ${room.name}`, x, 112);
+  ctx.fillStyle = PRINT.K; rule(124, 0.5);
+  // the steps: your room's choices
   st.wordRects = []; st.lineYs = []; st.lineBoxes = []; st.textBands = []; st.glyphs = [];
-  let y = 144;
+  const n = room.lines.length, sp = n > 3 ? 45 : 54; let y = sy(152);
   room.lines.forEach((c, li) => {
-    const parts = lineParts(room, c, true), size = fitFont(flat(parts).replace("|", " | "), w, 28);
-    const spent = c.kind === "lock" && st.unlocked;
-    const hot = (wd) => (st.hover && st.hover.type === "word" && st.hover.li === li && st.hover.dir === (wd.dir ?? 1)) ||
-      (st.hint && st.hint.id === room.id && st.hint.li === li && st.hint.dir === (wd.dir ?? 1) && Math.sin(st.t * 6) > 0);
-    ctx.font = `11px ${MONO}`; ctx.fillStyle = "rgba(60,46,34,0.4)"; ctx.textAlign = "right"; ctx.fillText(String(room.id * 4 + li + 7), x - 2, y); ctx.textAlign = "left";
-    st.lineYs[li] = y; st.lineBoxes.push({ x, y, w: Math.min(w, ctx.measureText(flat(parts)).width + 20) });
+    const v = stepView(room, c), spent = c.kind === "lock" && st.unlocked;
     const typing = st.retype && st.retype.li === li && st.retype.t < st.retype.len;
-    if (typing) { ctx.save(); ctx.beginPath(); ctx.rect(x - 8, y - size - 6, (w + 16) * clamp(st.retype.t / st.retype.len, 0, 1), size * 1.6); ctx.clip(); }
-    st.textBands.push({ x: x - 4, w: w + 8, top: y - size * 0.8, bot: y + size * 0.28 }); st.glyphGrab = st.glyphs;
-    const rs = codeLine(parts, x, y, size, { click: !spent, hot, spent }); st.glyphGrab = null; if (!spent) for (const r of rs) st.wordRects.push({ ...r, li });
+    if (typing) { ctx.save(); ctx.beginPath(); ctx.rect(sx(0), y - 18, SHW * clamp(st.retype.t / st.retype.len, 0, 1), 44); ctx.clip(); }
+    // the number in a black disc, then the lead in book type
+    ctx.fillStyle = v.red ? PRINT.R : PRINT.K; ctx.beginPath(); ctx.arc(sx(L + 7.5), y - 5.5, 7.5, 0, 7); ctx.fill();
+    ctx.save(); ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = "#e9dcc0"; pfont(`700 10px ${ROK}`); ctx.textAlign = "center"; ctx.fillText(String(STEP_NO(room, li)), sx(L + 7.5), y - 2); ctx.restore(); ctx.textAlign = "left";
+    ctx.fillStyle = v.red ? PRINT.R : PRINT.K; pfont(`400 14px ${CAS}`); const lead = v.red ? "Front door  (the red lock)" : v.lead;
+    ctx.fillText(glitchText(lead, st.glitch * 0.3), sx(L + 22), y - 1); const lw = ctx.measureText(lead).width;
+    for (let k = 0; k < 6; k++) st.glyphs.push({ x: sx(L + 22) + lw * (k + 0.5) / 6, y, w: lw / 7 });
+    st.lineYs[li] = y; st.lineBoxes.push({ x: sx(L + 22), y, w: lw + 20 }); st.textBands.push({ x: sx(L), w: SHW - 32, top: y - 12, bot: y + 24 });
+    // the boxes
+    const yy = y + 19; let cx = sx(L + 22);
+    v.ch.forEach((w, i) => {
+      if (i) cx = sx(168);
+      const dir = w.dir ?? 1, hot = !w.cur && ((st.hover && st.hover.type === "word" && st.hover.li === li && st.hover.dir === dir) ||
+        (st.hint && st.hint.id === room.id && st.hint.li === li && st.hint.dir === dir && Math.sin(st.t * 6) > 0));
+      ctx.strokeStyle = v.red && !spent ? PRINT.R : PRINT.K; ctx.lineWidth = hot ? 1.6 : 1.1; ctx.strokeRect(cx + 0.5, yy - 9.5, 9, 9);
+      if (w.cur) pencilTick(cx, yy); else if (hot) pencilTick(cx, yy, 0.35);
+      pfont(`700 14px ${ROK}`, 0.6); ctx.fillStyle = spent ? PRINT.DIM : v.red ? PRINT.R : PRINT.K; ctx.fillText(w.t, cx + 14, yy);
+      const tw = ctx.measureText(w.t).width;
+      if (hot) { ctx.fillRect(cx + 14, yy + 2.5, tw, 1); }
+      if (!w.cur && !spent) st.wordRects.push({ x: cx - 4, y: yy - 14, w: tw + 22, h: 19, dir, li });
+    });
+    diagram(c.kind, y);
     if (typing) ctx.restore();
-    y += room.lines.length > 3 ? 33 : 38;
+    y += sp;
   });
-  y += 16;
-  drawHouseLog(y, x, w);
-  // what the hovered word does, in plain words
-  // what the pointed-at word does, in plain words; or, before your first move, what this floor is about
+  const stepsEnd = y - sp + 30;
+  // the errata slip, pasted on when the house changes a step
+  const slip = slipShown(); st.slipOn = !!slip;
+  if (slip && slip.e) {
+    ctx.save(); ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = slip.k;
+    if (sheetReady("slip")) ctx.drawImage(SHEET.img.slip, SX - 6 + 30, SY - 8 + 326, 268, 70);
+    ctx.translate(sx(152), sy(365)); ctx.rotate(-2.2 * Math.PI / 180); ctx.globalCompositeOperation = "multiply";
+    ctx.fillStyle = PRINT.R; pfont(`700 11px ${ROK}`, 1.2); ctx.fillText("ERRATA", -94, -8); const ew = ctx.measureText("ERRATA").width;
+    pfont(`italic 400 9px ${CAS}`); ctx.fillText("issued after printing", -94 + ew + 8, -8);
+    pfont(`400 11.5px ${CAS}`); const s1 = `Step ${slip.e.no}, ${slip.e.lead}: now `; let fs = 11.5; while (ctx.measureText(s1).width > 150 && fs > 8.5) pfont(`400 ${fs -= 0.5}px ${CAS}`);
+    ctx.fillText(s1, -94, 11); const w1 = ctx.measureText(s1).width; pfont(`700 ${fs + 1.5}px ${ROK}`, 0.6); ctx.fillText(slip.e.w, -94 + w1, 11);
+    ctx.restore();
+  }
+  // notes: what the pointed-at box or room does, the hint, the countdown
+  let ny = Math.max(stepsEnd + 18, sy(292)); const nb = slip ? sy(336) : sy(452), nW = SHW - 32;
+  const cc = clawCount(); if (cc) { ctx.fillStyle = PRINT.R; pfont(`700 12px ${ROK}`, 0.4); ctx.fillText(cc, sx(L), ny); ny += 17; }
   const hw = st.hover && st.hover.type === "word" ? room.lines[st.hover.li] : null;
   const hv = st.hover && st.hover.type === "room" && st.hover.id !== room.id ? byId(st.g, st.hover.id) : null;
-  ctx.font = `italic 15px ${SERIF}`; ctx.fillStyle = INK; let ty = y;
-  if (hw) ty = wrap(plain(room, hw, st.hover.dir), x, y, w, 18);
-  else if (!hv && st.edits === 0 && st.scene === "play") {
-    ctx.fillStyle = YEL; const nw = NEW_WORD[st.floor];
-    ty = wrap(nw ? `New on this floor: ${nw.code} ${nw.text} The house's best way out uses it.` : "Every circled word is a choice. Point at one to see what it does. Click it to change the house.", x, y, w, 18);
+  ctx.fillStyle = PRINT.K; pfont(`italic 400 12.5px ${CAS}`);
+  if (hw) pwrap(plain(room, hw, st.hover.dir), sx(L), ny, nW, 16, nb, sy(380), 186);
+  else if (hv) {
+    pfont(`700 12px ${ROK}`, 0.6); ctx.fillText(`THE ${hv.name.toUpperCase()}`, sx(L), ny);
+    pfont(`400 11.5px ${CAS}`); ctx.fillStyle = PRINT.DIM; const steps_ = hv.lines.map((c) => { const v = stepView(hv, c), cur = v.ch.find((x) => x.cur); return cur ? `${v.lead.toLowerCase()} ${cur.t.toLowerCase()}` : v.lead.toLowerCase(); });
+    let yy = pwrap(`Its steps: ${steps_.join(" · ")}.`, sx(L), ny + 16, nW, 15, nb, sy(380), 186);
+    ctx.fillStyle = PRINT.K; pfont(`italic 400 12.5px ${CAS}`);
+    pwrap(reach(st.g, room.id).has(hv.id) ? "Click the room to walk there." : whyNoWay(room.id, hv.id), sx(L), yy + 2, nW, 16, nb, sy(380), 186);
+  } else if (st.hint) { ctx.fillStyle = PRINT.R; pwrap(st.hint.text, sx(L), ny, nW, 16, nb, sy(380), 186); }
+  else if (st.edits === 0 && st.scene === "play") {
+    const nw = NEW_WORD[st.floor];
+    pwrap(nw ? `New on this floor: ${nw.step} ${nw.text} The house's best way out uses it.` : "Each box is a choice. Point at one to see what it does; click it to change the house. Click a room to walk there.", sx(L), ny, nW, 16, nb, sy(380), 186);
   }
-  // below: the room you're pointing at, or the hint
-  const sep = Math.max(330, ty + 2);
-  ctx.fillStyle = "rgba(60,46,34,0.18)"; ctx.fillRect(x, sep, w, 1);
-  st.hintRect = null;
-  if (hv) {
-    ctx.font = `16px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText(`// the ${hv.name}`, x, sep + 22);
-    let yy = sep + 44; for (const c of hv.lines) { const parts = lineParts(hv, c, false); codeLine(parts, x, yy, fitFont(flat(parts), w, 20), { dim: true }); yy += 21; }
-    ctx.font = `italic 15px ${SERIF}`; ctx.fillStyle = DIM;
-    if (reach(st.g, room.id).has(hv.id)) ctx.fillText("Click the room to walk there.", x, yy);
-    else { ctx.font = `italic 14px ${SERIF}`; wrap(whyNoWay(room.id, hv.id), x, yy, w, 17); }
-  } else if (st.hint && !hw) {
-    ctx.font = `italic 16px ${SERIF}`; ctx.fillStyle = YEL; wrap(st.hint.text, x, sep + 24, w, 19);
-  } else if (!hw) {
-    ctx.font = `16px ${MONO}`; ctx.fillStyle = "rgba(60,46,34,0.42)"; ctx.fillText("// point at a room to read it", x, sep + 22);
-    if (st.floorT > 20 && st.scene === "play") {
-      ctx.font = `22px ${MONO}`; const hot = st.hover && st.hover.type === "hint";
-      ctx.fillStyle = hot ? YEL : "rgba(163,38,27,0.75)"; ctx.fillText("house.hint();", x, sep + 60);
-      const hw = ctx.measureText("house.hint();").width; // the typewriter font is wider than the old one: measure, don't guess
-      ctx.font = `italic 15px ${SERIF}`; ctx.fillStyle = DIM; ctx.fillText("stuck? click it", x + hw + 10, sep + 58);
-      st.hintRect = { x: x - 4, y: sep + 40, w: hw + 8, h: 26 };
-    }
-  }
-  // goal
-  ctx.fillStyle = "rgba(60,46,34,0.18)"; ctx.fillRect(x, 470, w, 1);
-  ctx.font = `16px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText("// to leave", x, 494);
-  codeLine(["frontDoor.locked = ", [{ text: st.unlocked ? "false" : "true" }], ";"], x, 524, fitFont("frontDoor.locked = false;", w, 26), { dim: !st.unlocked });
-  ctx.font = `italic 16px ${SERIF}`; ctx.fillStyle = st.unlocked ? "#1f4f7a" : INK;
+  // the seal: press it for a hint
+  const sealHot = st.hover && st.hover.type === "hint";
+  st.hintRect = st.scene === "play" ? { x: sx(220), y: sy(393), w: 48, h: 48 } : null;
+  ctx.fillStyle = sealHot ? PRINT.R : PRINT.K; pfont(`italic 500 10.5px ${CAS}`); ctx.textAlign = "right"; ctx.fillText("Stuck? Press the seal.", sx(214), sy(421)); ctx.textAlign = "left";
+  if (sealHot) { ctx.save(); ctx.globalCompositeOperation = "source-over"; ctx.strokeStyle = "rgba(163,38,27,0.55)"; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.ellipse(sx(244), sy(417), 24, 23, -0.1, 0.25, Math.PI * 2 + 0.5); ctx.stroke(); ctx.restore(); }
+  // the final step
+  ctx.fillStyle = PRINT.K; rule(470, 1.4); rule(473.5, 0.5);
+  pfont(`600 10.5px ${ROK}`, 0.8); ctx.fillText("FINAL STEP", sx(L), sy(492));
+  pfont(`400 15px ${CAS}`); ctx.fillText("Front door:", sx(L), sy(513)); const fw = ctx.measureText("Front door:  ").width;
+  pfont(`700 17px ${ROK}`, 0.8); ctx.fillStyle = st.unlocked ? PRINT.K : PRINT.R; ctx.fillText(st.unlocked ? "UNLOCKED" : "LOCKED", sx(L) + fw, sy(513));
+  ctx.fillStyle = PRINT.K; pfont(`italic 500 12.5px ${CAS}`);
   const atDoor = st.unlocked && reach(st.g, st.player.id).has(doorRoom());
-  wrap(!st.unlocked ? "Reach either room with a red lock and change its word." : atDoor || st.finale ? "The front door is open. Click it, bottom left." : "The door is open, but no way leads to it yet. Get a way into the bottom-left room.", x, 552, w, 19);
+  pwrap(!st.unlocked ? "Find a room with a red lock, and tick its UNLOCK box." : atDoor || st.finale ? "The front door is open. Click it, bottom left." : "Open, but no way leads to it yet. Get a way into the bottom-left room.", sx(L), sy(533), nW, 16);
 }
 
 function drawOverlay() {
