@@ -309,7 +309,9 @@ function voiceLen(text) { return Math.max(5, 3 + text.length * 0.07); } // (test
 function sayLine(text, now = st.scene === "caught") {
   st.voiceQ = st.voiceQ || [];
   if (st.voice && !now) { if (st.voice.text !== text && !st.voiceQ.includes(text) && st.voiceQ.length < 2) st.voiceQ.push(text); return; }
-  if (now) st.voiceQ.length = 0;
+  if (now) { st.voiceQ.length = 0;
+    // an urgent line cuts in, but a line cut off before it could be read comes back after it (testers: lines lost mid-read)
+    const v = st.voice; if (v && v.text !== text && v.t < v.len * 0.6 && st.scene !== "caught") st.voiceQ.push(v.text); }
   st.voice = { text, t: 0, len: voiceLen(text) }; st.quiet = 0; sfx.voice();
 }
 // the screen has been free of house lines and jokes for a while: room for the next joke

@@ -394,6 +394,18 @@ test("the house speaks one line at a time: a new line waits its turn, and each s
   } finally { await close(); }
 });
 
+test("an urgent line cuts in, but the line it cut off comes back after it", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    await page.evaluate(() => { window.__dh.begin(); window.__dh.hush(); window.__dh.line("Achoo. ...Sorry. Dust."); });
+    const voice = () => page.evaluate(() => window.__dh.st().voice && window.__dh.st().voice.text);
+    await page.keyboard.press("Control+z"); assert.equal(await voice(), "Undo: the moon.", "the urgent line speaks at once");
+    await page.evaluate(() => { window.__dh.st().voice.t = 99; });
+    await page.waitForFunction(() => { const x = window.__dh.st().voice; return x && x.text.startsWith("Achoo"); }, null, { timeout: 4000 });
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
 test("one absurd thing per floor early on, and floor 1 nudges you if you sit still", { skip }, async () => {
   const { page, errors, close } = await open("/?seed=4242");
   try {
