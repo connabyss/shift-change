@@ -17,7 +17,7 @@ const cv = document.getElementById("game"), ctx = cv.getContext("2d");
 cv.width = VW * DPR; cv.height = VH * DPR;
 const MONO = LOOK.mono, SERIF = '"IM Fell English", Georgia, serif', TITLE = LOOK.title;
 let INK = "#d6ccb6", DIM = "rgba(214,204,182,0.45)", YEL = "#ffd36a", RED = "#ff5a4e", GRN = "#8fe39a";
-// draw fn in ink on paper: the panel's colours stand in for the night's while it runs
+// draw fn in ink on paper: the panel's colors stand in for the night's while it runs
 function inInk(fn) { const keep = [INK, DIM, YEL, RED, GRN]; ({ INK, DIM, YEL, RED, GRN } = LOOK.panel); try { fn(); } finally { [INK, DIM, YEL, RED, GRN] = keep; } }
 
 // ---------- helpers ----------
@@ -1194,7 +1194,7 @@ function drawNote(t) {
   ctx.restore();
 }
 // ---------- lamp light: the house is dark, you are the light ----------
-// Your lamp is the only warm thing. It changes colour as the house takes you: amber, then cold, then red.
+// Your lamp is the only warm thing. It changes color as the house takes you: amber, then cold, then red.
 // The dark hides the rooms but not the puzzle: room frames, locks and the torn page show through, and
 // lightning lights the whole house for a moment. When it is close, your lamp gutters.
 const HOT = [null, [255, 170, 80], [150, 205, 255], [255, 64, 52]];
@@ -1210,7 +1210,7 @@ function lampLight() {
   if (st.scene === "end") { glows.length = 0; bones(0, null, 0, 0); return; }
   const hot = HOT[st.floor] || HOT[1], L = PX - 14, fear = lampFear(), fl = lampFlicker(fear), bolt = st.tear ? 0.95 : flash(); // torn out of its window, the house is in the light
   const pp = walkerPos(st.player), px = pp[0], py = pp[1] - 32;
-  // 1. drain the colour out of the house
+  // 1. drain the color out of the house
   ctx.save(); ctx.globalCompositeOperation = "saturation"; ctx.fillStyle = "#808080"; ctx.globalAlpha = 0.7; ctx.fillRect(0, 0, L, VH); ctx.restore();
   // 2. the dark, with a hole where your lamp is (lightning thins it for a moment)
   if (!lampCv) { lampCv = document.createElement("canvas"); lampCv.width = VW * DPR; lampCv.height = VH * DPR; }
@@ -1229,7 +1229,7 @@ function lampLight() {
   if (lit.size) { c.fillStyle = `rgba(0,0,0,${0.55 + 0.15 * Math.sin(st.t * 5)})`; for (const id of lit) { if (id === st.player.id) continue; for (const [x, y] of drawPositions(find(st.g, id))) c.fillRect(x + 2, y + 2, CW - 4, CH - 4); } }
   ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(lampCv, 0, 0); ctx.restore();
   bones(bolt, new Set([...near, ...lit]), px, py);
-  // 3. the flame's colour on everything it reaches
+  // 3. the flame's color on everything it reaches
   ctx.save(); ctx.globalCompositeOperation = "lighter";
   g = ctx.createRadialGradient(px, py, 0, px, py, 105 * fl); g.addColorStop(0, `rgba(${hot},${0.55 * fl})`); g.addColorStop(1, `rgba(${hot},0)`);
   ctx.fillStyle = g; ctx.fillRect(px - 120, py - 120, 240, 240); ctx.restore();

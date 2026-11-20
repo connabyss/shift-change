@@ -702,7 +702,7 @@ test("pause holds everything still and restart puts the floor back as it began; 
   } finally { await close(); }
 });
 
-// Critic round 2 (11-05): phones held upright, colour-blind players, doorways at a glance, the tear's frame cost
+// Critic round 2 (11-05): phones held upright, colorblind players, doorways at a glance, the tear's frame cost
 test("a phone held upright gets the house's \"I'm wider than this.\" card, and the game waits until it's turned", { skip }, async () => {
   const server = await serve(), browser = await chromium.launch();
   try {
@@ -852,7 +852,7 @@ test("floor 3 fixes: the flip preview draws the flipped house, dead ends are mar
     await page.waitForFunction(() => window.__dh);
     const r = await page.evaluate(() => {
       const D = window.__dh; D.newGame(null, 3); D.begin(); const st = D.st();
-      // 1. point at the flip: while it's drawn, the house drawn is the flipped one, and afterwards it's put back
+      // 1. point at the flip: while it's drawn, the house drawn is the flipped one, and afterward it's put back
       const me = D.byId(st.g, st.player.id); let li = me.lines.findIndex((l) => l.kind === "flip");
       if (li < 0) { me.lines.push({ kind: "flip" }); li = me.lines.length - 1; }
       D.render(); const fr = st.wordRects.filter((w) => w.li === li);
