@@ -1456,9 +1456,9 @@ function drawScenes() {
     inInk(() => {
       centerText("The Shifting House", 192, `58px ${TITLE}`, INK);
       ctx.fillStyle = "rgba(60,46,34,0.35)"; ctx.fillRect(330, 220, 300, 1);
-      if (awayLine) centerText(awayLine, 254, `italic 21px ${SERIF}`, RED); else centerText(back === "free" ? "Nobody home. Or so it says." : back === "keep" ? "Welcome back. It kept your room just as you left it." : "You wrote this house. It never let you leave.", 254, `italic 21px ${SERIF}`, back ? RED : DIM);
+      if (awayLine) centerText(awayLine, 254, `italic 21px ${SERIF}`, RED); else centerText(back === "free" ? "Nobody home. Or so it says." : back === "keep" ? "Welcome back. It kept your room just as you left it." : "You built this house. It never let you leave.", 254, `italic 21px ${SERIF}`, back ? RED : DIM);
       centerText("Click a room to walk there.", 324, `20px ${MONO}`, INK);
-      centerText("Click a circled word to change the house.", 356, `20px ${MONO}`, INK);
+      centerText("Tick a box on the sheet to change the house.", 356, `20px ${MONO}`, INK);
       centerText("Then it changes something back, in red.", 388, `20px ${MONO}`, RED);
       centerText("P pause   ·   R restart floor   ·   M sound", 430, `15px ${MONO}`, DIM);
       ctx.font = `28px ${MONO}`; const bw = ctx.measureText("Click to begin").width;
