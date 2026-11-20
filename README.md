@@ -2,59 +2,60 @@
 
 Our entry for [GitHub Game Off 2026](https://itch.io/jam/game-off-2026). The theme is **SHIFT**.
 
-You wrote this house. Now it won't let you leave. You see it cut open like a doll's house, every room at once, and
-beside it is the house's own source code. Every word circled in red pencil is a choice: change `east` to `west` and a whole row
-of rooms grinds past with you inside. Reach a room with a red lock, change its word, and get to the front door before
-the shadow finds you.
+You built this house by hand. Now it won't let you leave. You see it cut open like a doll's house, every room at once,
+and beside it is the house's own assembly sheet. Every step on the sheet is a choice: tick `WEST` and a whole row of
+rooms grinds past with you inside. Reach a room with a red lock, tick its `UNLOCK` box, and get to the front door before
+the burnt twin finds you.
 
-Mouse only, one hand. (Press Shift five times and the house has something to say about Sticky Keys.) Click a room to walk there. Point at a word to see what it would do (the rooms you could walk to
-afterwards light up green), then click it. Under the house are buttons for Pause (`P` or `Esc`), Restart floor (`R`, the same house back as it began), Hint (`H`) and Sound (`M`).
+Mouse or touch, one hand. Click a room to walk there. Point at a box on the sheet to see what it would do (the rooms you
+could walk to afterwards light up), then click it. On a phone, tap a box once to see it and again to tick it. Under the
+house are buttons for Pause (`P` or `Esc`), Restart floor (`R`, the same house back as it began), Hint (`H`) and Sound
+(`M`). (Press Shift five times and the house has something to say about Sticky Keys.)
 
-- **The words:**
-  - `this.row.shift(west|east)` / `this.column.shift(up|down)`: that row or column of rooms slides one step, and you ride along.
-  - `this.door.east = open`: open or shut a wall between two rooms. Nothing gets through a shut door, not you, not it.
-  - `this.lights = on`: in the dark it can't see you, but it may still stumble in.
-  - `frontDoor.locked = true`: two rooms hold this line. Either one opens the front door.
-  - Floor 2 adds `this.swap(west|east)`: trade your room with the one next to it.
-  - Floor 3 adds `house.upsideDown = false`: turn the whole house over. Floors change places, and ladders become holes.
-- **The house plays back** (from floor 2; floor 1 is calm). After each of your moves it makes one of its own in another room: it slides a row, swaps
-  a room or shuts a door, usually to bring the shadow closer. It types the line in red a moment before it happens, so
-  you can see it coming. It never moves the room you're in, and never leaves you with no way out. Sit still too long
-  and it moves anyway. From floor 2 it likes to copy your favourite words.
-- **One new thing at a time.** Floor 1 is just you and the house; the shadow sleeps through it. Floor 2 wakes the
-  shadow, floor 3 brings the flip and the finale. During play the only words are the house's own moves; torn pages
-  are read on the screen between floors.
-- **The finale.** Unlock the last front door, get the door in reach, and the screen breaks: the game shrinks into a window on a desktop, the
-  house's rooms tear out through the frame, it shifts the desktop's rows like its own, a "not responding" box comes
-  up and the house rewrites its button to `Stay`, and the shadow climbs out after them. Then the rooms slam back in. It's
-  all drawn inside the game (`src/tear.js`), so it looks the same on Windows, Mac and Linux and touches nothing real.
-  A click skips it. Then the house turns itself over, then slides its rows every few seconds
-  while the shadow runs you down faster. The way to the door is always lit. If it grabs you, it lets go (it wants to
-  watch you run), and the front door holds shut until, about half a minute in, it stops and lets you leave. The browser tab and the code's file name
-  change as it happens. At the very end, the camera pulls back from the house.
-- **Trap the shadow.** Slide its room away or shut it in, and it has to claw through a wall to get out. A bar shows how long you have.
-- **Beat the house.** Floor 1 needs 1 move, floor 2 needs 2, floor 3 needs 3. The top of the screen shows your moves
-  next to the house's best. Every house is generated fresh and checked by a solver: it can be escaped in exactly that
-  many moves, and floors 2 and 3 can't be escaped without their new word.
-- **Stuck?** After 20 seconds, `house.hint();` appears. It frames the room to go to and the word to click.
-- **You can't lose.** If it catches you, it drags you back to your first room. What you changed stays changed, and it
-  gets a little slower each time.
-
-- **After the ending.** The credits roll, and the shadow edits its own line until it's bigger than yours. Then you're
+- **The steps on the sheet:**
+  - Slide this row `WEST`/`EAST`, or this column `UP`/`DOWN`: that row or column of rooms slides one step, and you ride along.
+  - West or east door `OPEN`/`SHUT`: nothing gets through a shut door, not you, not it.
+  - Lights `ON`/`OFF`: in the dark it can't see you, but it may still stumble in.
+  - Front door `UNLOCK`: two rooms hold the red lock. Either one opens the front door.
+  - Floor 2 adds Swap rooms with `WEST`/`EAST`: trade your room with the one next to it.
+  - Floor 3 adds The house stands `UPSIDE DOWN`: floors change places, and ladders become holes.
+- **The house plays back** (from floor 2; floor 1 is calm). It answers some of your moves with one of its own in
+  another room, usually to bring the twin closer, and shows it coming first. It never moves the room you're in, and
+  never leaves you with no way out.
+- **The burnt twin.** Floor 1 it sleeps. From floor 2 it hunts you: its cracks glow, and the room goes red as it nears.
+  It crouches before it lunges, so you get a moment. If it grabs you, it throws you into a nearby room and the house
+  changes a step, then you get a few safe seconds. It's never a game over.
+- **Trap it.** Slide its room away or shut it in, and it has to claw out. The sheet counts down the seconds.
+- **Beat the house.** Every house is generated fresh and checked by a solver: floor 1 can be escaped in 1 move, floor 2
+  in 2, floor 3 in 3, and floors 2 and 3 can't be escaped without their new step.
+- **Stuck?** Press the wax seal on the sheet, or `H`. A hint frames the room to go to and the box to tick, and follows
+  you if you walk somewhere else.
+- **The finale.** Unlock the last front door and get it in reach, and the screen breaks: the game shrinks into a window
+  on a desktop, the house's rooms tear out through the frame, and the twin climbs out after them. For the first time,
+  you see the house is code. It's all drawn inside the game (`src/tear.js`) and touches nothing real. A click skips it.
+  Then the house slides its rows every few seconds while the twin runs you down. The way to the door is always lit.
+- **After the ending.** The credits roll, and the twin edits its own line until it's bigger than yours. Then you're
   left on the house's desktop: open `notes.txt` (the torn pages you found), click the Bin, or click `house.js` to
   build a new house.
 - **It has a sense of humour.** Try `Ctrl+Z` (`Cmd+Z` on a Mac) three times. Hold `Shift`. Ask for a lot of hints.
-  Shut the shadow in. Leave and come back later: it counts. Open the browser's developer console. Only three things
+  Shut the twin in. Leave and come back later: it counts. Open the browser's developer console. Only three things
   are saved, in your own browser: the time you left, which house you were in, and which ending you got last.
-- **The story.** The house talks back now and then, in a line typed under it. Each floor starts with a note from its
-  commit log, and each floor hides one torn page in your handwriting, in a room you can reach on the way out. Find all
+- **The story.** The house talks back now and then, on a torn strip of paper under it. Each floor
+  hides one torn page in your handwriting, in a room you can reach on the way out. Find all
   three and the last line of the game becomes a word you can change: `house.keep(shadow|nobody)`. All of the story's
   words are in `src/story.js`.
 
-**The look.** The house is a wooden doll's house at night; rooms you can't reach sit in cold moonlight, and your lamp warms the one you're in. Its source code is typed on an old page clipped beside it, and every choice is circled in red pencil. The title and the between-floor notes are typed pages too. Floor, moves and pages sit on a brass plate under the house. All of it lives in `src/look.js`.
+**The look.** The house is a real 3D doll's house at night, built in three.js (`src/dollhouse.js`) with scanned
+furniture from Poly Haven and walls and floors from ambientCG, then rendered into a photograph of every room, lit and
+dark (`assets/plates/`, made by `tools/render/`). You're a small peg doll; the twin is the same doll, burnt, with
+glowing cracks. The assembly sheet is printed on an old folded page beside the house. All the art is CC0; the list is
+in `assets/CREDITS.md`.
 
-Everything you see and hear is drawn and played by code: no image or sound files. Rain, wind, thunder, a music box
-that plays a slow, wrong little tune, and whispers when it's in the next room. Headphones help.
+Where WebGL is missing, on a computer drawing without a graphics card, or with `?flat=1` in the address, the house is
+drawn flat in code instead. If frames run slow, the 3D house uses fewer pixels, then drops your lantern's shadows.
+
+Every sound is played by code: rain, wind, thunder, a music box that plays a slow, wrong little tune, and whispers
+when it's in the next room. Headphones help.
 
 ## Play it locally
 
