@@ -507,7 +507,7 @@ test("floor 1 has no counter-moves; floor 3's lock waits for the door; the chase
     // caught in the chase (CH 11-20: "it just let me go"): no drag back and no game over, but it costs a grab and
     // you're thrown clear of it. The first 3 s after unlocking are safe, so the test skips past them.
     await page.waitForFunction(() => !window.__dh.st().anim, null, { timeout: 4000 }); // the house finishes turning over
-    const c = await page.evaluate(() => { const st = window.__dh.st(); st.unlockAt = -99; const me = st.player.id; st.player.way = null; st.shadow.id = me; st.shadow.fx = st.player.fx; st.shadow.way = null; return { me, grabs: st.grabs }; });
+    const c = await page.evaluate(() => { const st = window.__dh.st(); st.unlockAt = -99; st.graceUntil = -99; const me = st.player.id; st.player.way = null; st.shadow.id = me; st.shadow.fx = st.player.fx; st.shadow.way = null; return { me, grabs: st.grabs }; });
     await page.waitForFunction((g) => window.__dh.st().grabs > g || window.__dh.st().scene !== "play", c.grabs, { timeout: 4000 });
     const after = await page.evaluate(() => { const st = window.__dh.st(); return { scene: st.scene, me: st.player.id, sh: st.shadow.id, grabs: st.grabs }; });
     assert.equal(after.scene, "play", "no drag back");
@@ -668,14 +668,14 @@ test("floor 2 fairness: a hint holds the house off, reading holds its move, a gr
         D.newGame(seed, 2); D.begin(); const s2 = D.st(); s2.shadow.mode = "hunt"; D.hint(); const h = s2.hint;
         if (!h || h.id !== s2.player.id || h.li == null) continue;
         s2.anim = null; D.edit(h.li, h.dir); out.spared = s2.houseNext == null;
-        s2.anim = null; s2.lastEdit = null; const li = D.byId(s2.g, s2.player.id).lines.findIndex((l) => l.kind === "row" || l.kind === "col" || l.kind === "swap");
+        s2.anim = null; s2.lastEdit = null; s2.houseNext = null; const li = D.byId(s2.g, s2.player.id).lines.findIndex((l) => l.kind === "row" || l.kind === "col" || l.kind === "swap");
         if (li >= 0) { D.edit(li, 1); out.nextReplies = s2.houseNext != null; }
         break;
       }
       return out;
     });
     assert.notEqual(r.spared, true, "following the hint still gets a reply from the house");
-    assert.notEqual(r.nextReplies, false, "and so does the move after that");
+    assert.notEqual(r.nextReplies, true, "but on floor 2 the move after that gets none (it answers every other move)");
     assert.ok(r.held > 0, "some floor had a hint that held the house off");
     assert.ok(r.after > 0, "and the house moves again once the hint is old");
     assert.ok(r.waited, "the house's move waits while you're pointing at a word");

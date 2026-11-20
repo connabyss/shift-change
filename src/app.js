@@ -243,6 +243,9 @@ const pick = (a) => a[(Math.random() * a.length) | 0];
 function houseTurn() {
   if (st.finale || st.scene !== "play" || st.floor === 1) return; // floor 1 is calm: it starts fighting back on floor 2
   st.playerEdits++; st.houseIdle = 0; st.hintAt = null; // your move ends the hint's hold
+  // on floor 2 it answers every other move (round-2 testers who read slowly said the house rearranged faster than
+  // they could read); on floor 3 it answers every move
+  if (st.floor === 2 && st.playerEdits % 2 === 0) return; // (it answers your 1st, 3rd, 5th move...)
   st.houseNext = { t: -HOUSE_WAIT, move: null };
 }
 function pickHouseMove(force = false) {
@@ -274,7 +277,7 @@ function houseCode(m) {
 }
 const HINT_HOLD = 8;
 function hintHolds() { return !!(st.hint && st.hint.text && st.hint.text.startsWith("Hint:") && st.hintAt != null && st.floorT - st.hintAt < HINT_HOLD); }
-const HOUSE_IDLE = [14, 10, 8]; // and if you sit still too long, it moves anyway
+const HOUSE_IDLE = [14, 16, 10]; // and if you sit still too long, it moves anyway
 function houseUpdate(dt) {
   if (!st.houseNext && !st.finale && st.shadow.mode !== "sleep") {
     if (!st.hover) st.houseIdle = (st.houseIdle || 0) + dt; // reading a word or a room isn't sitting still
@@ -371,7 +374,7 @@ function tearUpdate(dt) {
   if (at(T.out)) { sfx.slide(); sfx.creak(0.6); }
   if (at(T.out + 0.4)) setTitle(tear.windowTitle(t1));
   if (at(T.slam)) { sfx.doorShut(); sfx.breakOut(); sfx.thunder(0.1); }
-  if (t1 >= T.len) { st.tear = null; setTitle(FINALE.title); sayLine(FINALE.start, true); farShadow(2.5); }
+  if (t1 >= T.len) { st.tear = null; setTitle(FINALE.title); sayLine(FINALE.start, true); farShadow(2.5); st.graceUntil = st.floorT + 4; } // (a head start: a tester was thrown back right after "Then run.")
 }
 
 // Last floor: the lock is open, but the chase only starts once you've got the front door in reach, so the floor's
@@ -493,7 +496,7 @@ function update(dt) {
   // a few safe seconds right after you unlock, and after every grab (testers were grabbed again and again, every
   // 4-5 s, and quit: a grab should sting once, then give you room to think)
   const safe = st.floorT - (st.unlockAt ?? -99) < 3 || st.floorT < (st.graceUntil ?? -99);
-  if (sh.mode !== "sleep" && !safe && dist < 90 && !(sh.lunge > 0) && !(sh.dash > 0) && !(sh.lungeCool > 0) && !st.anim) { sh.lunge = 0.5; sh.lungeCool = 3; sfx.creak(0.7); st.shake = Math.max(st.shake || 0, 0.25); }
+  if (sh.mode !== "sleep" && !safe && dist < 90 && !(sh.lunge > 0) && !(sh.dash > 0) && !(sh.lungeCool > 0) && !st.anim) { sh.lunge = 0.75; sh.lungeCool = 3; sfx.creak(0.7); st.shake = Math.max(st.shake || 0, 0.25); }
   if (sh.mode !== "sleep" && !safe && dist < 24) { if (st.finale) shoved(); else { st.scene = "caught"; st.caughtT = 0; think("found(you);"); sfx.caught(); say("caught"); } }
   // it's one room away: say so, once each time it closes in (testers were grabbed without seeing it coming)
   const near = nearness(); if (near === 1 && (st.lastNear ?? 9) > 1 && sh.mode !== "sleep") { float(pp[0] - 40, pp[1] - 64, "it's in the next room", RED); st.shake = Math.max(st.shake || 0, 0.15); }
@@ -587,7 +590,7 @@ function grabCost() {
   farShadow(st.finale ? 2 : 6);
   st.houseNext = null; st.houseIdle = 0;
   if (st.hint && st.hint.text && st.hint.text.startsWith("Hint:")) { const t = st.hint.t, at = st.hintAt; doHint(false); st.hint.t = t; st.hintAt = at; }
-  unseal(); const p = screenPos(me.id, 0.5); float(p[0] - 30, p[1] - 50, m ? "it caught you: the house changed a step" : st.finale ? "it caught you: thrown back from the door" : "it caught you", RED);
+  unseal(); const p = screenPos(me.id, 0.5); float(Math.min(p[0] - 30, PX - 330), p[1] - 50, m ? "it caught you: the house changed a step" : st.finale ? "it caught you: thrown back from the door" : "it caught you", RED);
 }
 function dragBack() { st.scene = "play"; grabCost(); }
 
