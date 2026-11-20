@@ -224,7 +224,7 @@ function performEdit(id, li, dir, byHouse) {
   settle(st.player); settle(st.shadow); st.player.pending = null;
   const res = applyEdit(st.g, id, li, st, dir); unseal();
   if (byHouse && st.hint && st.hint.text && st.hint.text.startsWith("Hint:")) { const t = st.hint.t; doHint(false); st.hint.t = t; } // the house moved: the hint follows
-  if (st.shadow.mode !== "sleep" && !path(st.g, st.shadow.id, st.player.id) && st.shadow.noPath === 0) { trapped(!byHouse); st.shadow.noPath = 0.01; }
+  if (st.shadow.mode !== "sleep" && !path(st.g, st.shadow.id, st.player.id) && st.shadow.noPath === 0) { trapped(!byHouse); st.shadow.noPath = st.floorT - (st.shadow.freedAt ?? -99) < 10 ? Math.max(0.01, st.shadow.lastNoPath || 0) : 0.01; }
   st.glitch = 0.5; st.shake = res.kind === "row" || res.kind === "col" ? 0.6 : 0.25;
   st.alert = 4; st.preview = null; st.previewKey = "";
   if (res.kind === "row" || res.kind === "col") { st.anim = { ...res, t: 0 }; sfx.slide(); dustBurst(res); }
@@ -302,7 +302,7 @@ function houseUpdate(dt) {
 }
 // One line at a time, each up long enough to read. Lines that come while one is showing wait their turn
 // (CH: "I don't want the jokes happening so fast that they're hard to catch"). The chase and a grab speak at once.
-function voiceLen(text) { return Math.max(4, 2.2 + text.length * 0.06); }
+function voiceLen(text) { return Math.max(5, 3 + text.length * 0.07); } // (testers: lines went before they could be read)
 function sayLine(text, now = st.scene === "caught") {
   st.voiceQ = st.voiceQ || [];
   if (st.voice && !now) { if (st.voice.text !== text && !st.voiceQ.includes(text) && st.voiceQ.length < 2) st.voiceQ.push(text); return; }
@@ -412,12 +412,19 @@ function doHint(asked = true) {
   // it runs out of patience before it runs out of hints (the real hint still follows)
   if (asked && st.total.hints === 5) st.hint.text = `${JOKES.hint5} ${JOKES.fine} ${st.hint.text.replace(/^Hint: /, "")}`;
   if (asked && st.total.hints === 7) { st.hint.text = `${JOKES.hint7} ${JOKES.fine} ${st.hint.text.replace(/^Hint: /, "")}`; st.crayon = { t: 0 }; }
-  st.hint.t = 0;
+  st.hint.t = 0; st.hint.at = st.player.id;
+}
+// a hint is worded for the room you were in: when you walk to another room it's reworded (a tester got "tick DOWN on
+// step 1 (slide this column)" in a room whose step 1 was a row)
+function freshenHint() {
+  const h = st.hint; if (!h || !h.text || !h.text.startsWith("Hint:") || h.at === st.player.id || st.player.way || st.scene !== "play") return;
+  const t = h.t, at = st.hintAt; doHint(false); st.hint.t = t; st.hintAt = at;
 }
 
 
 // ---------- update ----------
 function update(dt) {
+  freshenHint();
   if (paused) return; // everything holds still: the house, the shadow, the rain
   weather(dt);
   st.t += dt; st.thought.t += dt; st.glitch = Math.max(0, st.glitch - dt); st.shake = Math.max(0, st.shake - dt);
@@ -478,12 +485,14 @@ function update(dt) {
   if (sh.mode === "sleep") {
     if (st.sinceStart > 8) wake();
   } else if (sh.lunge > 0) { sh.lunge -= dt; if (sh.lunge <= 0) sh.dash = 1.1; } // the tell: it stops dead and crouches, then comes fast
-  else if (sh.way) advance(sh, dt, (sh.seep ? speed * 0.5 : speed) * (sh.dash > 0 ? 2.1 : 1), () => { sh.seep = false; });
+  else if (sh.way) advance(sh, dt, (sh.seep ? speed * 0.5 : speed) * (sh.dash > 0 ? 1.7 : 1), () => { sh.seep = false; });
   else if ((sh.timer -= dt) <= 0) planShadow();
   if (sh.dash > 0) sh.dash -= dt; if (sh.lungeCool > 0) sh.lungeCool -= dt;
 
   const pp = walkerPos(st.player), sp = walkerPos(sh), dist = Math.hypot(pp[0] - sp[0], pp[1] - sp[1]);
-  const safe = st.floorT - (st.unlockAt ?? -99) < 3; // a few safe seconds right after you unlock (a tester was grabbed twice there and quit)
+  // a few safe seconds right after you unlock, and after every grab (testers were grabbed again and again, every
+  // 4-5 s, and quit: a grab should sting once, then give you room to think)
+  const safe = st.floorT - (st.unlockAt ?? -99) < 3 || st.floorT < (st.graceUntil ?? -99);
   if (sh.mode !== "sleep" && !safe && dist < 90 && !(sh.lunge > 0) && !(sh.dash > 0) && !(sh.lungeCool > 0) && !st.anim) { sh.lunge = 0.5; sh.lungeCool = 3; sfx.creak(0.7); st.shake = Math.max(st.shake || 0, 0.25); }
   if (sh.mode !== "sleep" && !safe && dist < 24) { if (st.finale) shoved(); else { st.scene = "caught"; st.caughtT = 0; think("found(you);"); sfx.caught(); say("caught"); } }
   // it's one room away: say so, once each time it closes in (testers were grabbed without seeing it coming)
@@ -502,11 +511,12 @@ function planShadow() {
   const sh = st.shadow, me = st.player, here = byId(st.g, me.id);
   const p = path(st.g, sh.id, me.id), dark = !here.lights && st.alert <= 0;
   if (!p) {
-    if (sh.noPath === 0) trapped(false);
+    if (sh.noPath === 0) { trapped(false); if (st.floorT - (sh.freedAt ?? -99) < 10) sh.noPath = sh.lastNoPath || 0; } // shut in again soon: the count picks up where it was (testers saw it jump 4, 8, 1, 8)
     sh.noPath += 0.5; sh.timer = 0.5;
     if (sh.noPath >= TRAPS[st.floor - 1]) breakOut();
     return;
   }
+  if (sh.noPath > 0) { sh.lastNoPath = sh.noPath; sh.freedAt = st.floorT; }
   sh.noPath = 0;
   if (dark && p.length > 2) {
     const a = find(st.g, sh.id), n = nbrs(st.g, a.x, a.y);
@@ -563,7 +573,9 @@ function grabCost() {
   const me = st.player, sh = st.shadow; me.way = null; me.pending = null; me.fx = 0.5;
   // in the chase the house already slides a row every few seconds, so a grab doesn't add a slide of its own (two
   // slides close together can't be followed): it throws you back from the door instead
-  const m = st.finale ? null : pickHouseMove(true);
+  // a second grab soon after the first costs no extra rewrite (it was snowballing into an unwinnable mess)
+  const again = st.floorT - (st.lastGrabAt ?? -99) < 20; st.lastGrabAt = st.floorT; st.graceUntil = st.floorT + (st.finale ? 3 : 6);
+  const m = st.finale || again ? null : pickHouseMove(true);
   if (m) { st.slip = { e: errata(m), at: st.floorT }; st.lastHouse = houseCode(m); st.houseLog = [st.lastHouse, ...(st.houseLog || [])].slice(0, 4); performEdit(m.id, m.li, m.dir, true); st.total.house = (st.total.house || 0) + 1; }
   // flung: the room you can reach that's farthest from it (by steps), else you stay put
   const R = [...reach(st.g, me.id)]; let best = me.id, bd = -1;
@@ -572,7 +584,7 @@ function grabCost() {
   me.id = best;
   // never a dead floor: if no way out is left within a few steps, the house opens one
   if (!solve(st.g, me.id, st.h.lockIds, st.unlocked, 4)) { if (st.unlocked) carve(); else { st.g = clone(st.g0); st.flipped = false; } }
-  farShadow(st.finale ? 2 : 4);
+  farShadow(st.finale ? 2 : 6);
   st.houseNext = null; st.houseIdle = 0;
   if (st.hint && st.hint.text && st.hint.text.startsWith("Hint:")) { const t = st.hint.t, at = st.hintAt; doHint(false); st.hint.t = t; st.hintAt = at; }
   unseal(); const p = screenPos(me.id, 0.5); float(p[0] - 30, p[1] - 50, m ? "it caught you: the house changed a step" : st.finale ? "it caught you: thrown back from the door" : "it caught you", RED);
@@ -1174,7 +1186,7 @@ function drawDrips() {
   if (!(st.drips || []).length) return;
   // the words you can click stay clear: the ink runs behind them, never over them
   ctx.save(); ctx.beginPath(); ctx.rect(PX - 16, 22, PW + 26, VH - 44);
-  for (const r of st.wordRects || []) ctx.rect(r.x + r.w + 3, r.y - 3, -(r.w + 6), r.h + 6); // (wound the other way: a hole)
+  for (const r of st.clearRects || st.wordRects || []) ctx.rect(r.x + r.w + 3, r.y - 3, -(r.w + 6), r.h + 6); // (wound the other way: a hole)
   ctx.clip("nonzero");
   for (const d of st.drips) {
     if (d.len < 1) continue;
@@ -1322,7 +1334,7 @@ function panelBody() {
   }
   ctx.fillStyle = PRINT.K; rule(124, 0.5);
   // the steps: your room's choices
-  st.wordRects = []; st.lineYs = []; st.lineBoxes = []; st.textBands = []; st.glyphs = [];
+  st.wordRects = []; st.clearRects = []; st.lineYs = []; st.lineBoxes = []; st.textBands = []; st.glyphs = [];
   const n = room.lines.length, sp = n > 3 ? 45 : 54; let y = sy(152);
   room.lines.forEach((c, li) => {
     const v = stepView(room, c), spent = c.kind === "lock" && st.unlocked;
@@ -1347,6 +1359,7 @@ function panelBody() {
       const tw = ctx.measureText(w.t).width;
       if (hot) { ctx.fillRect(cx + 14, yy + 2.5, tw, 1); }
       if (!w.cur && !spent) st.wordRects.push({ x: cx - 4, y: yy - 14, w: tw + 22, h: 19, dir, li });
+      st.clearRects.push({ x: cx - 4, y: yy - 14, w: tw + 22, h: 19 }); // (every word, ticked or not, stays clear of the drips)
     });
     diagram(c.kind, y);
     if (typing) ctx.restore();
@@ -1354,7 +1367,10 @@ function panelBody() {
   });
   const stepsEnd = y - sp + 30;
   // the errata slip, pasted on when the house changes a step
-  const slip = slipShown(); st.slipOn = !!slip;
+  // (while you point at something or have a hint, the notes need the space: the slip steps aside rather than cover
+  // them. A tester couldn't read "No way there yet..." under it.)
+  const busy = (st.hover && (st.hover.type === "word" || (st.hover.type === "room" && st.hover.id !== room.id))) || !!st.hint;
+  const slip = busy ? null : slipShown(); st.slipOn = !!slip;
   if (slip && slip.e) {
     ctx.save(); ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = slip.k;
     if (sheetReady("slip")) ctx.drawImage(SHEET.img.slip, SX - 6 + 30, SY - 8 + 326, 268, 70);

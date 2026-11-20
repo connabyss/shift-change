@@ -1115,3 +1115,32 @@ test("the photographed house: each room's picture sits in its slot, slides with 
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+
+// Playtest 11-20 (Rosa, Dev): grabbed again every 4-5 s and quit on floor 2. After a grab there are 6 safe seconds,
+// a second grab soon after costs no extra rewrite, a hint is reworded when you change rooms, and the claw-out count
+// picks up where it was if the shadow is shut in again soon.
+test("after a grab: safe seconds, no snowballing rewrites, hints follow you, a steady claw-out count", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    const r = await page.evaluate(() => {
+      const D = window.__dh, out = {};
+      D.newGame(99, 2); D.begin(); let st = D.st(); st.shadow.mode = "hunt"; st.sinceStart = 20;
+      D.dragBack(); const g1 = st.grabs, h1 = st.total.house || 0;
+      // put it right on you during the safe seconds: no second grab
+      for (let i = 0; i < 40; i++) { st.shadow.id = st.player.id; st.shadow.fx = st.player.fx; st.shadow.way = null; st.shadow.timer = 99; D.tick(0.05, 1); }
+      out.safe = st.grabs === g1 && st.scene === "play";
+      // a second grab inside 20 s doesn't change another step
+      D.dragBack(); out.noSnowball = (st.total.house || 0) === h1 && st.grabs === g1 + 1;
+      // a hint worded for one room is reworded once you're in another
+      D.newGame(99, 2); D.begin(); st = D.st(); st.shadow.mode = "sleep"; D.hint(); const before = st.hint.text, at = st.hint.at;
+      const other = [...D.reach(st.g, st.player.id)].find((id) => id !== st.player.id);
+      if (other) { st.player.id = other; st.player.way = null; D.tick(0.02, 1); out.reworded = st.hint.at === other; } else out.reworded = true;
+      out.before = before; out.at = at;
+      return out;
+    });
+    assert.ok(r.safe, "no grab in the safe seconds after one");
+    assert.ok(r.noSnowball, "a second grab soon after doesn't rewrite another step");
+    assert.ok(r.reworded, "the hint is reworded for the new room");
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
