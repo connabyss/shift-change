@@ -406,6 +406,18 @@ test("an urgent line cuts in, but the line it cut off comes back after it", { sk
   } finally { await close(); }
 });
 
+test("floating words stack instead of printing over each other, and stay off the sheet", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    const f = await page.evaluate(() => { window.__dh.begin(); const s = window.__dh.st(); s.floats = [];
+      window.__dh.float(300, 300, "it's in the next room"); window.__dh.float(310, 300, "a torn page (1 of 3)"); window.__dh.float(640, 200, "it caught you: the house changed a step");
+      return s.floats.map((x) => ({ x: x.x - 40, y: x.y, w: x.w })); });
+    assert.ok(Math.abs(f[0].y - f[1].y) >= 22, "the second line moved clear of the first");
+    assert.ok(f[2].x + f[2].w <= 648, "a long line near the sheet is pulled back onto the house side");
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
 test("one absurd thing per floor early on, and floor 1 nudges you if you sit still", { skip }, async () => {
   const { page, errors, close } = await open("/?seed=4242");
   try {

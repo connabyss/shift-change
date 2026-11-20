@@ -172,7 +172,17 @@ function say(key) {
   st.said.add(key); sayLine(text);
 }
 function lastEnding() { try { return localStorage.getItem("shift-ending"); } catch { return null; } }
-function float(x, y, text, color) { st.floats.push({ x, y, text, color, t: 0 }); }
+// a few words that rise and fade where something happened. They stay inside the house's side of the screen and
+// stack instead of printing over each other (testers: two at once came out as one smudge)
+function float(x, y, text, color) {
+  ctx.save(); ctx.font = `20px ${MONO}`; const w = ctx.measureText(text).width; ctx.restore();
+  let left = Math.max(HX, Math.min(x - 40, SX - 10 - w));
+  for (let n = 0; n < 6; n++) {
+    const hit = st.floats.find((f) => Math.abs(y - (f.y - f.t * 30)) < 22 && left < f.x - 40 + (f.w || 200) && f.x - 40 < left + w);
+    if (!hit) break; y = hit.y - hit.t * 30 - 24;
+  }
+  st.floats.push({ x: left + 40, y, w, text, color, t: 0 });
+}
 function walkTo(id, exit, mx, my) {
   const w = st.player;
   if (w.way) { w.pending = { id, exit }; return; }
@@ -2161,7 +2171,7 @@ requestAnimationFrame(frame);
 window.__dh = {
   screenPos: (id, fx) => screenPos(id, fx),
   pickHouseMove: () => pickHouseMove(), houseMove: (m) => performEdit(m.id, m.li, m.dir, true), houseMoves, st: () => st, begin: () => { st.scene = "play"; }, choose: (w) => choose(w), say: (k) => say(k), choiceRects: () => choiceRects, nextFloor: () => nextFloor(), solve, hint: () => doHint(), edit: (li, d) => doEdit(li, d), edits, path, walk: (id, exit) => walkTo(id, exit, 0, 0),
-  reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(), sticky: () => sticky, gag: () => ({ gag: !!st.gag, nudged: !!st.nudged, sign: !!st.sign, sticker: !!st.sticker }), undone: () => undone, undo: () => undo(), line: (t) => sayLine(t), hush: () => { st.voice = null; st.voiceQ = []; st.quiet = 99; st.sign = st.sticker = null; }, lift: () => lift(), junk: () => junk.length, tick: (dt, n) => { for (let i = 0; i < n; i++) update(dt); }, render: () => render(), upright: () => upright.matches, dragBack: () => dragBack(), previewLit: () => [...previewLit()], deskHit: desk.deskHit, shiftK: () => shiftK, goneFor, openDesk: () => openDesk(), trapped: (b) => trapped(b), awayLine: () => awayLine, calm: () => CALM, flash: () => flash(),
+  reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(), sticky: () => sticky, gag: () => ({ gag: !!st.gag, nudged: !!st.nudged, sign: !!st.sign, sticker: !!st.sticker }), undone: () => undone, undo: () => undo(), line: (t) => sayLine(t), float: (x, y, t) => float(x, y, t, RED), hush: () => { st.voice = null; st.voiceQ = []; st.quiet = 99; st.sign = st.sticker = null; }, lift: () => lift(), junk: () => junk.length, tick: (dt, n) => { for (let i = 0; i < n; i++) update(dt); }, render: () => render(), upright: () => upright.matches, dragBack: () => dragBack(), previewLit: () => [...previewLit()], deskHit: desk.deskHit, shiftK: () => shiftK, goneFor, openDesk: () => openDesk(), trapped: (b) => trapped(b), awayLine: () => awayLine, calm: () => CALM, flash: () => flash(),
   plates: () => plates(), in3d: () => in3d(), info3d: () => dh.info(), roomAt3d: (id) => dh.roomAt(id), draw3d: () => draw3d(), scene3d: () => dh.forExport(), // (stills: the 3D picture alone, no page or buttons on top)
   tapTyped: (on) => { const t = typedTap || []; typedTap = on ? [] : null; return t; }, keepSheet: () => keepSheet(), toCredits: () => toCredits(), pageInk: (dt) => pageInk(dt),
   whyNoWay: (a, b) => whyNoWay(a, b), hintHolds: () => hintHolds(), houseTick: (dt) => houseUpdate(dt),
