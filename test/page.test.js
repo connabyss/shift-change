@@ -418,6 +418,18 @@ test("floating words stack instead of printing over each other, and stay off the
   } finally { await close(); }
 });
 
+test("on a touch screen the sheet says tap, not point and click", { skip }, async () => {
+  const { page, errors, close } = await open("/?seed=4242");
+  try {
+    const t = await page.evaluate(() => { window.__dh.touchy(true); const a = window.__dh.tapWords("Point at a box. The house shows what it would do: dashed rooms are where you could walk after. Click to tick it.");
+      window.__dh.touchy(false); return { a, b: window.__dh.tapWords("Click the room to walk there.") }; });
+    assert.ok(/^Tap a box once/.test(t.a) && /Tap it again to tick it\.$/.test(t.a) && !/click|point/i.test(t.a), t.a);
+    assert.equal(t.b, "Click the room to walk there.", "a mouse still reads click");
+    await page.evaluate(() => { window.__dh.touchy(true); window.__dh.begin(); }); await page.waitForTimeout(300);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
 test("one absurd thing per floor early on, and floor 1 nudges you if you sit still", { skip }, async () => {
   const { page, errors, close } = await open("/?seed=4242");
   try {

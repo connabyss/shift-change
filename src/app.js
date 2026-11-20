@@ -413,7 +413,7 @@ function doHint(asked = true) {
   const plan = solve(st.g, st.player.id, st.h.lockIds, st.unlocked, 4);
   if (asked) { st.total.hints++; sfx.hint(); st.hintAt = st.floorT; }
   if (!plan) st.hint = { text: "Hint: even the house is lost. Try sliding a row back the way it came." };
-  else if (!plan.length) st.hint = { text: st.unlocked ? "Hint: the way is open. Click the front door, bottom left." : "Hint: a red lock is in reach. Walk there and tick UNLOCK." };
+  else if (!plan.length) st.hint = { text: tapWords(st.unlocked ? "Hint: the way is open. Click the front door, bottom left." : "Hint: a red lock is in reach. Walk there and tick UNLOCK.") };
   else {
     const m = plan[0], room = byId(st.g, m.id), c = room.lines[m.li], word = stepWord(room, c, m.dir), no = STEP_NO(room, m.li);
     st.hint = { ...m, text: m.id === st.player.id ? `Hint: tick ${word} on step ${no} (${stepView(room, c).lead.toLowerCase()}).` : `Hint: walk to the ${room.name} (the lit frame), then tick ${word} on its step ${no}.` };
@@ -1311,7 +1311,17 @@ function drawPanel() {
   ctx.restore();
 }
 // shut in: how long until it claws out (the number goes down a second at a time)
-function coachLine(room) {
+// on a phone there's no pointer to hover with: the first tap on a box previews it and a second tap ticks it,
+// so the sheet's words say tap instead of point and click
+let touchy = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+function tapWords(s) {
+  if (!touchy) return s;
+  return s.replace(/Point at a box\. The house shows what it would do/, "Tap a box once. The house shows what it would do")
+    .replace(/Point at a box:/, "Tap a box once:").replace(/Click to tick it\./, "Tap it again to tick it.")
+    .replace(/\bClick\b/g, "Tap").replace(/\bclick\b/g, "tap");
+}
+function coachLine(room) { return tapWords(coachText(room)); }
+function coachText(room) {
   if (st.unlocked) return reach(st.g, room.id).has(doorRoom()) ? "Last thing: click the front door, bottom left." : "The door's open. Now get a way into the bottom-left room. Point at a box: dashed rooms are where you could walk.";
   if (room.lines.some((l) => l.kind === "lock")) return "This is a red-lock room. Tick its UNLOCK box.";
   const lockNear = st.h.lockIds.find((id) => reach(st.g, room.id).has(id));
@@ -1410,7 +1420,7 @@ function panelBody() {
     pfont(`400 11.5px ${CAS}`); ctx.fillStyle = PRINT.DIM; const steps_ = hv.lines.map((c) => { const v = stepView(hv, c), cur = v.ch.find((x) => x.cur); return cur ? `${v.lead.toLowerCase()} ${cur.t.toLowerCase()}` : v.lead.toLowerCase(); });
     let yy = pwrap(`Its steps: ${steps_.join(" · ")}.`, sx(L), ny + 16, nW, 15, nb, sy(380), 186);
     ctx.fillStyle = PRINT.K; pfont(`italic 400 12.5px ${CAS}`);
-    pwrap(reach(st.g, room.id).has(hv.id) ? "Click the room to walk there." : whyNoWay(room.id, hv.id), sx(L), yy + 2, nW, 16, nb, sy(380), 186);
+    pwrap(reach(st.g, room.id).has(hv.id) ? tapWords("Click the room to walk there.") : whyNoWay(room.id, hv.id), sx(L), yy + 2, nW, 16, nb, sy(380), 186);
   } else if (st.hint) { ctx.fillStyle = PRINT.R; pwrap(st.hint.text, sx(L), ny, nW, 16, nb, sy(380), 186); }
   else if (st.scene === "play" && (st.floor === 1 || st.edits === 0)) {
     // floor 1 teaches as you go, in the builder's pencil: one next thing at a time (CH 11-19 found floor 1 hard to read)
@@ -1430,7 +1440,7 @@ function panelBody() {
   pfont(`700 17px ${ROK}`, 0.8); ctx.fillStyle = st.unlocked ? PRINT.K : PRINT.R; ctx.fillText(st.unlocked ? "UNLOCKED" : "LOCKED", sx(L) + fw, sy(513));
   ctx.fillStyle = PRINT.K; pfont(`italic 500 12.5px ${CAS}`);
   const atDoor = st.unlocked && reach(st.g, st.player.id).has(doorRoom());
-  pwrap(!st.unlocked ? "Find a room with a red lock, and tick its UNLOCK box." : atDoor || st.finale ? "The front door is open. Click it, bottom left." : "Open, but no way leads to it yet. Get a way into the bottom-left room.", sx(L), sy(533), nW, 16);
+  pwrap(tapWords(!st.unlocked ? "Find a room with a red lock, and tick its UNLOCK box." : atDoor || st.finale ? "The front door is open. Click it, bottom left." : "Open, but no way leads to it yet. Get a way into the bottom-left room."), sx(L), sy(533), nW, 16);
 }
 
 // A page of the same assembly sheet, held up in the middle of the screen: the end-of-floor card and the pause page.
@@ -1481,7 +1491,7 @@ function drawFloorCard(k) {
     pfont(`600 10.5px ${ROK}`, 0.8); ctx.fillText(`NEXT  ·  FLOOR ${st.floor + 1} OF ${FLOORS}`, cx_(16), cy_(ny + 22));
     pfont(`400 14px ${CAS}`); ctx.fillText(st.floor === 1 ? "The shadow wakes up." : "The last one.", cx_(16), cy_(ny + 42));
     const nw = NEXT_STEP[st.floor + 1]; if (nw) cardStep(ny + 72, nw);
-    if (k > 1.2) { ctx.fillStyle = PRINT.R; ctx.globalAlpha = a * (0.6 + 0.4 * Math.sin(st.t * 3)); pfont(`italic 500 16px ${CAS}`); ctx.textAlign = "center"; ctx.fillText("Click to go down", cx_(SHW / 2), cy_(540)); ctx.textAlign = "left"; }
+    if (k > 1.2) { ctx.fillStyle = PRINT.R; ctx.globalAlpha = a * (0.6 + 0.4 * Math.sin(st.t * 3)); pfont(`italic 500 16px ${CAS}`); ctx.textAlign = "center"; ctx.fillText(tapWords("Click to go down"), cx_(SHW / 2), cy_(540)); ctx.textAlign = "left"; }
   } finally { delete ctx.fillText; if ("letterSpacing" in ctx) ctx.letterSpacing = "0px"; ctx.restore(); }
   ctx.restore();
 }
@@ -1602,7 +1612,7 @@ function endStats(k, y, maxW) {
   const lines = [`3 floors, ${st.total.moves} steps changed (fewest possible: ${st.total.par})`,
     `${c} grab${c === 1 ? "" : "s"}, ${h} change${h === 1 ? "" : "s"} by the house, ${st.total.hints || 0} hint${st.total.hints === 1 ? "" : "s"}, ${st.pages} of 3 torn pages`];
   if (k > 0) for (const l of lines) y = centerWrap(l, y, maxW, 22, `16px ${ROK}`, INK);
-  if (k > 1) centerText(st.ending === "free" ? "Click to close the house." : "Click to close the house. It'll wait.", y + 12, `italic 17px ${SERIF}`, DIM);
+  if (k > 1) centerText(tapWords(st.ending === "free" ? "Click to close the house." : "Click to close the house. It'll wait."), y + 12, `italic 17px ${SERIF}`, DIM);
 }
 function centerWrap(text, y, maxW, lh, font, color) {
   ctx.font = font; const words = text.split(" "), lines = []; let line = "";
@@ -1624,10 +1634,10 @@ function drawScenes() {
     const tag = awayLine || (back === "free" ? "Nobody home. Or so it says." : back === "keep" ? "Welcome back. It kept your room just as you left it." : "You built this house. It never let you leave.");
     centerText(tag, 118, `italic 20px ${SERIF}`, "#e0917c");
     ctx.globalAlpha = k * clamp((st.t - 1) / 1, 0, 1);
-    centerText("Click a room to walk there. Tick a box on the sheet to change the house.", VH - 74, `italic 17px ${SERIF}`, "rgba(239,227,200,0.82)");
+    centerText(tapWords("Click a room to walk there. Tick a box on the sheet to change the house."), VH - 74, `italic 17px ${SERIF}`, "rgba(239,227,200,0.82)");
     ctx.globalAlpha = k * (0.55 + 0.45 * Math.sin(st.t * 2.4));
-    centerText("click anywhere to begin", VH - 42, `italic 22px ${SERIF}`, "#efe3c8");
-    ctx.globalAlpha = k * 0.5; centerText("P pause  ·  R restart floor  ·  M sound", VH - 16, `13px ${SERIF}`, "#efe3c8");
+    centerText(tapWords("click anywhere to begin"), VH - 42, `italic 22px ${SERIF}`, "#efe3c8");
+    ctx.globalAlpha = k * 0.5; if (!touchy) centerText("P pause  ·  R restart floor  ·  M sound", VH - 16, `13px ${SERIF}`, "#efe3c8");
     ctx.restore();
   } else if (st.scene === "caught") {
     const k = st.caughtT;
@@ -1999,6 +2009,7 @@ function pauseAt(x, y) { const r = pauseRects.find((q) => inR(q, x, y)); return 
 function hudAt(x, y) { const r = hudRects.find((q) => inR(q, x, y)); return r ? { type: "hud", id: r.id } : null; }
 function choiceAt(x, y) { for (const r of choiceRects) if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return { type: "choice", word: r.word }; return null; }
 cv.addEventListener("pointerdown", (e) => {
+  touchy = e.pointerType === "touch"; // (the sheet's words follow the last thing that pressed: finger or mouse)
   sfx.init();
   if (sticky) { sticky = null; return; } // any click closes the Sticky Keys box
   const [x, y] = toView(e);
@@ -2171,7 +2182,7 @@ requestAnimationFrame(frame);
 window.__dh = {
   screenPos: (id, fx) => screenPos(id, fx),
   pickHouseMove: () => pickHouseMove(), houseMove: (m) => performEdit(m.id, m.li, m.dir, true), houseMoves, st: () => st, begin: () => { st.scene = "play"; }, choose: (w) => choose(w), say: (k) => say(k), choiceRects: () => choiceRects, nextFloor: () => nextFloor(), solve, hint: () => doHint(), edit: (li, d) => doEdit(li, d), edits, path, walk: (id, exit) => walkTo(id, exit, 0, 0),
-  reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(), sticky: () => sticky, gag: () => ({ gag: !!st.gag, nudged: !!st.nudged, sign: !!st.sign, sticker: !!st.sticker }), undone: () => undone, undo: () => undo(), line: (t) => sayLine(t), float: (x, y, t) => float(x, y, t, RED), hush: () => { st.voice = null; st.voiceQ = []; st.quiet = 99; st.sign = st.sticker = null; }, lift: () => lift(), junk: () => junk.length, tick: (dt, n) => { for (let i = 0; i < n; i++) update(dt); }, render: () => render(), upright: () => upright.matches, dragBack: () => dragBack(), previewLit: () => [...previewLit()], deskHit: desk.deskHit, shiftK: () => shiftK, goneFor, openDesk: () => openDesk(), trapped: (b) => trapped(b), awayLine: () => awayLine, calm: () => CALM, flash: () => flash(),
+  reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(), sticky: () => sticky, gag: () => ({ gag: !!st.gag, nudged: !!st.nudged, sign: !!st.sign, sticker: !!st.sticker }), undone: () => undone, undo: () => undo(), line: (t) => sayLine(t), float: (x, y, t) => float(x, y, t, RED), touchy: (on) => { touchy = on; }, tapWords: (t) => tapWords(t), hush: () => { st.voice = null; st.voiceQ = []; st.quiet = 99; st.sign = st.sticker = null; }, lift: () => lift(), junk: () => junk.length, tick: (dt, n) => { for (let i = 0; i < n; i++) update(dt); }, render: () => render(), upright: () => upright.matches, dragBack: () => dragBack(), previewLit: () => [...previewLit()], deskHit: desk.deskHit, shiftK: () => shiftK, goneFor, openDesk: () => openDesk(), trapped: (b) => trapped(b), awayLine: () => awayLine, calm: () => CALM, flash: () => flash(),
   plates: () => plates(), in3d: () => in3d(), info3d: () => dh.info(), roomAt3d: (id) => dh.roomAt(id), draw3d: () => draw3d(), scene3d: () => dh.forExport(), // (stills: the 3D picture alone, no page or buttons on top)
   tapTyped: (on) => { const t = typedTap || []; typedTap = on ? [] : null; return t; }, keepSheet: () => keepSheet(), toCredits: () => toCredits(), pageInk: (dt) => pageInk(dt),
   whyNoWay: (a, b) => whyNoWay(a, b), hintHolds: () => hintHolds(), houseTick: (dt) => houseUpdate(dt),
