@@ -1583,7 +1583,7 @@ function drawScenes() {
   if (st.scene === "title") {
     // the title: the doll's house photographed on its desk at night (assets/title/, path-traced), the name over it
     const back = lastEnding(), k = clamp(st.t / 1.6, 0, 1);
-    if (TITLE_IMG.ok) { ctx.drawImage(TITLE_IMG.im, 0, 0, VW, VH); } else { ctx.fillStyle = "rgba(5,4,7,0.9)"; ctx.fillRect(0, 0, VW, VH); }
+    if (TITLE_IMG.ok) { ctx.drawImage(TITLE_IMG.im, 0, 0, VW, VH); } else { ctx.fillStyle = "#050407"; ctx.fillRect(0, 0, VW, VH); } // (until the photo loads: plain dark, not the unfinished house showing through)
     const g = ctx.createLinearGradient(0, 0, 0, 170); g.addColorStop(0, "rgba(4,3,5,0.75)"); g.addColorStop(1, "rgba(4,3,5,0)"); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, 170);
     const g2 = ctx.createLinearGradient(0, VH - 150, 0, VH); g2.addColorStop(0, "rgba(4,3,5,0)"); g2.addColorStop(1, "rgba(4,3,5,0.85)"); ctx.fillStyle = g2; ctx.fillRect(0, VH - 150, VW, 150);
     ctx.save(); ctx.globalAlpha = k; ctx.shadowColor = "rgba(0,0,0,0.85)"; ctx.shadowBlur = 14;
