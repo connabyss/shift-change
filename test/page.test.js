@@ -212,7 +212,7 @@ test("the finale's screen break: the house tears out, the chase waits for it, a 
     let s = await S();
     assert.ok(s.tear !== null && s.tear < 1, "the screen break starts with the finale");
     assert.equal(s.voice, "Did you think I only lived in there?");
-    await page.waitForFunction(() => window.__dh.st().tear.t > 2, null, { timeout: 8000 });
+    await page.waitForFunction(() => window.__dh.st().tear.t > 3, null, { timeout: 8000 }); // CH 11-20: the break runs slower now, so it can be watched
     const s2 = await S();
     assert.equal(s2.ft, 0, "the chase waits while the house is out of its window");
     assert.equal(s2.sh, s.sh, "and the shadow waits too");
@@ -504,13 +504,15 @@ test("floor 1 has no counter-moves; floor 3's lock waits for the door; the chase
     await page.evaluate(() => { window.__dh.st().tear.t = 99; });
     await page.waitForFunction(() => !window.__dh.st().tear, null, { timeout: 4000 });
     assert.ok(await page.evaluate(() => { const st = window.__dh.st(); return !!window.__dh.path(st.g, st.shadow.id, st.player.id); }), "the chase starts with the shadow able to reach you");
-    // caught in the chase: you stay put, it's flung away
+    // caught in the chase (CH 11-20: "it just let me go"): no drag back and no game over, but it costs a grab and
+    // you're thrown clear of it. The first 3 s after unlocking are safe, so the test skips past them.
     await page.waitForFunction(() => !window.__dh.st().anim, null, { timeout: 4000 }); // the house finishes turning over
-    const c = await page.evaluate(() => { const st = window.__dh.st(); const me = st.player.id; st.player.way = null; st.shadow.id = me; st.shadow.fx = st.player.fx; st.shadow.way = null; return me; });
-    await page.waitForFunction((me) => window.__dh.st().shadow.id !== me || window.__dh.st().scene !== "play", c, { timeout: 4000 });
-    const after = await page.evaluate(() => { const st = window.__dh.st(); return { scene: st.scene, me: st.player.id, sh: st.shadow.id }; });
+    const c = await page.evaluate(() => { const st = window.__dh.st(); st.unlockAt = -99; const me = st.player.id; st.player.way = null; st.shadow.id = me; st.shadow.fx = st.player.fx; st.shadow.way = null; return { me, grabs: st.grabs }; });
+    await page.waitForFunction((g) => window.__dh.st().grabs > g || window.__dh.st().scene !== "play", c.grabs, { timeout: 4000 });
+    const after = await page.evaluate(() => { const st = window.__dh.st(); return { scene: st.scene, me: st.player.id, sh: st.shadow.id, grabs: st.grabs }; });
     assert.equal(after.scene, "play", "no drag back");
-    assert.equal(after.me, c); assert.notEqual(after.sh, c);
+    assert.equal(after.grabs, c.grabs + 1, "the grab counts");
+    assert.notEqual(after.me, after.sh, "and you're apart again");
     // the front door holds shut while it's still chasing
     await page.evaluate(() => { const st = window.__dh.st(); st.player.id = st.g[2][0].id; st.player.way = null; st.shadow.timer = 99; st.shadow.way = null; window.__dh.walk(st.g[2][0].id, true); });
     await page.waitForFunction(() => !window.__dh.st().player.way, null, { timeout: 4000 });
@@ -632,7 +634,7 @@ test("never a dead floor: after a grab, if no way out is left, the house puts th
 
 // Playtest round 1 (11-19): both blind testers quit on floor 2. The house's next move made the hint wrong, the page
 // changed under a click, a grab felt like the house reshuffled, and "no way there" never said why.
-test("floor 2 fairness: a hint holds the house off, reading holds its move, a grab keeps the rooms, no way says why", { skip }, async () => {
+test("floor 2 fairness: a hint holds the house off, reading holds its move, a grab costs a step, no way says why", { skip }, async () => {
   const { page, errors, close } = await open("/?seed=4242");
   try {
     const r = await page.evaluate(() => {
@@ -653,13 +655,14 @@ test("floor 2 fairness: a hint holds the house off, reading holds its move, a gr
         D.houseTick(0.5); out.waited = !!st.houseNext;
         st.hover = null; D.houseTick(0.05); out.landed = !st.houseNext; break;
       }
-      // a grab: back to the start, but the rooms stay where they were
-      D.newGame(99, 2); D.begin(); const st = D.st(); const before = st.g.flat().map((r) => r.id).join();
-      if (D.solve(st.g, st.h.startId, st.h.lockIds, st.unlocked, 4)) { D.dragBack(); out.same = st.g.flat().map((r) => r.id).join() === before; } else out.same = true;
+      // a grab (CH 11-20: "it just let me go"): it costs you, the house changes a step and throws you clear, but the floor stays winnable
+      D.newGame(99, 2); D.begin(); const st = D.st(); const ed = st.edits || 0, gr = st.grabs || 0; st.shadow.id = st.player.id;
+      D.dragBack(); out.cost = (st.grabs || 0) === gr + 1; out.away = st.player.id !== st.shadow.id;
+      out.same = !!D.solve(st.g, st.player.id, st.h.lockIds, st.unlocked, 8);
       // a room out of reach says what's in the way
       const far = st.g.flat().find((x) => !D.reach(st.g, st.player.id).has(x.id));
       out.why = far ? D.whyNoWay(st.player.id, far.id) : "No way there yet: (all in reach)";
-      // you follow the hint: the house lets that move go without a reply
+      // you follow the hint: the house still answers (CH 11-20: following hints made the house never move)
       out.spared = null;
       for (const seed of [99, 1, 2, 3, 5, 7, 11, 13, 17, 19]) {
         D.newGame(seed, 2); D.begin(); const s2 = D.st(); s2.shadow.mode = "hunt"; D.hint(); const h = s2.hint;
@@ -671,13 +674,15 @@ test("floor 2 fairness: a hint holds the house off, reading holds its move, a gr
       }
       return out;
     });
-    assert.equal(r.spared, true, "following the hint gets no reply from the house");
-    assert.notEqual(r.nextReplies, false, "and the move after that does");
+    assert.notEqual(r.spared, true, "following the hint still gets a reply from the house");
+    assert.notEqual(r.nextReplies, false, "and so does the move after that");
     assert.ok(r.held > 0, "some floor had a hint that held the house off");
     assert.ok(r.after > 0, "and the house moves again once the hint is old");
     assert.ok(r.waited, "the house's move waits while you're pointing at a word");
     assert.ok(r.landed, "and lands once you look away");
-    assert.ok(r.same, "a grab doesn't reshuffle the rooms");
+    assert.ok(r.cost, "a grab counts against you");
+    assert.ok(r.away, "and throws you away from the shadow");
+    assert.ok(r.same, "and the floor can still be won after it");
     assert.match(r.why, /^No way there yet: .*(door|ladder|hole|wall|reach)/);
     assert.deepEqual(errors, []);
   } finally { await close(); }

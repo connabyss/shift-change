@@ -5,7 +5,7 @@
 import { lerp, clamp, shadow } from "./art.js";
 
 // seconds: cracks, zoom out, rooms tear out, it shifts your desktop, the shadow rises, rooms slam back, zoom in
-export const TEAR = { crack: 0.6, out: 1.5, tear: 2.7, shift: 3.1, rise: 3.5, hold: 5.2, slam: 5.8, len: 6.6 };
+export const TEAR = { crack: 1.0, out: 2.6, tear: 4.4, shift: 5.1, rise: 5.8, hold: 8.6, slam: 9.4, len: 10.6 }; // (CH 11-19: "way too fast to enjoy": about 1.6x slower; a click still skips to the slam)
 const ease = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 const easeOut = (t) => 1 - Math.pow(1 - t, 3);
 const easeIn = (t) => t * t * t;
