@@ -134,9 +134,10 @@ function buildWay(w, ids, end) {
   pts.push(end || { id: ids[ids.length - 1], fx: 0.5 });
   return { pts, seg: 0, t: 0 };
 }
+const FEET_PHOTO = 7; // feet above the room's bottom edge in the photographed rooms: the floor's middle depth there
 function screenPos(id, fx) {
   const p = find(st.g, id), off = bandOffset(p);
-  return [HX + p.x * CW + off[0] + 8 + fx * (CW - 16), HY + p.y * CH + off[1] + CH - 22];
+  return [HX + p.x * CW + off[0] + 8 + fx * (CW - 16), HY + p.y * CH + off[1] + CH - (plates() ? FEET_PHOTO : 22)]; // (photographed rooms: on the floor at mid-depth, CH 11-19 "floating above floor")
 }
 function walkerPos(w) {
   if (!w.way) return screenPos(w.id, w.fx);
@@ -1163,6 +1164,7 @@ const hash01 = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; retu
 // taped to the desk. The paper is a photograph (assets/sheet/, path-traced in Blender); everything printed on it is
 // drawn here, so it can change. Each step in your room is a choice: tick a box to change the house.
 const SX = PX - 16, SY = 22, SHW = PW + 26, SHH = VH - 44; // the sheet's rect (304 x 556)
+const TITLE_IMG = { im: new Image(), ok: false }; TITLE_IMG.im.onload = () => { TITLE_IMG.ok = true; }; TITLE_IMG.im.src = "assets/title/house.jpg";
 const SHEET = { img: {}, ok: {} };
 for (const k of ["blank", "slip"]) { const im = new Image(); im.onload = () => { SHEET.ok[k] = true; }; im.src = `assets/sheet/${k}.png`; SHEET.img[k] = im; }
 const sheetReady = (k = "blank") => !!SHEET.ok[k];
@@ -1449,22 +1451,21 @@ function centerWrap(text, y, maxW, lh, font, color) {
 function centerText(text, y, font, color) { ctx.font = font; ctx.fillStyle = color; ctx.textAlign = "center"; ctx.fillText(text, VW / 2, y); ctx.textAlign = "left"; }
 function drawScenes() {
   if (st.scene === "title") {
-    // the title card: a typed sheet held up in front of the dark house
-    ctx.fillStyle = "rgba(5,4,7,0.66)"; ctx.fillRect(0, 0, VW, VH);
-    const back = lastEnding();
-    paper(ctx, 190, 96, 580, 440, { seed: 7 });
-    inInk(() => {
-      centerText("The Shifting House", 192, `58px ${TITLE}`, INK);
-      ctx.fillStyle = "rgba(60,46,34,0.35)"; ctx.fillRect(330, 220, 300, 1);
-      if (awayLine) centerText(awayLine, 254, `italic 21px ${SERIF}`, RED); else centerText(back === "free" ? "Nobody home. Or so it says." : back === "keep" ? "Welcome back. It kept your room just as you left it." : "You built this house. It never let you leave.", 254, `italic 21px ${SERIF}`, back ? RED : DIM);
-      centerText("Click a room to walk there.", 324, `20px ${MONO}`, INK);
-      centerText("Tick a box on the sheet to change the house.", 356, `20px ${MONO}`, INK);
-      centerText("Then it changes something back, in red.", 388, `20px ${MONO}`, RED);
-      centerText("P pause   ·   R restart floor   ·   M sound", 430, `15px ${MONO}`, DIM);
-      ctx.font = `28px ${MONO}`; const bw = ctx.measureText("Click to begin").width;
-      centerText("Click to begin", 494, `28px ${MONO}`, RED);
-      pencil(ctx, { x: VW / 2 - bw / 2 - 34, y: 468, w: bw + 68, h: 38 }, Math.sin(st.t * 3) > -0.3);
-    });
+    // the title: the doll's house photographed on its desk at night (assets/title/, path-traced), the name over it
+    const back = lastEnding(), k = clamp(st.t / 1.6, 0, 1);
+    if (TITLE_IMG.ok) { ctx.drawImage(TITLE_IMG.im, 0, 0, VW, VH); } else { ctx.fillStyle = "rgba(5,4,7,0.9)"; ctx.fillRect(0, 0, VW, VH); }
+    const g = ctx.createLinearGradient(0, 0, 0, 170); g.addColorStop(0, "rgba(4,3,5,0.75)"); g.addColorStop(1, "rgba(4,3,5,0)"); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, 170);
+    const g2 = ctx.createLinearGradient(0, VH - 150, 0, VH); g2.addColorStop(0, "rgba(4,3,5,0)"); g2.addColorStop(1, "rgba(4,3,5,0.85)"); ctx.fillStyle = g2; ctx.fillRect(0, VH - 150, VW, 150);
+    ctx.save(); ctx.globalAlpha = k; ctx.shadowColor = "rgba(0,0,0,0.85)"; ctx.shadowBlur = 14;
+    centerText("The Shifting House", 80, `60px ${TITLE}`, "#efe3c8");
+    const tag = awayLine || (back === "free" ? "Nobody home. Or so it says." : back === "keep" ? "Welcome back. It kept your room just as you left it." : "You built this house. It never let you leave.");
+    centerText(tag, 118, `italic 20px ${SERIF}`, "#e0917c");
+    ctx.globalAlpha = k * clamp((st.t - 1) / 1, 0, 1);
+    centerText("Click a room to walk there. Tick a box on the sheet to change the house.", VH - 74, `italic 17px ${SERIF}`, "rgba(239,227,200,0.82)");
+    ctx.globalAlpha = k * (0.55 + 0.45 * Math.sin(st.t * 2.4));
+    centerText("click anywhere to begin", VH - 42, `italic 22px ${SERIF}`, "#efe3c8");
+    ctx.globalAlpha = k * 0.5; centerText("P pause  ·  R restart floor  ·  M sound", VH - 16, `13px ${SERIF}`, "#efe3c8");
+    ctx.restore();
   } else if (st.scene === "caught") {
     const k = st.caughtT;
     ctx.fillStyle = k < 0.15 ? "rgba(160,20,20,0.6)" : `rgba(0,0,0,${Math.min(0.94, k * 1.5)})`; ctx.fillRect(0, 0, VW, VH);
@@ -2001,6 +2002,7 @@ requestAnimationFrame(frame);
 
 // hooks for automated checks
 window.__dh = {
+  screenPos: (id, fx) => screenPos(id, fx),
   pickHouseMove: () => pickHouseMove(), houseMove: (m) => performEdit(m.id, m.li, m.dir, true), houseMoves, st: () => st, begin: () => { st.scene = "play"; }, choose: (w) => choose(w), say: (k) => say(k), choiceRects: () => choiceRects, nextFloor: () => nextFloor(), solve, hint: () => doHint(), edit: (li, d) => doEdit(li, d), edits, path, walk: (id, exit) => walkTo(id, exit, 0, 0),
   reach, find, byId, clone, applyEdit, newGame, muted: () => sfx.isMuted(), sticky: () => sticky, gag: () => ({ gag: !!st.gag, nudged: !!st.nudged, sign: !!st.sign, sticker: !!st.sticker }), undone: () => undone, undo: () => undo(), line: (t) => sayLine(t), hush: () => { st.voice = null; st.voiceQ = []; st.quiet = 99; st.sign = st.sticker = null; }, lift: () => lift(), junk: () => junk.length, tick: (dt, n) => { for (let i = 0; i < n; i++) update(dt); }, render: () => render(), upright: () => upright.matches, dragBack: () => dragBack(), previewLit: () => [...previewLit()], deskHit: desk.deskHit, shiftK: () => shiftK, goneFor, openDesk: () => openDesk(), trapped: (b) => trapped(b), awayLine: () => awayLine, calm: () => CALM, flash: () => flash(),
   plates: () => plates(), in3d: () => in3d(), info3d: () => dh.info(), roomAt3d: (id) => dh.roomAt(id), draw3d: () => draw3d(), scene3d: () => dh.forExport(), // (stills: the 3D picture alone, no page or buttons on top)

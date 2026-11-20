@@ -871,7 +871,7 @@ test("a desktop window that's tall and narrow still plays (the sideways card is 
 
 // The look: the house's code is typed on a cream page beside the house (not a dark editor box), and the title
 // card is a page too. Checks the pixels, so it fails if the panel goes back to the old dark box.
-test("the code panel and the title card are typed paper", { skip }, async () => {
+test("the sheet is paper and the title is the photographed house", { skip }, async () => {
   const server = await serve(), browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
@@ -881,7 +881,8 @@ test("the code panel and the title card are typed paper", { skip }, async () => 
     await page.waitForFunction(() => window.__dh);
     const px = (x, y) => page.evaluate(([x, y]) => { window.__dh.render(); const c = document.getElementById("game"); return [...c.getContext("2d").getImageData(x * 2, y * 2, 1, 1).data]; }, [x, y]);
     const paperish = ([r, g, b]) => r > 170 && g > 150 && b > 110 && r > b;
-    assert.ok(paperish(await px(480, 300)), "the title card is paper"); // middle of the title card
+    const lit = await page.evaluate(() => { window.__dh.render(); const d = document.getElementById("game").getContext("2d").getImageData(600, 400, 720, 500).data; let s = 0; for (let i = 0; i < d.length; i += 4) s += d[i] + d[i + 1] + d[i + 2]; return s / (d.length / 4) / 3; });
+    assert.ok(lit > 25, `the title is the photographed doll's house, not a dark screen (${Math.round(lit)})`);
     await page.evaluate(() => { window.__dh.begin(); window.__dh.hush(); });
     await page.waitForTimeout(300);
     assert.ok(paperish(await px(720, 420)), "the sheet is paper"); // an empty stretch of the sheet
@@ -1083,6 +1084,9 @@ test("the photographed house: each room's picture sits in its slot, slides with 
       assert.deepEqual(at(a, r.name), [[cell[0], cell[1], 1]], `${r.name}'s picture is in its own slot`);
       assert.equal(a.plates.filter((t) => t === r.name).length, 1, `${r.name}'s name plate is drawn once`);
     }
+    // the figures stand on the photographed floor, not above it (CH 11-19: "character floating above floor")
+    const feet = await page.evaluate(() => { const D = window.__dh, st = D.st(), p = D.find(st.g, st.player.id); return { y: D.screenPos(st.player.id, 0.5)[1], bottom: 74 + (p.y + 1) * 146 }; });
+    assert.ok(feet.bottom - feet.y <= 10, `the doll's feet are on the floor (${feet.bottom - feet.y}px above the room's bottom edge)`);
     // a row slides east: once it settles, each of its rooms' pictures is one slot along (the end one wraps round)
     const row = await page.evaluate(() => { const D = window.__dh, st = D.st(), p = D.find(st.g, st.player.id), li = D.byId(st.g, st.player.id).lines.findIndex((l) => l.kind === "row"); if (li < 0) return null; D.edit(li, 1); D.tick(1 / 60, 150); return p.y; });
     assert.notEqual(row, null, "the start room has a row line");
