@@ -19,8 +19,10 @@ export function drawDesk(ctx, G, d, pages, words) {
   desktop(ctx, G, d.open);
   if (d.bin != null) spill(ctx, G, d.bin);
   if (d.open === "notes.txt") notes(ctx, G, pages, words);
-  ctx.font = `italic 19px "IM Fell English", Georgia, serif`; ctx.textAlign = "center"; ctx.fillStyle = `rgba(242,242,244,${0.4 + 0.25 * Math.sin(d.t * 3)})`;
-  ctx.fillText(words.desk, VW / 2 + 40, VH - 52); ctx.textAlign = "left";
+  // the one thing to do here, readable over the photo
+  ctx.font = `italic 21px "Libre Caslon Text", Georgia, serif`; ctx.textAlign = "center";
+  ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.9)"; ctx.shadowBlur = 10; ctx.fillStyle = `rgba(239,227,200,${0.82 + 0.18 * Math.sin(d.t * 3)})`;
+  ctx.fillText(words.desk, VW / 2 + 40, VH - 56); ctx.restore(); ctx.textAlign = "left";
 }
 
 // The Bin spills: every copy of the house comes pouring out across the desktop, and the newest is still warm.
@@ -30,13 +32,13 @@ function spill(ctx, G, t) {
     const k = ease(clamp((t - i * 0.009) / 0.7, 0, 1)); if (k <= 0) continue;
     const tx = 110 + rnd(i) * (VW - 170), ty = 20 + Math.pow(rnd(i + 400), 0.6) * (VH - 110);
     const x = bx + (tx - bx) * k, y = by + (ty - by) * k - Math.sin(k * Math.PI) * 120;
-    ctx.save(); ctx.translate(x, y); ctx.rotate((rnd(i + 900) - 0.5) * 1.2 * k); fileIcon(ctx, -10, -12, "#ffd36a", 0.5); ctx.restore();
+    ctx.save(); ctx.translate(x, y); ctx.rotate((rnd(i + 900) - 0.5) * 1.2 * k); fileIcon(ctx, -10, -12, "#e9d9b4", 0.5); ctx.restore();
   }
   // the last one, on top
   const k = ease(clamp((t - BIN_COUNT * 0.009 - 0.2) / 0.6, 0, 1));
   if (k > 0) {
     const x = bx + (VW / 2 + 40 - bx) * k, y = by + (VH / 2 - 40 - by) * k - Math.sin(k * Math.PI) * 160;
-    ctx.save(); ctx.shadowColor = "#ffd36a"; ctx.shadowBlur = 24; fileIcon(ctx, x - 30, y - 36, "#ffd36a", 1.5); ctx.restore();
+    ctx.save(); ctx.shadowColor = "#ffd9a0"; ctx.shadowBlur = 24; fileIcon(ctx, x - 30, y - 36, "#f3e4c0", 1.5); ctx.restore();
     ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(x - 64, y + 42, 128, 22); label(ctx, `house (${BIN_COUNT + 1}).js`, x, y + 58);
   }
 }

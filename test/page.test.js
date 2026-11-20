@@ -289,7 +289,7 @@ test("after the ending: the credits (the shadow edits its line), then the deskto
     await page.waitForTimeout(100);
     await page.mouse.click(...(await at(480, 300)));
     assert.equal(await page.evaluate(() => window.__dh.st().scene), "credits");
-    await page.evaluate(() => { window.__dh.st().credT = 8; }); await page.waitForTimeout(100);
+    await page.evaluate(() => { window.__dh.st().credT = 12; }); await page.waitForTimeout(100); // (a click waits for the reveal to finish)
     await page.mouse.click(...(await at(480, 300)));
     assert.equal(await page.evaluate(() => window.__dh.st().scene), "desk");
     assert.equal(await page.title(), "Desktop");
