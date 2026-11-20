@@ -34,7 +34,7 @@ test("row.shift slides the whole row and wraps round; the other word puts it bac
   assert.deepEqual(ids(g), before);
 });
 
-test("swap trades a room with its neighbour, wrapping at the end of the row", () => {
+test("swap trades a room with its neighbor, wrapping at the end of the row", () => {
   const h = makeHouse(5, 2), g = clone(h.g), before = ids(g);
   const r = g[0][3]; r.lines = [{ kind: "swap" }];
   applyEdit(g, r.id, 0, null, 1); // east of the last room is the first room
@@ -122,7 +122,7 @@ test("each floor's torn page lies in a room you can reach on the way out, not yo
 });
 
 // The house plays back, but never by carrying you off: its moves are in other rooms, and never slide your row,
-// your column, or swap your room. Its favourite moves bring the shadow closer.
+// your column, or swap your room. Its favorite moves bring the shadow closer.
 test("the house's own moves never move the room you're in, and the best ones bring the shadow closer", () => {
   for (const [floor, seed] of [[1, 1], [2, 1000], [2, 5000]]) {
     const h = pickHouse(floor, seed), me = h.startId, pm = find(h.g, me), moves = houseMoves(h.g, me, h.shadowId, true);

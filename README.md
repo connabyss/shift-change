@@ -8,7 +8,7 @@ of rooms grinds past with you inside. Reach a room with a red lock, change its w
 the shadow finds you.
 
 Mouse only, one hand. (Press Shift five times and the house has something to say about Sticky Keys.) Click a room to walk there. Point at a word to see what it would do (the rooms you could walk to
-afterwards light up green), then click it. Under the house are buttons for Pause (`P` or `Esc`), Restart floor (`R`, the same house back as it began), Hint (`H`) and Sound (`M`).
+afterward light up green), then click it. Under the house are buttons for Pause (`P` or `Esc`), Restart floor (`R`, the same house back as it began), Hint (`H`) and Sound (`M`).
 
 - **The words:**
   - `this.row.shift(west|east)` / `this.column.shift(up|down)`: that row or column of rooms slides one step, and you ride along.
@@ -20,7 +20,7 @@ afterwards light up green), then click it. Under the house are buttons for Pause
 - **The house plays back** (from floor 2; floor 1 is calm). After each of your moves it makes one of its own in another room: it slides a row, swaps
   a room or shuts a door, usually to bring the shadow closer. It types the line in red a moment before it happens, so
   you can see it coming. It never moves the room you're in, and never leaves you with no way out. Sit still too long
-  and it moves anyway. From floor 2 it likes to copy your favourite words.
+  and it moves anyway. From floor 2 it likes to copy your favorite words.
 - **One new thing at a time.** Floor 1 is just you and the house; the shadow sleeps through it. Floor 2 wakes the
   shadow, floor 3 brings the flip and the finale. During play the only words are the house's own moves; torn pages
   are read on the screen between floors.
@@ -43,7 +43,7 @@ afterwards light up green), then click it. Under the house are buttons for Pause
 - **After the ending.** The credits roll, and the shadow edits its own line until it's bigger than yours. Then you're
   left on the house's desktop: open `notes.txt` (the torn pages you found), click the Bin, or click `house.js` to
   build a new house.
-- **It has a sense of humour.** Try `Ctrl+Z` (`Cmd+Z` on a Mac) three times. Hold `Shift`. Ask for a lot of hints.
+- **It has a sense of humor.** Try `Ctrl+Z` (`Cmd+Z` on a Mac) three times. Hold `Shift`. Ask for a lot of hints.
   Shut the shadow in. Leave and come back later: it counts. Open the browser's developer console. Only three things
   are saved, in your own browser: the time you left, which house you were in, and which ending you got last.
 - **The story.** The house talks back now and then, in a line typed under it. Each floor starts with a note from its

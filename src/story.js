@@ -61,7 +61,7 @@ export const FINALE = {
   notYet: ["Not yet.", "The door's mine too.", "Run a little longer."],
 };
 
-// The house has a sense of humour. It never says so.
+// The house has a sense of humor. It never says so.
 export const JOKES = {
   // Ctrl+Z (Cmd+Z on a Mac): it undoes the moon, then gravity, then your undo
   undo: ["Undo: the moon.", "Undo: gravity. Hold on.", "I undid your undo. You're welcome."],
