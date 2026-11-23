@@ -73,6 +73,8 @@ function burst(dur, vol, type, f1, f2 = f1, delay = 0, q = 0.8) {
 }
 
 // ---- things that happen
+// a typewriter key: a sharp click and the thud of the type bar
+export function clack(v = 1) { burst(0.03, 0.32 * v, "bandpass", 2600 + Math.random() * 600, 1800, 0, 2.5); burst(0.05, 0.22 * v, "lowpass", 380, 160); }
 export function step() { burst(0.07, 0.12, "lowpass", 260); }
 export function slide() { tone("triangle", 90, 28, 0.8, 0.4); burst(0.8, 0.3, "lowpass", 500, 160); creak(0.25); }
 export function swap() { burst(0.6, 0.25, "bandpass", 300, 1800, 0, 1.2); tone("sine", 140, 70, 0.6, 0.15); }

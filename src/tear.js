@@ -5,7 +5,7 @@
 import { lerp, clamp, shadow } from "./art.js";
 
 // seconds: cracks, zoom out, rooms tear out, it shifts your desktop, the shadow rises, rooms slam back, zoom in
-export const TEAR = { crack: 0.6, out: 1.5, tear: 2.7, shift: 3.1, rise: 3.5, hold: 5.2, slam: 5.8, len: 6.6 };
+export const TEAR = { crack: 1.0, out: 2.6, tear: 4.4, shift: 5.1, rise: 5.8, hold: 8.6, slam: 9.4, len: 10.6 }; // (CH 11-19: "way too fast to enjoy": about 1.6x slower; a click still skips to the slam)
 const ease = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 const easeOut = (t) => 1 - Math.pow(1 - t, 3);
 const easeIn = (t) => t * t * t;
@@ -158,12 +158,15 @@ function shiftedDesktop(ctx, G, z, t) {
   }
   if (z < 1) { ctx.fillStyle = `rgba(0,0,0,${(1 - z) * 0.6})`; ctx.fillRect(0, 0, VW, VH); }
 }
-export const ICONS = [["house.js", "#ffd36a"], ["you.js", "#ff5a4e"], ["notes.txt", "#e8e4dc"], ["shadow.js", "#5d5a66"], ["Bin", "#9aa3ad"]];
+// file icons in the house's own paper and ink, not bright plastic colors
+export const ICONS = [["house.js", "#e9d9b4"], ["you.js", "#d9b0a0"], ["notes.txt", "#efe6d2"], ["shadow.js", "#4a4148"], ["Bin", "#9a9184"]];
 export const iconAt = (j) => ({ x: 26, y: 22 + j * 82, w: 50, h: 70 });
 export function fileIcon(ctx, x, y, col, k = 1) {
   ctx.save(); ctx.translate(x, y); ctx.scale(k, k);
-  ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(8, 0); ctx.lineTo(30, 0); ctx.lineTo(40, 10); ctx.lineTo(40, 48); ctx.lineTo(8, 48); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.fillRect(13, 20, 22, 2); ctx.fillRect(13, 27, 18, 2); ctx.fillRect(13, 34, 20, 2);
+  ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = 8; ctx.shadowOffsetY = 3;
+  ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(8, 0); ctx.lineTo(30, 0); ctx.lineTo(40, 10); ctx.lineTo(40, 48); ctx.lineTo(8, 48); ctx.closePath(); ctx.fill(); ctx.restore();
+  ctx.fillStyle = "rgba(0,0,0,0.18)"; ctx.beginPath(); ctx.moveTo(30, 0); ctx.lineTo(30, 10); ctx.lineTo(40, 10); ctx.closePath(); ctx.fill(); // the folded corner
+  ctx.fillStyle = "rgba(40,28,18,0.45)"; ctx.fillRect(13, 20, 22, 1.5); ctx.fillRect(13, 27, 18, 1.5); ctx.fillRect(13, 34, 20, 1.5);
   ctx.restore();
 }
 export function label(ctx, text, x, y) {
@@ -171,10 +174,16 @@ export function label(ctx, text, x, y) {
 }
 export function desktop(ctx, G, app = "house.js") {
   const { VW, VH } = G;
-  const wall = ctx.createLinearGradient(0, 0, VW, VH); wall.addColorStop(0, "#14304a"); wall.addColorStop(0.55, "#1d2440"); wall.addColorStop(1, "#2c1830");
-  ctx.fillStyle = wall; ctx.fillRect(-20, -20, VW + 40, VH + 40);
-  const glow = ctx.createRadialGradient(VW * 0.7, VH * 0.25, 20, VW * 0.7, VH * 0.25, 520); glow.addColorStop(0, "rgba(120,170,230,0.22)"); glow.addColorStop(1, "rgba(120,170,230,0)");
-  ctx.fillStyle = glow; ctx.fillRect(0, 0, VW, VH);
+  // the wallpaper is the builder's own photo of the doll's house on their desk (the title picture): they built it by
+  // hand, photographed it, and made the game on this computer
+  if (G.wall) {
+    ctx.drawImage(G.wall, -20, -20, VW + 40, VH + 40);
+    ctx.fillStyle = "rgba(6,5,8,0.38)"; ctx.fillRect(0, 0, VW, VH);
+    const side = ctx.createLinearGradient(0, 0, 180, 0); side.addColorStop(0, "rgba(6,5,8,0.55)"); side.addColorStop(1, "rgba(6,5,8,0)"); ctx.fillStyle = side; ctx.fillRect(0, 0, 180, VH);
+  } else {
+    const wall = ctx.createLinearGradient(0, 0, VW, VH); wall.addColorStop(0, "#1c1712"); wall.addColorStop(1, "#0c0a08");
+    ctx.fillStyle = wall; ctx.fillRect(-20, -20, VW + 40, VH + 40);
+  }
   // the icons down the left: the house knows what's on your desktop
   ICONS.forEach(([name, col], j) => { const { x, y } = iconAt(j); fileIcon(ctx, x, y, col); label(ctx, name, x + 24, y + 63); });
   // the taskbar, with today's real time on it
