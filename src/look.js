@@ -43,7 +43,7 @@ export const LOOK = {
   mono: '"Special Elite", "Courier New", monospace', title: '"IM Fell English SC", "IM Fell English", serif',
   // ink on paper (the panel and the cards); GRN is a dark green that still reads on cream
   panel: { INK: "#2a2118", DIM: "rgba(60,46,34,0.6)", YEL: "#a3261b", RED: "#b3261e", GRN: "#2f6b32" },
-  panelBg(ctx, x, y, w, h) { paper(ctx, x, y, w, h, {}); }, // (no coffee ring: it read as a stray grey circle over the text)
+  panelBg(ctx, x, y, w, h) { paper(ctx, x, y, w, h, {}); }, // (no coffee ring: it read as a stray gray circle over the text)
   mark(ctx, r, hot) { pencil(ctx, r, hot); },
 };
 export { woodFrame, beam };

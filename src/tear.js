@@ -158,7 +158,7 @@ function shiftedDesktop(ctx, G, z, t) {
   }
   if (z < 1) { ctx.fillStyle = `rgba(0,0,0,${(1 - z) * 0.6})`; ctx.fillRect(0, 0, VW, VH); }
 }
-// file icons in the house's own paper and ink, not bright plastic colours
+// file icons in the house's own paper and ink, not bright plastic colors
 export const ICONS = [["house.js", "#e9d9b4"], ["you.js", "#d9b0a0"], ["notes.txt", "#efe6d2"], ["shadow.js", "#4a4148"], ["Bin", "#9a9184"]];
 export const iconAt = (j) => ({ x: 26, y: 22 + j * 82, w: 50, h: 70 });
 export function fileIcon(ctx, x, y, col, k = 1) {

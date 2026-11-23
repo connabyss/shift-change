@@ -8,7 +8,7 @@ rooms grinds past with you inside. Reach a room with a red lock, tick its `UNLOC
 the burnt twin finds you.
 
 Mouse or touch, one hand. Click a room to walk there. Point at a box on the sheet to see what it would do (the rooms you
-could walk to afterwards light up), then click it. On a phone, tap a box once to see it and again to tick it. Under the
+could walk to afterward light up), then click it. On a phone, tap a box once to see it and again to tick it. Under the
 house are buttons for Pause (`P` or `Esc`), Restart floor (`R`, the same house back as it began), Hint (`H`) and Sound
 (`M`). (Press Shift five times and the house has something to say about Sticky Keys.)
 
@@ -37,7 +37,7 @@ house are buttons for Pause (`P` or `Esc`), Restart floor (`R`, the same house b
 - **After the ending.** The credits roll, and the twin edits its own line until it's bigger than yours. Then you're
   left on the house's desktop: open `notes.txt` (the torn pages you found), click the Bin, or click `house.js` to
   build a new house.
-- **It has a sense of humour.** Try `Ctrl+Z` (`Cmd+Z` on a Mac) three times. Hold `Shift`. Ask for a lot of hints.
+- **It has a sense of humor.** Try `Ctrl+Z` (`Cmd+Z` on a Mac) three times. Hold `Shift`. Ask for a lot of hints.
   Shut the twin in. Leave and come back later: it counts. Open the browser's developer console. Only three things
   are saved, in your own browser: the time you left, which house you were in, and which ending you got last.
 - **The story.** The house talks back now and then, on a torn strip of paper under it. Each floor

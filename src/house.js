@@ -10,7 +10,7 @@
 import { rng } from "./rng.js";
 
 export const W = 4, H = 3;
-export const NAMES = ["attic", "nursery", "study", "chapel", "parlour", "library", "gallery", "bath", "kitchen", "pantry", "cellar", "hall"];
+export const NAMES = ["attic", "nursery", "study", "chapel", "parlor", "library", "gallery", "bath", "kitchen", "pantry", "cellar", "hall"];
 export const PAL = [[96, 60, 54], [58, 74, 60], [88, 74, 46], [54, 60, 82], [82, 52, 66], [70, 64, 54]];
 export const FLOOR = [70, 50, 36];
 

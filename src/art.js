@@ -1,6 +1,6 @@
 // Everything drawn that isn't game logic: the night outside, the roof, wallpaper, the furniture each room's
 // name asks for, and the two figures. All of it is drawn with shapes, no image files.
-// `L` everywhere is how lit a room is (about 0.17 dark to 1 lit); every colour is multiplied by it.
+// `L` everywhere is how lit a room is (about 0.17 dark to 1 lit); every color is multiplied by it.
 
 export const lerp = (a, b, t) => a + (b - a) * t;
 export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -182,7 +182,7 @@ export function furniture(ctx, room, G, L, t) {
       if (L > 0.5) { const g = ctx.createRadialGradient(x + 30 * s, base - 20 * s - 6, 1, x + 30 * s, base - 20 * s - 6, 26); g.addColorStop(0, "rgba(190,255,190,0.25)"); g.addColorStop(1, "rgba(190,255,190,0)"); ctx.fillStyle = g; ctx.fillRect(x, base - 60, 70, 60); }
       break;
     }
-    case "parlour": {
+    case "parlor": {
       const x = at(0.55), w = 34 * s, h = 30 * s; ctx.fillStyle = C([70, 60, 56]); ctx.fillRect(x - 4, base - h - 4, w + 8, 4); ctx.fillRect(x, base - h, w, h);
       ctx.fillStyle = "#050405"; ctx.beginPath(); ctx.moveTo(x + 6, base); ctx.lineTo(x + 6, base - h + 12); ctx.arc(x + w / 2, base - h + 12, w / 2 - 6, Math.PI, 0); ctx.lineTo(x + w - 6, base); ctx.fill();
       for (let k = 0; k < 3; k++) { ctx.fillStyle = `rgba(255,${120 + k * 40},40,${0.7 - k * 0.15})`; ctx.beginPath(); ctx.ellipse(x + w / 2 + Math.sin(t * 7 + k) * 2, base - 5 - k * 3, 7 - k * 2, 6 + Math.sin(t * 11 + k) * 2, 0, 0, 7); ctx.fill(); }

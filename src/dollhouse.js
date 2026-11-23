@@ -45,7 +45,7 @@ function mat(id, rep, tint = 0xffffff, rough = 0.9, noRough = false) {
 // (soft painted pastels, like the photo still: wallpapers lightly tinted, the side walls a neighbouring pastel)
 const PAPER = {
   attic: ["Planks021", 0xb8a088, [1.5, 1], 0xc8b8a0], nursery: ["Wallpaper001A", 0xf0c8c0, [1, 1], 0xe0c0c8], study: ["Wallpaper002A", 0xf0c0b4, [1, 1], 0xe8b0b0],
-  chapel: ["ph_painted_plaster_wall", 0xe8b8c0, [1, 1], 0xd8b0c8], parlour: ["Wallpaper002B", 0xf0a8a8, [1, 1], 0xe0a0b0], library: ["Wallpaper002C", 0xa8a8d8, [1, 1], 0x9aa0c8],
+  chapel: ["ph_painted_plaster_wall", 0xe8b8c0, [1, 1], 0xd8b0c8], parlor: ["Wallpaper002B", 0xf0a8a8, [1, 1], 0xe0a0b0], library: ["Wallpaper002C", 0xa8a8d8, [1, 1], 0x9aa0c8],
   gallery: ["Wallpaper001C", 0xf0b8b0, [1, 1], 0xe0b0b8], bath: ["ph_plastered_wall_02", 0xc0d8d8, [1, 1], 0xb0c8d0], kitchen: ["ph_peeling_painted_wall", 0xe8e0cc, [1, 1], 0xb8c4cc],
   pantry: ["Wallpaper001B", 0xfae8c8, [1, 1], 0xf0dcc0], cellar: ["Bricks074", 0xc8a898, [2, 2], 0xb89888], hall: ["ph_beige_wall_001", 0xd8c8b0, [1, 1], 0xa8c0d8],
 };
@@ -71,7 +71,7 @@ function materials() {
   M.back = new THREE.MeshStandardMaterial({ color: 0x050507, roughness: 1 });
   M.brass = new THREE.MeshStandardMaterial({ color: 0xc8a050, metalness: 1, roughness: 0.35 });
   M.cord = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
-  for (const [name, [id, tint, rep, side]] of Object.entries(PAPER)) { M["wall_" + name] = mat(id, rep, tint, 0.9); M["floor_" + name] = (() => { const f = { attic: "ph_dark_wooden_planks", cellar: "ph_dark_wooden_planks", parlour: "ph_herringbone_parquet", library: "WoodFloor041", study: "WoodFloor051", nursery: "ph_wood_floor_worn", gallery: "ph_herringbone_parquet", hall: "ph_old_wooden_floor_01", kitchen: "ph_linoleum_brown", bath: "ph_linoleum_brown", pantry: "ph_wood_floor_worn", chapel: "ph_wood_floor_worn" }[name] || "ph_old_wooden_floor_01"; const m = mat(f, [1.3, 1.05], 0xd8ccc0, 0.85); m.normalScale.set(1.6, 1.6); return m; })(); M["side_" + name] = /^Bricks/.test(id) ? mat(id, [rep[0] * 0.8, rep[1]], side, 0.9) : mat(name.length % 2 ? "ph_painted_plaster_wall" : "ph_plastered_wall_02", [0.9, 1], new THREE.Color(side).multiplyScalar(1.15).getHex(), 1); } // side walls: photo-scanned painted plaster (Poly Haven), tinted
+  for (const [name, [id, tint, rep, side]] of Object.entries(PAPER)) { M["wall_" + name] = mat(id, rep, tint, 0.9); M["floor_" + name] = (() => { const f = { attic: "ph_dark_wooden_planks", cellar: "ph_dark_wooden_planks", parlor: "ph_herringbone_parquet", library: "WoodFloor041", study: "WoodFloor051", nursery: "ph_wood_floor_worn", gallery: "ph_herringbone_parquet", hall: "ph_old_wooden_floor_01", kitchen: "ph_linoleum_brown", bath: "ph_linoleum_brown", pantry: "ph_wood_floor_worn", chapel: "ph_wood_floor_worn" }[name] || "ph_old_wooden_floor_01"; const m = mat(f, [1.3, 1.05], 0xd8ccc0, 0.85); m.normalScale.set(1.6, 1.6); return m; })(); M["side_" + name] = /^Bricks/.test(id) ? mat(id, [rep[0] * 0.8, rep[1]], side, 0.9) : mat(name.length % 2 ? "ph_painted_plaster_wall" : "ph_plastered_wall_02", [0.9, 1], new THREE.Color(side).multiplyScalar(1.15).getHex(), 1); } // side walls: photo-scanned painted plaster (Poly Haven), tinted
   for (const k of Object.keys(M)) if (/^(wall|side)_/.test(k)) M[k].normalScale.set(2.2, 2.2);
   for (const k of Object.keys(M)) if (/^(wall|side|floor)_/.test(k) || ['ceil', 'slab', 'wains', 'floor'].includes(k)) M[k].envMapIntensity = 0.25; // (inside the rooms the room's daylight barely reaches: the lamps do the work, so no two rooms look alike) // (old paper over lumpy plaster: the surface catches the light)
   M.shade = new THREE.MeshStandardMaterial({ map: tex("Fabric030", "Color", [2, 1]), normalMap: tex("Fabric030", "NormalGL", [2, 1]), color: 0xe8d8b8, roughness: 0.95, side: THREE.DoubleSide, emissive: 0xffb060, emissiveIntensity: 0 });
@@ -133,7 +133,7 @@ function grime(seed, side) {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   return new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, toneMapped: false });
 }
-// dust and wear on each floor: grey dust gathered along the skirting and in the corners, a worn path, crumbs, fluff
+// dust and wear on each floor: gray dust gathered along the skirting and in the corners, a worn path, crumbs, fluff
 function dust(seed) {
   const c = document.createElement("canvas"); c.width = 512; c.height = 416; const x = c.getContext("2d");
   let q = seed * 41 + 11; const rn = () => { q = (q * 16807) % 2147483647; return q / 2147483647; };
@@ -190,7 +190,7 @@ const FURNISH = {
   nursery: [["Rockingchair_01", { x: -0.55, h: 1.0, ry: 0.5 }], ["horse_statue_01", { x: 0.2, h: 0.45, z: -0.6 }], ["carved_wooden_elephant", { x: 0.3, h: 0.22, z: 0.45, ry: -0.7 }], ["painted_wooden_shelves", { x: -1.05, h: 1.2, z: -1.05 }], ["rubber_duck_toy", { x: -1.05, h: 0.1, y: 0.62, z: -1.05 }], ["wicker_basket_01", { x: -0.2, h: 0.28, z: -0.85 }]],
   study: [["ClassicConsole_01", { x: -0.2, h: 0.85 }], ["vintage_oil_lamp", { x: 0.0, h: 0.38, y: 0.86, z: -0.75 }], ["WoodenChair_01", { x: -0.2, h: 0.95, z: -0.05, ry: Math.PI * 0.9 }], ["fancy_picture_frame_01", { x: 0.3, h: 0.7, y: 1.2, z: -1.24 }], ["wooden_bookshelf_worn", { x: -1.05, h: 1.6, z: -1.0 }]],
   chapel: [["brass_candleholders", { x: 0, h: 0.4, z: -0.95 }], ["painted_wooden_bench", { x: -0.6, h: 0.45, z: 0.35, ry: Math.PI }], ["brass_vase_01", { x: -0.6, h: 0.3, z: -1.0 }], ["wooden_candlestick", { x: -1.1, h: 1.2, z: -0.8 }], ["wooden_candlestick", { x: 0.35, h: 1.2, z: -0.8 }]],
-  parlour: [["ArmChair_01", { x: -0.9, h: 1.0, ry: 0.4 }], ["gothic_coffee_table", { x: -0.15, h: 0.42, z: 0.2 }], ["tea_set_01", { x: -0.15, h: 0.16, y: 0.42, z: 0.2 }], ["mantel_clock_01", { x: 0.15, h: 0.3, y: 1.08, z: -1.08 }], ["Chandelier_01", { x: -0.3, h: 0.6, y: 0, z: -0.1, hang: true }]],
+  parlor: [["ArmChair_01", { x: -0.9, h: 1.0, ry: 0.4 }], ["gothic_coffee_table", { x: -0.15, h: 0.42, z: 0.2 }], ["tea_set_01", { x: -0.15, h: 0.16, y: 0.42, z: 0.2 }], ["mantel_clock_01", { x: 0.15, h: 0.3, y: 1.08, z: -1.08 }], ["Chandelier_01", { x: -0.3, h: 0.6, y: 0, z: -0.1, hang: true }]],
   library: [["GothicCabinet_01", { x: -0.8, h: 2.0, z: -1.0 }], ["wooden_bookshelf_worn", { x: 0.3, h: 1.9, z: -1.05 }], ["ArmChair_01", { x: 0.3, h: 0.95, ry: -0.6, z: 0.25 }], ["book_encyclopedia_set_01", { x: -0.6, h: 0.2, z: 0.4, ry: 0.4 }]],
   gallery: [["marble_bust_01", { x: -0.6, h: 0.75 }], ["gothic_statue", { x: 0.2, h: 1.0, z: -0.85 }], ["fancy_picture_frame_01", { x: -0.6, h: 0.55, y: 1.45, z: -1.24 }], ["fancy_picture_frame_02", { x: 0.25, h: 0.6, y: 1.6, z: -1.24 }], ["painted_wooden_bench", { x: -0.2, h: 0.45, z: 0.45 }]],
   bath: [["painted_wooden_nightstand", { x: -0.6, h: 0.75, z: -1.0 }], ["wooden_bowl_01", { x: -0.6, h: 0.12, y: 0.75, z: -1.0 }], ["jug_01", { x: -0.35, h: 0.3, y: 0.75, z: -1.0 }], ["ornate_mirror_01", { x: -0.6, h: 0.75, y: 1.15, z: -1.24 }], ["wooden_bucket_01", { x: 0.15, h: 0.45, z: -0.6 }], ["wooden_stool_01", { x: -1.05, h: 0.45, z: 0.1 }], ["rubber_duck_toy", { x: 0.15, h: 0.1, y: 0.45, z: -0.6 }]],
@@ -199,7 +199,7 @@ const FURNISH = {
   cellar: [["wine_barrel_01", { x: -0.95, h: 0.85, z: -0.8, ry: 1.57 }], ["wine_barrel_01", { x: -0.1, h: 0.85, z: -0.85, ry: 1.57 }], ["wine_barrel_01", { x: -0.55, h: 0.8, y: 0.86, z: -0.85, ry: 1.57 }], ["wooden_crate_01", { x: 0.35, h: 0.5, z: -0.9 }], ["wine_bottles_01", { x: 0.3, h: 0.3, z: 0.3 }]],
   hall: [["vintage_grandfather_clock_01", { x: 0.15, h: 2.0, z: -1.05 }], ["ornate_mirror_01", { x: -0.6, h: 1.0, y: 0.95, z: -1.24 }], ["ClassicNightstand_01", { x: -0.6, h: 0.7, z: -0.95 }], ["Lantern_01", { x: -0.6, h: 0.3, y: 0.7, z: -0.95 }], ["painted_wooden_bench", { x: -0.9, h: 0.45, z: 0.35, ry: Math.PI / 2 }]],
 };
-const RUGS = { parlour: [1.9, 1.3, 0x7a2a2a], nursery: [1.4, 1.0, 0x6a7a9a], study: [1.6, 1.1, 0x3a4a3a], library: [1.3, 1.0, 0x5a2a3a], hall: [0.8, 1.6, 0x6a3020] };
+const RUGS = { parlor: [1.9, 1.3, 0x7a2a2a], nursery: [1.4, 1.0, 0x6a7a9a], study: [1.6, 1.1, 0x3a4a3a], library: [1.3, 1.0, 0x5a2a3a], hall: [0.8, 1.6, 0x6a3020] };
 
 // the shell every room keeps (back wall, floor, ceiling, frame, nameplate, lamp) plus its furniture
 function buildRoom(room) {
@@ -219,7 +219,7 @@ function buildRoom(room) {
   for (const [n, o] of FURNISH[name] || []) {
     if (o.hang) { const m = put(n, inner, { ...o, y: 0 }); if (m) m.position.y += RH - T - o.h - 0.35; } else put(n, inner, o);
   }
-  if (name === "parlour") fireplace(inner);
+  if (name === "parlor") fireplace(inner);
   // books on the worn bookshelves (board heights measured from the model)
   for (const [n, o] of FURNISH[name] || []) if (n === "wooden_bookshelf_worn") {
     const k = o.h / 2.06; [0.11, 0.39, 0.67, 0.96, 1.28].forEach((by, i) => put("book_encyclopedia_set_01", inner, { x: o.x + ((i % 3) - 1) * 0.1 * k, h: 0.22 * k, y: by * k + 0.005, z: o.z + 0.02, ry: i % 2 ? 0.1 : -0.05 }));
@@ -692,7 +692,7 @@ function place(g, [px, py], rv, t) {
     // the photo: no two rooms lit alike. One bright, one dim, one with its lamp off, a couple lit only cold and blue as if by a window
   const md = PHOTO_ON && u.lamp ? u.lamp.userData.mood : 1, bl = lit * Math.min(1, md * 1.4);
   u.bulbM.emissiveIntensity = 3 * bl; u.bulbM.color.setHex(bl > 0.3 ? 0xffe0a0 : 0x2a2622); u.shadeM.emissiveIntensity = 3 * bl;
-  if (u.lamp) { const L = u.lamp; L.intensity = (PHOTO_ON ? 34 * md : 16) * lit * (L.userData.pw || 1); L.angle = PHOTO_ON ? 1.45 : L.userData.a; L.penumbra = PHOTO_ON ? 0.6 : 0.9; L.decay = 2; L.distance = PHOTO_ON ? 0 : 4; L.color.copy(PHOTO_ON ? L.userData.pc : L.userData.c); if (PHOTO_ON && L.userData.cold) { L.color.setHex(0x8aa8ff); L.intensity = 14 * lit; L.angle = 0.9; } } // (photo: a tight pool under each shade, dark upper corners, each bulb its own colour)
+  if (u.lamp) { const L = u.lamp; L.intensity = (PHOTO_ON ? 34 * md : 16) * lit * (L.userData.pw || 1); L.angle = PHOTO_ON ? 1.45 : L.userData.a; L.penumbra = PHOTO_ON ? 0.6 : 0.9; L.decay = 2; L.distance = PHOTO_ON ? 0 : 4; L.color.copy(PHOTO_ON ? L.userData.pc : L.userData.c); if (PHOTO_ON && L.userData.cold) { L.color.setHex(0x8aa8ff); L.intensity = 14 * lit; L.angle = 0.9; } } // (photo: a tight pool under each shade, dark upper corners, each bulb its own color)
   if (u.rig) { u.rig.visible = PHOTO_ON && lit > 0.3; u.shade.visible = !(PHOTO_ON && u.rigT === 4);
     if (PHOTO_ON && u.rigT) { if (u.lamp) u.lamp.intensity = 0; u.shadeM.emissiveIntensity = 0; u.bulbM.emissiveIntensity = u.rigT === 4 ? 8 * lit : 0; u.bulbM.color.setHex(u.rigT === 4 ? 0xfff4e0 : 0x2a2622); }
     if (u.flame) { const k = 0.85 + 0.15 * Math.sin(t * 13) * Math.sin(t * 7.7); u.flame.userData.light.intensity = 1.6 * k; u.flame.scale.y = 2 * k; } }

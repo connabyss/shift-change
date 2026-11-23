@@ -841,7 +841,7 @@ test("pause holds everything still and restart puts the floor back as it began; 
   } finally { await close(); }
 });
 
-// Critic round 2 (11-05): phones held upright, colour-blind players, doorways at a glance, the tear's frame cost
+// Critic round 2 (11-05): phones held upright, colorblind players, doorways at a glance, the tear's frame cost
 test("a phone held upright gets the house's \"I'm wider than this.\" card, and the game waits until it's turned", { skip }, async () => {
   const server = await serve(), browser = await chromium.launch();
   try {
@@ -992,7 +992,7 @@ test("floor 3 fixes: the flip preview draws the flipped house, dead ends are mar
     await page.waitForFunction(() => window.__dh);
     const r = await page.evaluate(() => {
       const D = window.__dh; D.newGame(null, 3); D.begin(); const st = D.st();
-      // 1. point at the flip: while it's drawn, the house drawn is the flipped one, and afterwards it's put back
+      // 1. point at the flip: while it's drawn, the house drawn is the flipped one, and afterward it's put back
       const me = D.byId(st.g, st.player.id); let li = me.lines.findIndex((l) => l.kind === "flip");
       if (li < 0) { me.lines.push({ kind: "flip" }); li = me.lines.length - 1; }
       D.render(); const fr = st.wordRects.filter((w) => w.li === li);
@@ -1074,7 +1074,7 @@ test("the 3D doll's house: it loads its scans, follows the house when a row slid
     const a = await page.evaluate(() => {
       const D = window.__dh, st = D.st(); D.begin(); D.hush(); D.render();
       const p = D.find(st.g, st.player.id), row = st.g[p.y].map((r) => r.id), d = document.getElementById("game").getContext("2d").getImageData(2 * (44 + 75) - 40, 2 * (74 + p.y * 146 + 73) - 40, 80, 80).data;
-      // the average colour over the middle of the room (one pixel could land on a dark cupboard)
+      // the average color over the middle of the room (one pixel could land on a dark cupboard)
       const px = [0, 1, 2].map((c) => { let t = 0; for (let i = c; i < d.length; i += 4) t += d[i]; return t / (d.length / 4); });
       return { row, before: row.map((id) => D.roomAt3d(id)), calls: D.info3d().calls, px, y: p.y };
     });
